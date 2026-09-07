@@ -1,0 +1,113 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "gitops-drift",
+      "folder": "Alerts",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "deploydrift0001",
+          "title": "DeployDriftDetected",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": { "from": 600, "to": 0 },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "deploy_drift_seconds",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": { "from": 0, "to": 0 },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": { "params": [3600], "type": "gt" },
+                    "operator": { "type": "and" },
+                    "query": { "params": ["C"] },
+                    "reducer": { "type": "last" },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "10m",
+          "annotations": {
+            "summary": "Merged commits are NOT deploying — the forge is ahead of the box",
+            "description": "The source-of-truth branch head has existed for over an hour without being deployed, while the GitOps applier reports itself healthy. This is the failure every applier-side gauge is blind to: a stale mirror, an expired token, or an applier polling the wrong remote all look like 'no new commits'. Compare: git ls-remote the forge vs comin_deployment_info{commit_id}. Check: journalctl -u comin -n 60, and which URL its running config actually polls (the PROCESS may predate a repoint — a config change does not always restart the daemon)."
+          },
+          "labels": { "component": "deploy", "severity": "warning" },
+          "isPaused": false
+        },
+        {
+          "uid": "deploydrift0002",
+          "title": "DeployDriftCheckFailing",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": { "from": 600, "to": 0 },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "deploy_drift_fetch_ok",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": { "from": 0, "to": 0 },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": { "params": [1], "type": "lt" },
+                    "operator": { "type": "and" },
+                    "query": { "params": ["C"] },
+                    "reducer": { "type": "last" },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "30m",
+          "annotations": {
+            "summary": "The deploy-drift check cannot reach the forge",
+            "description": "deploy_drift_watch has been unable to ls-remote the source-of-truth repo for 30+ minutes, so nothing is watching for undeployed merges. While this fires, a healthy-looking pipeline proves nothing. Check: journalctl -u deploy-drift-watch, network path to the forge, and whether the repo URL is still anonymously readable."
+          },
+          "labels": { "component": "deploy", "severity": "warning" },
+          "isPaused": false
+        }
+      ]
+    }
+  ]
+}

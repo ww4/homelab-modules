@@ -20,6 +20,9 @@
       mergerfs-pools = ./modules/services/mergerfs-pools.nix;
       authelia = ./modules/services/authelia.nix;
       monitoring = ./modules/services/monitoring;
+      pool-autoremount = ./modules/services/pool-autoremount.nix;
+      drive-temps = ./modules/services/drive-temps.nix;
+      deploy-drift-watch = ./modules/services/deploy-drift-watch;
       remote-desktop = ./modules/services/remote-desktop.nix;
       meshagent = ./modules/services/meshagent;
       decluttarr = ./modules/services/decluttarr.nix;

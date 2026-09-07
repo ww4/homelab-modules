@@ -52,70 +52,10 @@ let
     cfg.extraAlertRuleFiles;
 in
 {
+  # All homelab.monitoring.* options are declared in ../../options.nix so
+  # sibling modules (e.g. deploy-drift-watch) can set them without importing
+  # the whole stack.
   imports = [ ../../options.nix ];
-
-  options.homelab.monitoring = {
-    enable = lib.mkEnableOption "the Prometheus + Grafana + Alertmanager stack";
-
-    extraScrapeConfigs = lib.mkOption {
-      type = lib.types.listOf lib.types.attrs;
-      default = [ ];
-      description = "Additional Prometheus scrape configs (site-specific exporters).";
-    };
-
-    extraAlertmanagerRoutes = lib.mkOption {
-      type = lib.types.listOf lib.types.attrs;
-      default = [ ];
-      description = ''
-        Additional Alertmanager routes (matched before the catch-all). The
-        "nights" mute time interval is available to reference.
-      '';
-    };
-
-    extraAlertRuleFiles = lib.mkOption {
-      type = lib.types.listOf lib.types.path;
-      default = [ ];
-      description = ''
-        Extra Grafana alert-rule files (provisioning format, {apiVersion,
-        groups}) merged after the library's generic rules. Site-specific
-        rules — anything whose expressions reference your own exporters —
-        live in your flake and merge in here.
-      '';
-    };
-
-    extraDatasources = lib.mkOption {
-      type = lib.types.listOf lib.types.attrs;
-      default = [ ];
-      description = "Additional Grafana datasources (site-specific).";
-    };
-
-    extraPlugins = lib.mkOption {
-      type = lib.types.listOf lib.types.package;
-      default = [ ];
-      description = "Additional declarative Grafana plugins.";
-    };
-
-    alertWebhookUrl = lib.mkOption {
-      type = lib.types.str;
-      default = "http://127.0.0.1:9095/alert";
-      description = ''
-        Webhook that both Alertmanager and Grafana alerting deliver to —
-        typically a small local shim that forwards to ntfy.
-      '';
-    };
-
-    grafanaOidcSecretFile = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = ''
-        Path to the plaintext OIDC client secret for Grafana's generic_oauth
-        (e.g. a sops secret path). When set, a "Sign in with SSO" button is
-        added, pointing at auth.<domain> (Authelia-style endpoints); the
-        matching pbkdf2 HASH belongs in homelab.authelia.oidcClients.
-        null disables OIDC login (anon viewer + admin form remain).
-      '';
-    };
-  };
 
   config = lib.mkIf cfg.enable {
     # A Prometheus reachable from container bridges: interface-scoped firewall

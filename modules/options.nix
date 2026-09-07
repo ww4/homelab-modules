@@ -111,8 +111,128 @@
             default = null;
             description = "Optional fsname= shown in df/mount output.";
           };
+          # The two below feed pool-autoremount; leave members empty if you
+          # don't run it (the pool still mounts fine without them).
+          memberDir = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            example = "/mnt/disks";
+            description = "Directory the member branches mount under (for the auto-remounter).";
+          };
+          members = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [ ];
+            example = [ "D1" "D2" ];
+            description = "Member subdirectory names under memberDir (for the auto-remounter).";
+          };
         };
       });
+    };
+
+    # ── drive-temps exporter ──────────────────────────────────────────────────
+    driveTemps = {
+      metricPrefix = lib.mkOption {
+        type = lib.types.str;
+        default = "drive_";
+        description = ''
+          Prefix for the exported metric names (<prefix>temp_celsius etc.).
+          Keep whatever you already dashboard/alert on if migrating.
+        '';
+      };
+      spindownDriveIds = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = ''
+          /dev/disk/by-id names of drives that are allowed to spin down AND
+          whose USB bridges misreport power state (so `smartctl -n standby`
+          would wake them). These are SMART-read only while doing block I/O;
+          an idle drive makes ~no heat, so there's nothing to monitor anyway.
+        '';
+      };
+    };
+
+    # ── monitoring stack ──────────────────────────────────────────────────────
+    monitoring = {
+      enable = lib.mkEnableOption "the Prometheus + Grafana + Alertmanager stack";
+
+      extraScrapeConfigs = lib.mkOption {
+        type = lib.types.listOf lib.types.attrs;
+        default = [ ];
+        description = "Additional Prometheus scrape configs (site-specific exporters).";
+      };
+
+      extraAlertmanagerRoutes = lib.mkOption {
+        type = lib.types.listOf lib.types.attrs;
+        default = [ ];
+        description = ''
+          Additional Alertmanager routes (matched before the catch-all). The
+          "nights" mute time interval is available to reference.
+        '';
+      };
+
+      extraAlertRuleFiles = lib.mkOption {
+        type = lib.types.listOf lib.types.path;
+        default = [ ];
+        description = ''
+          Extra Grafana alert-rule files (provisioning format, {apiVersion,
+          groups}) merged after the library's generic rules. Site-specific
+          rules — anything whose expressions reference your own exporters —
+          live in your flake and merge in here.
+        '';
+      };
+
+      extraDatasources = lib.mkOption {
+        type = lib.types.listOf lib.types.attrs;
+        default = [ ];
+        description = "Additional Grafana datasources (site-specific).";
+      };
+
+      extraPlugins = lib.mkOption {
+        type = lib.types.listOf lib.types.package;
+        default = [ ];
+        description = "Additional declarative Grafana plugins.";
+      };
+
+      alertWebhookUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "http://127.0.0.1:9095/alert";
+        description = ''
+          Webhook that both Alertmanager and Grafana alerting deliver to —
+          typically a small local shim that forwards to ntfy.
+        '';
+      };
+
+      grafanaOidcSecretFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = ''
+          Path to the plaintext OIDC client secret for Grafana's generic_oauth
+          (e.g. a sops secret path). When set, a "Sign in with SSO" button is
+          added, pointing at auth.<domain> (Authelia-style endpoints); the
+          matching pbkdf2 HASH belongs in homelab.authelia.oidcClients.
+          null disables OIDC login (anon viewer + admin form remain).
+        '';
+      };
+    };
+
+    # ── deploy-drift watch ────────────────────────────────────────────────────
+    deployDriftWatch = {
+      enable = lib.mkEnableOption "the forge-vs-deployed drift watcher";
+      repoUrl = lib.mkOption {
+        type = lib.types.str;
+        example = "https://git.example.com/me/flakes.git";
+        description = "The flake repo the GitOps applier deploys from.";
+      };
+      branch = lib.mkOption {
+        type = lib.types.str;
+        default = "main";
+        description = "Branch the applier deploys.";
+      };
+      cominMetricsUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "http://127.0.0.1:4243/metrics";
+        description = "comin's metrics endpoint (source of the deployed commit id).";
+      };
     };
 
     # ── Authelia SSO ──────────────────────────────────────────────────────────
