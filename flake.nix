@@ -17,6 +17,8 @@
       boot = ./modules/base/boot.nix;
 
       # Services & tooling.
+      mergerfs-pools = ./modules/services/mergerfs-pools.nix;
+      authelia = ./modules/services/authelia.nix;
       remote-desktop = ./modules/services/remote-desktop.nix;
       meshagent = ./modules/services/meshagent;
       decluttarr = ./modules/services/decluttarr.nix;
