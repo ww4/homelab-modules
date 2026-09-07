@@ -1,0 +1,460 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "systemd",
+      "folder": "Alerts",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "afnqieep31ptsd",
+          "title": "SystemdUnitFailed",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "node_systemd_unit_state{state=\"failed\"} == 1",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "description": "Systemd unit {{ $labels.name }} has been in failed state for 5m. Check: journalctl -u {{ $labels.name }} --no-pager | tail",
+            "summary": "{{ $labels.name }} in failed state"
+          },
+          "labels": {
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "comindeployfail1",
+          "title": "CominDeployFailed",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "max({__name__=~\"comin_last_(build|eval|deployment|fetch)_failed\"})",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "3m",
+          "annotations": {
+            "summary": "comin deploy pipeline FAILED \u2014 the host is not updating",
+            "description": "comin could not build/eval/deploy (or fetch) the latest commit, so the host is stuck on the OLD generation \u2014 a merge to main will NOT take effect until this clears. Check: journalctl -u comin -n 60. Gauges: comin_last_build_failed / _eval_failed / _deployment_failed / _fetch_failed."
+          },
+          "labels": {
+            "component": "deploy",
+            "severity": "warning"
+          },
+          "isPaused": false
+        }
+      ]
+    },
+    {
+      "orgId": 1,
+      "name": "temperatures",
+      "folder": "Temperatures",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "efnvvmg0o01kwa",
+          "title": "Temperature CRITICAL",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "(max(node_hwmon_temp_celsius{chip=\"platform_coretemp_0\"}) >= bool 85) + (max(node_hwmon_temp_celsius{chip=\"nvme_nvme0\"}) >= bool 75)",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "2m",
+          "annotations": {
+            "description": "A sensor hit a critical temp: CPU>=85 or NVMe>=75 C.",
+            "summary": "Host OVERHEATING (critical) \u2014 check ventilation NOW"
+          },
+          "labels": {
+            "component": "thermal",
+            "severity": "critical"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "efnvvnxbqzp4wf",
+          "title": "Temperature warning",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "(max(node_hwmon_temp_celsius{chip=\"platform_coretemp_0\"}) >= bool 75) + (max(node_hwmon_temp_celsius{chip=\"nvme_nvme0\"}) >= bool 65)",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "5m",
+          "annotations": {
+            "description": "A sensor crossed a warning temp: CPU>=75 or NVMe>=65 C.",
+            "summary": "Host running warm \u2014 check airflow"
+          },
+          "labels": {
+            "component": "thermal",
+            "severity": "warning"
+          },
+          "isPaused": false
+        }
+      ]
+    },
+    {
+      "orgId": 1,
+      "name": "observability",
+      "folder": "Alerts",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "textfilestale01",
+          "title": "TextfileExporterStale",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "(time() - node_textfile_mtime_seconds) / 60",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        30
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "for": "10m",
+          "annotations": {
+            "description": "Textfile {{ $labels.file }} has not been rewritten for over 30 minutes. Every writer here runs on a 2-5 minute timer, so this means the producing unit is failing to PUBLISH even if systemd reports it succeeded. drive-temps did exactly this for TEN DAYS in Aug 2026 while logging 'Deactivated successfully' every 5 min, and node_exporter kept serving the frozen values - a stuck sensor reads as 'steady and fine', so no threshold alert could fire. Check: stat {{ $labels.file }} ; journalctl -u <producer> -n 50",
+            "summary": "{{ $labels.file }} is stale - its producer is not publishing"
+          },
+          "labels": {
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "textfilescrapeerr",
+          "title": "TextfileCollectorError",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "node_textfile_scrape_error",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "description": "node_exporter could not parse a .prom file in /var/lib/node-exporter-textfile. ONE malformed file (duplicate name+label pairs, a truncated write) drops EVERY textfile metric at once - EVERY textfile-sourced series vanishes together, and each of their alerts goes NoData rather than firing. Check: promtool check metrics < each .prom, or look for a partially written file.",
+            "summary": "textfile collector is failing to parse - ALL textfile metrics are down"
+          },
+          "labels": {
+            "severity": "warning"
+          },
+          "isPaused": false
+        }
+      ]
+    }
+  ]
+}

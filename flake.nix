@@ -19,6 +19,7 @@
       # Services & tooling.
       mergerfs-pools = ./modules/services/mergerfs-pools.nix;
       authelia = ./modules/services/authelia.nix;
+      monitoring = ./modules/services/monitoring;
       remote-desktop = ./modules/services/remote-desktop.nix;
       meshagent = ./modules/services/meshagent;
       decluttarr = ./modules/services/decluttarr.nix;
