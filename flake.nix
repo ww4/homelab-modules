@@ -45,6 +45,7 @@
       unpackerr = ./modules/services/unpackerr.nix;
       recyclarr = ./modules/services/recyclarr.nix;
       arr = ./modules/services/arr.nix;
+      silverbullet = ./modules/services/silverbullet.nix;
       remote-desktop = ./modules/services/remote-desktop.nix;
       meshagent = ./modules/services/meshagent;
       decluttarr = ./modules/services/decluttarr.nix;
