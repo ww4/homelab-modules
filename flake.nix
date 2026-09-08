@@ -30,6 +30,10 @@
       pinchflat = ./modules/services/pinchflat.nix;
       uptime-kuma = ./modules/services/uptime-kuma.nix;
       glances = ./modules/services/glances.nix;
+      paperless = ./modules/services/paperless.nix;
+      vaultwarden = ./modules/services/vaultwarden.nix;
+      immich = ./modules/services/immich.nix;
+      metube = ./modules/services/metube.nix;
       remote-desktop = ./modules/services/remote-desktop.nix;
       meshagent = ./modules/services/meshagent;
       decluttarr = ./modules/services/decluttarr.nix;
