@@ -130,6 +130,35 @@
         default = "users";
         description = "Host group owning the stack's directories (matches pgid).";
       };
+      scratchDir = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "/mnt/scratch/qbittorrent-incomplete";
+        description = ''
+          Incomplete-download dir on a SEPARATE filesystem (spares the pool's
+          IO; the client copies once on completion). null = incomplete stays
+          inside the /data tree.
+        '';
+      };
+      vpnProvider = lib.mkOption {
+        type = lib.types.str;
+        example = "mullvad";
+        description = "gluetun VPN_SERVICE_PROVIDER for the download client's tunnel.";
+      };
+      keepersMovies = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = ''
+          Optional long-term-keeper library mounted at /keepers/movies —
+          add it as a second Radarr root folder and promote via Edit → Root
+          Folder; the *arr moves the file + updates its DB.
+        '';
+      };
+      keepersTv = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Optional keeper library mounted at /keepers/tv (Sonarr twin of keepersMovies).";
+      };
     };
 
     arrMissingSweep = {
