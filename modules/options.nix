@@ -35,6 +35,55 @@
           to, in ntfy.sh format. Point it at your own ntfy instance/topic.
         '';
       };
+      baseUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "http://localhost:8090";
+        description = ''
+          The URL clients (the phone app) use to reach the ntfy server —
+          typically the host's tailnet IP + port.
+        '';
+      };
+      topic = lib.mkOption {
+        type = lib.types.str;
+        default = "alerts";
+        description = "The alert topic name (subscriber access is granted on it).";
+      };
+    };
+
+    acme = {
+      email = lib.mkOption {
+        type = lib.types.str;
+        description = "Contact email for Let's Encrypt.";
+      };
+      dnsProvider = lib.mkOption {
+        type = lib.types.str;
+        default = "cloudflare";
+        description = "lego DNS provider name for DNS-01 challenges.";
+      };
+      credentialsFile = lib.mkOption {
+        type = lib.types.str;
+        description = "environmentFile with the DNS provider API credential (a sops secret).";
+      };
+    };
+
+    nextcloud = {
+      adminPasswordFile = lib.mkOption {
+        type = lib.types.str;
+        description = "Initial admin password file (sops; owner = nextcloud).";
+      };
+      oidcSecretFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "OIDC client secret path (owner = nextcloud); null = no SSO wiring.";
+      };
+    };
+
+    forgejo = {
+      oidcSecretFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "OIDC client secret path (owner = forgejo); null = no SSO wiring.";
+      };
     };
 
     quietHours = {

@@ -40,21 +40,16 @@ this one) — each module's header comment says exactly what to declare.
 
 ## What's here so far
 
-| Module | What it does |
+| Area | Modules |
 |---|---|
-| `system` | Locale, nix-ld, Nix GC/optimise settings |
-| `boot` | systemd-boot, cmdline-editor lockdown, never-sleep for servers |
-| `remote-desktop` | xrdp + XFCE, Tailscale-only (the reliable NixOS remote-GUI combo) |
-| `meshagent` | MeshCentral endpoint agent — packaged and servicified (a nixpkgs gap) |
-| `smart-dump` | Full SMART tables for every drive via a closed-vocabulary root wrapper |
-| `disk-io-watch` | Per-device kernel I/O-error counters → Prometheus; catches the quiet fault shape before a drive drops |
-| `nginx-log-paths-check` | Eval-time guard: an nginx log path outside its writable set fails the build instead of downing every vhost |
-| `arr-missing-sweep` | Weekly missing-content search for Sonarr/Radarr (which have none), with indexer politeness built in |
-| `qbit-vpn-watchdog` | Self-heals the qBittorrent-in-gluetun network-namespace wedge |
-| `decluttarr` | Conservative dead-download reaper for the *arr queue |
+| **Base** | `system`, `boot` |
+| **Perimeter & SSO** | `nginx-access` (the source gate), `acme` (DNS-01 defaults), `authelia` (forward-auth + OIDC; ONE list drives both the nginx wiring and the access rule) |
+| **Storage** | `mergerfs-pools`, `pool-autoremount` (zombie-mount aware, flap-capped), `smart-dump`, `drive-temps`, `disk-io-watch` |
+| **Monitoring & alerting** | `monitoring` (Prometheus + Grafana + Alertmanager, alerting provisioned from files; quiet hours generated from one option), `deploy-drift-watch` (alerts when the forge is ahead of the deployed commit — the failure every applier-side gauge is blind to), `nginx-log-paths-check`, `ntfy` (write-only anonymous access, self-provisioning subscriber) |
+| **Services** | `nextcloud`, `forgejo`, `vaultwarden`, `paperless`, `immich`, `jellyfin`, `audiobookshelf`, `tandoor`, `uptime-kuma`, `glances`, `metube`, `pinchflat`, `remote-desktop`, `meshagent` |
+| **Download hygiene** | `arr-missing-sweep`, `qbit-vpn-watchdog`, `decluttarr` |
 
-More migrates in from the private flake as it gets parameterized — monitoring,
-SSO, storage, backups are next.
+More migrates in from the private flake as it gets parameterized.
 
 ## Design rules
 

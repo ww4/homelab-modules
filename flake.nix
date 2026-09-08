@@ -30,6 +30,10 @@
       pinchflat = ./modules/services/pinchflat.nix;
       uptime-kuma = ./modules/services/uptime-kuma.nix;
       glances = ./modules/services/glances.nix;
+      acme = ./modules/services/acme.nix;
+      nextcloud = ./modules/services/nextcloud.nix;
+      forgejo = ./modules/services/forgejo.nix;
+      ntfy = ./modules/services/ntfy.nix;
       paperless = ./modules/services/paperless.nix;
       vaultwarden = ./modules/services/vaultwarden.nix;
       immich = ./modules/services/immich.nix;
