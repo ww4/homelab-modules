@@ -38,6 +38,12 @@
       vaultwarden = ./modules/services/vaultwarden.nix;
       immich = ./modules/services/immich.nix;
       metube = ./modules/services/metube.nix;
+      alertmanager-ntfy = ./modules/services/alertmanager-ntfy.nix;
+      lidarr = ./modules/services/lidarr.nix;
+      lazylibrarian = ./modules/services/lazylibrarian.nix;
+      aurral = ./modules/services/aurral.nix;
+      unpackerr = ./modules/services/unpackerr.nix;
+      recyclarr = ./modules/services/recyclarr.nix;
       remote-desktop = ./modules/services/remote-desktop.nix;
       meshagent = ./modules/services/meshagent;
       decluttarr = ./modules/services/decluttarr.nix;

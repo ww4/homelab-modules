@@ -101,6 +101,37 @@
       };
     };
 
+    # ── download-stack shared values ─────────────────────────────────────────
+    # One data tree (root) shared by the download client and every importer so
+    # imports hardlink instead of copying; one uid:gid so ownership matches
+    # across containers.
+    arrStack = {
+      root = lib.mkOption {
+        type = lib.types.str;
+        example = "/mnt/media/arr";
+        description = "The shared /data tree (downloads + media subdirs).";
+      };
+      puid = lib.mkOption {
+        type = lib.types.str;
+        default = "1000";
+        description = "uid the stack's containers run as.";
+      };
+      pgid = lib.mkOption {
+        type = lib.types.str;
+        default = "100";
+        description = "gid the stack's containers run as.";
+      };
+      owner = lib.mkOption {
+        type = lib.types.str;
+        description = "Host user owning the stack's directories (matches puid).";
+      };
+      group = lib.mkOption {
+        type = lib.types.str;
+        default = "users";
+        description = "Host group owning the stack's directories (matches pgid).";
+      };
+    };
+
     arrMissingSweep = {
       user = lib.mkOption {
         type = lib.types.str;
