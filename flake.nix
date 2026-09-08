@@ -23,6 +23,13 @@
       pool-autoremount = ./modules/services/pool-autoremount.nix;
       drive-temps = ./modules/services/drive-temps.nix;
       deploy-drift-watch = ./modules/services/deploy-drift-watch;
+      nginx-access = ./modules/services/nginx-access.nix;
+      jellyfin = ./modules/services/jellyfin.nix;
+      audiobookshelf = ./modules/services/audiobookshelf.nix;
+      tandoor = ./modules/services/tandoor.nix;
+      pinchflat = ./modules/services/pinchflat.nix;
+      uptime-kuma = ./modules/services/uptime-kuma.nix;
+      glances = ./modules/services/glances.nix;
       remote-desktop = ./modules/services/remote-desktop.nix;
       meshagent = ./modules/services/meshagent;
       decluttarr = ./modules/services/decluttarr.nix;
