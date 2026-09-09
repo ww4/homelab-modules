@@ -12,13 +12,9 @@
 # reaches qBittorrent via gluetun:8085 (qBit shares gluetun's netns; the
 # arr-net subnet is in qBit's WebUI auth whitelist, so no qBit password).
 #
-# CONSUMER MUST DECLARE the secret (root:0400; read by docker --env-file
-# before the container starts):
-#
-#   sops.secrets."decluttarr-env" = {
-#     sopsFile = <your secrets>/decluttarr-env.yaml;   # keys:
-#     key = "decluttarr-env";                          #   SONARR_API_KEY=...
-#   };                                                 #   RADARR_API_KEY=...
+# CONSUMER MUST DECLARE a sops secret (root:0400; read by docker --env-file
+# before the container starts) with SONARR_API_KEY=... and RADARR_API_KEY=...
+# and point homelab.decluttarr.envFile at it.
 { config, lib, pkgs, ... }:
 
 let
@@ -63,6 +59,8 @@ let
   '';
 in
 {
+  imports = [ ../options.nix ];
+
   systemd.tmpfiles.rules = [
     "d /var/lib/decluttarr            0700 root root - -"
   ];
@@ -73,7 +71,7 @@ in
       TZ = config.time.timeZone;
       IN_DOCKER = "true";
     };
-    environmentFiles = [ config.sops.secrets."decluttarr-env".path ];
+    environmentFiles = [ config.homelab.decluttarr.envFile ];
     volumes = [ "${configYaml}:/app/config/config.yaml:ro" ];
     dependsOn = [ "sonarr" "radarr" "gluetun" ];
     extraOptions = [ "--network=${arrNet}" ];

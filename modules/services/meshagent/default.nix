@@ -9,18 +9,15 @@
 #
 # CONSUMER MUST DECLARE the secret in their own flake (the .msh identity —
 # server URL + MeshID + server cert hash — is enrollment-capable and must stay
-# out of git):
-#
-#   sops.secrets."meshagent-msh" = {
-#     sopsFile = <your secrets>/meshagent-msh.yaml;
-#     key = "msh";
-#   };
+# out of git) and point homelab.meshagent.mshFile at it.
 { config, lib, pkgs, ... }:
 let
   meshagent = pkgs.callPackage ./package.nix { };
   datapath = "/var/lib/meshagent";
 in
 {
+  imports = [ ../../options.nix ];
+
   systemd.services.meshagent = {
     description = "MeshCentral agent (self-manage this host via MeshCentral)";
     wantedBy = [ "multi-user.target" ];
@@ -37,7 +34,7 @@ in
         set -eu
         install -m0555 ${meshagent}/bin/meshagent ${datapath}/meshagent
         umask 077
-        cat ${config.sops.secrets."meshagent-msh".path} > ${datapath}/meshagent.msh
+        cat ${config.homelab.meshagent.mshFile} > ${datapath}/meshagent.msh
         echo "StartupType=1" >> ${datapath}/meshagent.msh
       '';
       ExecStart = "${datapath}/meshagent connect";

@@ -46,12 +46,19 @@ Conventions that apply throughout:
   domain are yours to provide.
 - **Importing a module enables it**, except where a module documents an
   `enable` option (`monitoring`, `authelia`, `deployDriftWatch`).
-- **Secrets are yours.** This library never declares a sops secret. Where a
-  module needs one, its header comment says exactly what to declare (name,
-  keys, owner) and the module reads it through an option or by the
-  documented name. Keep declarations and encrypted files in your own flake.
+- **Secrets are yours.** This library never declares a sops secret and never
+  reads one by name. Where a module needs one, its header comment says what
+  the file must contain and which `homelab.*File` option to point at it.
+  Keep declarations and encrypted files in your own flake.
 - **Options live in `modules/options.nix`.** Every `homelab.*` option has a
   description; that file is the reference.
+- **The catalog is the machine-readable index.** `nix eval --json
+  .#catalog` lists every module with its one-line purpose, the `homelab.*`
+  options it reads, the secrets it needs (and whether each can be generated
+  or must be supplied), hard dependencies, the vhost it claims, and whether
+  importing enables it. It is checked against `nixosModules` at eval time,
+  so it cannot drift. Tooling (an installer, an agent) reads this instead of
+  the headers.
 
 ## What's here
 

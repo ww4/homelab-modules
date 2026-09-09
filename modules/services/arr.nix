@@ -20,7 +20,8 @@
 # incomplete/ can live on a scratch disk; the client copies once at
 # completion.
 #
-# CONSUMER MUST DECLARE the sops secret "gluetun-wg" carrying the WireGuard
+# CONSUMER MUST DECLARE a sops secret and point homelab.arrStack.vpnEnvFile
+# at it: an environmentFile with the WireGuard
 # credentials (WIREGUARD_PRIVATE_KEY / _PRESHARED_KEY / _ADDRESSES,
 # SERVER_COUNTRIES, and — if your VPN offers port forwarding for inbound
 # peers — FIREWALL_VPN_INPUT_PORTS; set qBittorrent's listen port to the
@@ -202,10 +203,9 @@ in
       environment = {
         VPN_SERVICE_PROVIDER = s.vpnProvider;
         VPN_TYPE             = "wireguard";
-        # Everything account-specific lives in the sops gluetun-wg secret
-        # (see the header comment).
+        # Everything account-specific lives in vpnEnvFile (see the header).
       };
-      environmentFiles = [ config.sops.secrets."gluetun-wg".path ];
+      environmentFiles = [ s.vpnEnvFile ];
       extraOptions = [
         "--cap-add=NET_ADMIN"
         "--device=/dev/net/tun"

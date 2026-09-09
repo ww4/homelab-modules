@@ -5,7 +5,25 @@
     secrets) live in the consumer's own flake. See README.md.
   '';
 
-  outputs = { self }: {
+  outputs = { self }:
+  let
+    nixosModules = self.nixosModules;
+    catalog = import ./modules/catalog.nix;
+    # The catalog must describe exactly the modules exported below — a module
+    # without an entry (or an entry without a module) is an eval error, not a
+    # silently incomplete index.
+    moduleNames = builtins.attrNames nixosModules;
+    catalogNames = builtins.attrNames catalog;
+    missing = builtins.filter (n: !(catalog ? ${n})) moduleNames;
+    extra = builtins.filter (n: !(nixosModules ? ${n})) catalogNames;
+    checkedCatalog =
+      if missing != [ ] then throw "catalog.nix lacks entries for: ${toString missing}"
+      else if extra != [ ] then throw "catalog.nix names modules that do not exist: ${toString extra}"
+      else catalog;
+  in {
+    # Machine-readable index of the modules: `nix eval --json .#catalog`.
+    catalog = checkedCatalog;
+
     nixosModules = {
       # The homelab.* option set — the interface between this library and a
       # consumer's values. Modules that need it import it themselves (the

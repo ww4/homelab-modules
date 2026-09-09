@@ -6,9 +6,9 @@
 # 3007 (3001 is Grafana here). On arr-net so it reaches Lidarr at
 # lidarr:8686. Reachable at https://music.<domain>.
 #
-# CONSUMER MUST DECLARE a sops secret "aurral-env" carrying
+# CONSUMER MUST DECLARE a sops secret carrying
 # LIDARR_API_KEY=<Lidarr → Settings → General → API Key> (read by root via
-# docker --env-file → root:0400 is fine).
+# docker --env-file → root:0400 is fine) and point homelab.aurral.envFile at it.
 { config, lib, pkgs, ... }:
 let
   arrNet = "arr-net";
@@ -29,7 +29,7 @@ in
       LIDARR_URL = "http://lidarr:8686";
       CONTACT_EMAIL = "admin@${config.homelab.domain}";  # MusicBrainz API User-Agent contact
     };
-    environmentFiles = [ config.sops.secrets."aurral-env".path ];  # LIDARR_API_KEY
+    environmentFiles = [ config.homelab.aurral.envFile ];  # LIDARR_API_KEY
     volumes = [ "/var/lib/aurral:/app/data:rw" ];
     dependsOn = [ "lidarr" ];
     extraOptions = [ "--network=${arrNet}" ];

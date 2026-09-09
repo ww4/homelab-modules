@@ -17,9 +17,10 @@
 # more than maxMissingPerSeries outstanding is treated as a metadata mismatch,
 # skipped, and reported so a human can look — rather than silently retried.
 #
-# CONSUMER MUST DECLARE a sops secret named "arr-api" whose file exports
-# SONARR_API_KEY and RADARR_API_KEY (it is sourced by the sweep script), and
-# set homelab.arrMissingSweep.user to the user that owns that secret.
+# CONSUMER MUST DECLARE a sops secret whose file exports SONARR_API_KEY and
+# RADARR_API_KEY (it is sourced by the sweep script), point
+# homelab.arrMissingSweep.apiEnvFile at it, and set
+# homelab.arrMissingSweep.user to the user that owns it.
 { config, lib, pkgs, ... }:
 
 let
@@ -32,7 +33,7 @@ let
     excludeShellChecks = [ "SC1091" ];
     text = ''
       set -euo pipefail
-      . ${config.sops.secrets."arr-api".path}
+      . ${config.homelab.arrMissingSweep.apiEnvFile}
       S=http://127.0.0.1:8989/api/v3
       R=http://127.0.0.1:7878/api/v3
       MAX=${toString maxMissingPerSeries}

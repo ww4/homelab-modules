@@ -13,9 +13,9 @@
 # payload throughout (the same hardlink-never-move rule as the rest of a
 # well-behaved media stack).
 #
-# CONSUMER MUST DECLARE a sops secret "unpackerr-env" with
-# UN_SONARR_0_API_KEY / UN_RADARR_0_API_KEY. Only the keys are secret; URLs
-# and paths stay readable in the nix environment below.
+# CONSUMER MUST DECLARE a sops secret with UN_SONARR_0_API_KEY /
+# UN_RADARR_0_API_KEY and point homelab.unpackerr.envFile at it. Only the
+# keys are secret; URLs and paths stay readable in the nix environment below.
 { config, lib, pkgs, ... }:
 
 let
@@ -74,7 +74,7 @@ in
       UN_DEBUG    = "false";
     };
 
-    environmentFiles = [ config.sops.secrets."unpackerr-env".path ];
+    environmentFiles = [ config.homelab.unpackerr.envFile ];
     volumes = [ dataVolume ];
     dependsOn = [ "sonarr" "radarr" ];
     extraOptions = [

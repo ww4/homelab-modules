@@ -145,6 +145,15 @@
         example = "mullvad";
         description = "gluetun VPN_SERVICE_PROVIDER for the download client's tunnel.";
       };
+      vpnEnvFile = lib.mkOption {
+        type = lib.types.str;
+        description = ''
+          environmentFile with the WireGuard credentials for gluetun
+          (WIREGUARD_PRIVATE_KEY / _PRESHARED_KEY / _ADDRESSES, SERVER_COUNTRIES,
+          optionally FIREWALL_VPN_INPUT_PORTS). Read by docker --env-file as
+          root; root:0400 is fine.
+        '';
+      };
       keepersMovies = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
@@ -167,9 +176,40 @@
         default = "root";
         description = ''
           User the weekly *arr missing-sweep runs as. Set it to whichever user
-          owns the sops secret holding the *arr API keys.
+          owns the secret behind apiEnvFile.
         '';
       };
+      apiEnvFile = lib.mkOption {
+        type = lib.types.str;
+        description = ''
+          Shell-sourceable file exporting SONARR_API_KEY and RADARR_API_KEY
+          (a sops secret owned by `user`).
+        '';
+      };
+    };
+
+    # ── per-service secret paths (download-stack helpers + meshagent) ────────
+    # Each is an environmentFile read by docker --env-file (root:0400) unless
+    # the module header says otherwise. The library never declares the sops
+    # secret itself — see README "Secrets are yours".
+    aurral.envFile = lib.mkOption {
+      type = lib.types.str;
+      description = "environmentFile with LIDARR_API_KEY.";
+    };
+    unpackerr.envFile = lib.mkOption {
+      type = lib.types.str;
+      description = "environmentFile with UN_SONARR_0_API_KEY and UN_RADARR_0_API_KEY.";
+    };
+    decluttarr.envFile = lib.mkOption {
+      type = lib.types.str;
+      description = "environmentFile with SONARR_API_KEY and RADARR_API_KEY.";
+    };
+    meshagent.mshFile = lib.mkOption {
+      type = lib.types.str;
+      description = ''
+        The server-generated .msh identity file (server URL + MeshID + cert
+        hash; enrollment-capable, so a sops secret). Read by root at start.
+      '';
     };
 
     # ── mergerfs pools ────────────────────────────────────────────────────────
