@@ -1,0 +1,113 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "mirror-drift",
+      "folder": "Alerts",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "mirrordrift0001",
+          "title": "MirrorDriftDetected",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": { "from": 600, "to": 0 },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "max by (repo) (mirror_drift_seconds)",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": { "from": 0, "to": 0 },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": { "params": [7200], "type": "gt" },
+                    "operator": { "type": "and" },
+                    "query": { "params": ["C"] },
+                    "reducer": { "type": "last" },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "15m",
+          "annotations": {
+            "summary": "A git mirror has stopped tracking its source ({{ $labels.repo }})",
+            "description": "The source repo's branch head has existed for over 2h without reaching the mirror. Push-mirrors fail silently — the source keeps accepting pushes and the only native record is a last_error field nothing reads; that is exactly how a dead mirror once went unnoticed for days here. Check the source forge's repo settings → push mirrors for the error (expired token, GH007 email block, deleted target repo are the known ones), and journalctl -u mirror-drift-watch."
+          },
+          "labels": { "component": "mirror", "severity": "warning" },
+          "isPaused": false
+        },
+        {
+          "uid": "mirrordrift0002",
+          "title": "MirrorDriftCheckFailing",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": { "from": 600, "to": 0 },
+              "datasourceUid": "PBFA97CFB590B2093",
+              "model": {
+                "expr": "min by (repo) (mirror_drift_fetch_ok)",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": { "from": 0, "to": 0 },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": { "params": [1], "type": "lt" },
+                    "operator": { "type": "and" },
+                    "query": { "params": ["C"] },
+                    "reducer": { "type": "last" },
+                    "type": "query"
+                  }
+                ],
+                "expression": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "C",
+                "type": "threshold"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "45m",
+          "annotations": {
+            "summary": "The mirror-drift check cannot reach one end ({{ $labels.repo }})",
+            "description": "mirror-drift-watch has been unable to ls-remote the source or the mirror for 45+ minutes, so nothing is watching that mirror. While this fires, an in-sync-looking mirror proves nothing. Check: journalctl -u mirror-drift-watch, and the network path to both forges."
+          },
+          "labels": { "component": "mirror", "severity": "warning" },
+          "isPaused": false
+        }
+      ]
+    }
+  ]
+}

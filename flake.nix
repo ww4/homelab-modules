@@ -23,6 +23,7 @@
       pool-autoremount = ./modules/services/pool-autoremount.nix;
       drive-temps = ./modules/services/drive-temps.nix;
       deploy-drift-watch = ./modules/services/deploy-drift-watch;
+      mirror-drift-watch = ./modules/services/mirror-drift-watch;
       nginx-access = ./modules/services/nginx-access.nix;
       jellyfin = ./modules/services/jellyfin.nix;
       audiobookshelf = ./modules/services/audiobookshelf.nix;
