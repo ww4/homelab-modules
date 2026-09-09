@@ -1,0 +1,18 @@
+[package]
+name = "homelab-configure"
+version = "0.1.0"
+edition = "2021"
+description = "Generate a private consumer flake for the homelab-modules library from a set of answers"
+license = "MIT"
+
+[[bin]]
+name = "homelab-configure"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+argon2 = "0.5"
+clap = { version = "4", features = ["derive"] }
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

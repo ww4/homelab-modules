@@ -12,6 +12,11 @@ in
 {
   imports = [ ../options.nix ];
 
+  # The shared `media` group: every media-serving module declares it (the
+  # module system merges the identical declarations) so a consumer need not
+  # know which module happens to be first.
+  users.groups.media = { };
+
   services.jellyfin = {
     enable = true;
     group = "media";

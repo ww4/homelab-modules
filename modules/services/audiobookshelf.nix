@@ -5,6 +5,8 @@
 {
   imports = [ ../options.nix ];
 
+  users.groups.media = { };   # shared media group; see jellyfin.nix
+
   services.audiobookshelf = {
     enable = true;
     group = "media";

@@ -41,6 +41,7 @@ let cfg = config.homelab.metube; in
   config = {
     # Dedicated user; primary group `media` so output is readable by the
     # media server.
+    users.groups.media = { };   # shared media group; see jellyfin.nix
     users.users.metube = {
       isSystemUser = true;
       uid = cfg.uid;

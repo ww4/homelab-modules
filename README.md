@@ -60,6 +60,20 @@ Conventions that apply throughout:
   so it cannot drift. Tooling (an installer, an agent) reads this instead of
   the headers.
 
+## Starting from nothing: the configurator
+
+`configurator/` holds `homelab-configure`, a headless tool that turns a set
+of answers (which modules, which values) into a complete private flake like
+the one above — secrets minted or supplied and sops-encrypted, an admin age
+key and the host's SSH key prepared, a disko layout, and the install command.
+It validates its own output by evaluating the toplevel, and its `schema`
+command is the question set for any front end, human or agent. The one
+supported install path is nixos-anywhere. See `configurator/README.md`.
+
+```sh
+nix run 'git+https://git.rosemaryacres.com/ww4/homelab-modules.git?dir=configurator' -- schema   # leak-scan-ok: this repo's own home
+```
+
 ## What's here
 
 | Area | Modules |
