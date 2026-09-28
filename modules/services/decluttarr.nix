@@ -40,6 +40,28 @@ let
           - "Not a Custom Format upgrade for existing*"
           - "Not an upgrade for existing*"
           - "*Found potentially dangerous file with extension*"
+          # Sonarr emits TWO different wordings here and they are not
+          # interchangeable. `DangerousFileSpecification` says "Found
+          # potentially dangerous file with extension" (.lnk and friends);
+          # `ExecutableFileSpecification` says "Caution: Found executable file
+          # with extension: '.exe'". Only the first was listed, so an .exe
+          # payload never matched, never took a strike, and never got removed.
+          #
+          # That is not a cosmetic miss. A blocked import parks the queue item
+          # as importPending — "still working", not failed — so Sonarr neither
+          # blocklists it nor re-searches, AND the stuck item then rejects every
+          # real release for that episode with "Release in queue already meets
+          # cutoff". The episode is dead until a human notices.
+          #
+          # Found 2026-09-27: The Ark S03E07/E08 sat like this for 20 and 13
+          # days off two fake pre-air LimeTorrents grabs whose whole payload was
+          # a single Windows .exe, while gromit seeded 12.7 GB of it back out.
+          # 47 and 63 legitimate releases were being rejected the entire time.
+          #
+          # NOT added: the sibling "Caution: Found archive file with extension"
+          # — unpackerr handles archives on purpose, so reaping those would
+          # fight it.
+          - "*Found executable file with extension*"
           - "Invalid video file*"
           - "No files found are eligible for import*"
           - "One or more episodes expected in this release were not imported or missing from the release"
