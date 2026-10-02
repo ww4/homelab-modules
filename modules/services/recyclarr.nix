@@ -18,6 +18,7 @@
 let
   appData = "/var/lib/recyclarr";
   cfg = config.homelab.recyclarr;
+  s = config.homelab.arrStack;
 
   # Wrapper: copies config from /nix/store into the app-data dir, seeds an
   # empty secrets file on first run, and no-ops cleanly until the user fills
@@ -26,6 +27,14 @@ let
     set -eu
     install -d -m 0700 -o root -g root ${appData}
     install -m 0644 -o root -g root ${cfg.configFile} ${appData}/recyclarr.yml
+    ${lib.optionalString (s.apiKeyEnvFile != null) ''
+        # The stack owns the keys (homelab.arrStack.apiKeyEnvFile): render
+        # secrets.yml from that file on every run; the hand-filled file is never
+        # needed and never consulted.
+        set -a; . ${lib.escapeShellArg s.apiKeyEnvFile}; set +a
+        umask 077
+        printf 'sonarr_api_key: %s\nradarr_api_key: %s\n' "''${SONARR_API_KEY:-}" "''${RADARR_API_KEY:-}" > ${appData}/secrets.yml
+    ''}
 
     if [ ! -f ${appData}/secrets.yml ]; then
       cat > ${appData}/secrets.yml <<'SECRETS_EOF'

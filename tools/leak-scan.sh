@@ -10,7 +10,7 @@ set -euo pipefail
 PAT='rosemaryacres|saenzmail|broadlinc|chris|saenz|100\.(82\.117|66\.171|112\.10|71\.248)|2603:6013|/mnt/fusion|/mnt/backup|gromit|wallace\b|marcus\b|bub\b|github\.com/ww4|darkpeers|retrotoon|torrentleech|digitalcore|myanonamouse|anonamouse|dynamicSeedbox|lock3|driveonwood|kentucky|craigmyle|airvpn'
 
 hits=$(grep -rniE "$PAT" . \
-        --exclude-dir=.git \
+        --exclude-dir=.git --exclude-dir=target \
         --exclude=LICENSE \
         --exclude=leak-scan.sh \
       | grep -v 'leak-scan-ok' || true)

@@ -27,7 +27,12 @@
 # peers — FIREWALL_VPN_INPUT_PORTS; set qBittorrent's listen port to the
 # SAME number in WebUI → Connection).
 #
-# Each *arr generates its own API key on first run; wire them up in the UIs
+# API keys: point homelab.arrStack.apiKeyEnvFile at an env file carrying
+# SONARR_API_KEY / RADARR_API_KEY / PROWLARR_API_KEY (/ LIDARR_API_KEY) and
+# each app is seeded with its key before first start (see
+# ../lib/arr-api-seed.nix) — every consumer module then reads the same file,
+# nothing is copied out of a UI. Leave it null and each *arr mints its own
+# key on first run, to be wired up by hand in the UIs
 # (Prowlarr → Settings → Apps adds Sonarr/Radarr; Jellyseerr → Settings →
 # Services adds Sonarr/Radarr; download-client wiring → qBittorrent).
 { config, lib, pkgs, ... }:
@@ -74,6 +79,13 @@ let
   # moving parts for no benefit: nothing here needs v6 reachability.
   ipv4Only = "--sysctl=net.ipv6.conf.all.disable_ipv6=1";
 
+  seed = import ../lib/arr-api-seed.nix { inherit lib pkgs; };
+  seedFor = app: var: seed {
+    inherit app var;
+    dir = "/var/lib/${app}";
+    owner = s.owner; group = s.group; envFile = s.apiKeyEnvFile;
+  };
+
 in
 {
   imports = [ ../options.nix ];
@@ -96,6 +108,11 @@ in
         ${pkgs.docker}/bin/docker network create --driver bridge ${arrNet}
     '';
   };
+
+  # API keys seeded from the shared env file (no-ops when it is null).
+  systemd.services.arr-api-seed-prowlarr = seedFor "prowlarr" "PROWLARR_API_KEY";
+  systemd.services.arr-api-seed-sonarr   = seedFor "sonarr"   "SONARR_API_KEY";
+  systemd.services.arr-api-seed-radarr   = seedFor "radarr"   "RADARR_API_KEY";
 
   # State + media + scratch dirs must exist before containers start.
   systemd.tmpfiles.rules = [

@@ -323,19 +323,20 @@ in
       (envRoot "homelab.arrStack.vpnEnvFile"
         [ "WIREGUARD_PRIVATE_KEY" "WIREGUARD_PRESHARED_KEY" "WIREGUARD_ADDRESSES" "SERVER_COUNTRIES" "FIREWALL_VPN_INPUT_PORTS (optional)" ]
         "supply")
+      # Minted by tooling and seeded into each app before first start (lib/arr-api-seed.nix);
+      # every consumer module reads the same file.
+      (envRoot "homelab.arrStack.apiKeyEnvFile" [ "SONARR_API_KEY" "RADARR_API_KEY" "PROWLARR_API_KEY" "LIDARR_API_KEY" ] "generate")
     ];
   };
   recyclarr = {
     description = "Sync TRaSH-Guides quality profiles into Sonarr & Radarr daily (bring your own profile YAML).";
     enable = "import";
-    options = [ "homelab.recyclarr" ];
+    options = [ "homelab.recyclarr" "homelab.arrStack" ];
     requires = [ "arr" ];
     vhosts = [ ];
-    # /var/lib/recyclarr/secrets.yml is written by hand after the *arrs mint
-    # their keys; not a nix-managed file today.
-    secrets = [
-      (file "<manual: /var/lib/recyclarr/secrets.yml>" [ "sonarr_api_key" "radarr_api_key" ] "recyclarr" "first-boot")
-    ];
+    # secrets.yml is rendered from homelab.arrStack.apiKeyEnvFile when that is set
+    # (the configurator always sets it); by hand otherwise — see the module header.
+    secrets = [ ];
   };
   unpackerr = {
     description = "Extract RAR'd releases in place so the *arrs can import them; seeds untouched.";
@@ -344,7 +345,8 @@ in
     requires = [ "arr" ];
     vhosts = [ ];
     secrets = [
-      (envRoot "homelab.unpackerr.envFile" [ "UN_SONARR_0_API_KEY" "UN_RADARR_0_API_KEY" ] "first-boot")
+      # Same values as homelab.arrStack.apiKeyEnvFile, in unpackerr's spelling.
+      (envRoot "homelab.unpackerr.envFile" [ "UN_SONARR_0_API_KEY" "UN_RADARR_0_API_KEY" ] "generate")
     ];
   };
   decluttarr = {
@@ -354,7 +356,7 @@ in
     requires = [ "arr" ];
     vhosts = [ ];
     secrets = [
-      (envRoot "homelab.decluttarr.envFile" [ "SONARR_API_KEY" "RADARR_API_KEY" ] "first-boot")
+      (envRoot "homelab.decluttarr.envFile" [ "SONARR_API_KEY" "RADARR_API_KEY" ] "generate")
     ];
   };
   lidarr = {
@@ -380,7 +382,7 @@ in
     requires = [ "lidarr" ];
     vhosts = [ "music" ];
     secrets = [
-      (envRoot "homelab.aurral.envFile" [ "LIDARR_API_KEY" ] "first-boot")
+      (envRoot "homelab.aurral.envFile" [ "LIDARR_API_KEY" ] "generate")
     ];
   };
   arr-missing-sweep = {
@@ -390,7 +392,7 @@ in
     requires = [ "arr" ];
     vhosts = [ ];
     secrets = [
-      (file "homelab.arrMissingSweep.apiEnvFile" [ "SONARR_API_KEY" "RADARR_API_KEY" ] "<homelab.arrMissingSweep.user>" "first-boot")
+      (file "homelab.arrMissingSweep.apiEnvFile" [ "SONARR_API_KEY" "RADARR_API_KEY" ] "<homelab.arrMissingSweep.user>" "generate")
     ];
   };
   qbit-vpn-watchdog = {

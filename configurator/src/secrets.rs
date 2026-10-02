@@ -3,6 +3,7 @@
 //!   supply     — only the user has it (DNS token, VPN conf, .msh); --secret
 //!   first-boot — exists only after a service ran once; a CHANGEME placeholder
 //!                is encrypted so the flake evaluates, and PHASE-2.md lists it
+//!                (no library module needs this today: the *arr keys are seeded)
 //!
 //! Formats the library's modules expect are produced by the tools that own
 //! them (authelia for pbkdf2 digests); argon2 for Vaultwarden's ADMIN_TOKEN is
@@ -84,6 +85,7 @@ pub fn plan_secret(
     values: &BTreeMap<String, serde_json::Value>,
     schema: &Schema,
     supplied: &Supplied,
+    minted: &mut BTreeMap<String, String>,
 ) -> std::result::Result<SecretPlan, String> {
     let name = secret_name(&meta.option);
     let owner = crate::plan::resolve_placeholder(schema, values, &meta.owner);
@@ -102,7 +104,7 @@ pub fn plan_secret(
         },
         Source::Generate => match supplied.take(&meta.option) {
             Some(c) => c.clone(),
-            None => generate_content(module, &meta.keys, &mut show_once).map_err(|e| format!("{e:#}"))?,
+            None => generate_content(module, &meta.keys, &mut show_once, minted).map_err(|e| format!("{e:#}"))?,
         },
         Source::FirstBoot => match supplied.take(&meta.option) {
             Some(c) => c.clone(),
@@ -175,10 +177,26 @@ pub fn random_token(len: usize) -> String {
         .collect()
 }
 
+/// A *arr API key is ONE value however a consumer spells it: the stack's
+/// `SONARR_API_KEY` (seeded into Sonarr itself), unpackerr's
+/// `UN_SONARR_0_API_KEY`, decluttarr's `SONARR_API_KEY` must all agree or
+/// the consumer gets 401s. Returns the family (`SONARR_API_KEY`) for a key
+/// that belongs to one, so every file generated in a run shares the value.
+fn api_key_family(var: &str) -> Option<String> {
+    let app = var.strip_suffix("_API_KEY")?;
+    let app = app.strip_prefix("UN_").unwrap_or(app);
+    let app = app.strip_suffix("_0").unwrap_or(app);
+    if app.is_empty() || app.contains('_') {
+        return None;
+    }
+    Some(format!("{app}_API_KEY"))
+}
+
 fn generate_content(
     module: &str,
     keys: &[String],
     show_once: &mut Vec<(String, String)>,
+    minted: &mut BTreeMap<String, String>,
 ) -> Result<String> {
     if keys.iter().all(|k| is_env_key(k)) {
         // An env file: one generated value per non-optional key.
@@ -193,6 +211,18 @@ fn generate_content(
                 let hash = argon2_phc(&plain)?;
                 show_once.push((format!("{module}: {var} (plaintext — the env file holds the argon2 hash)"), plain));
                 lines.push(format!("{var}='{hash}'"));
+            } else if let Some(family) = api_key_family(var) {
+                // Shared across the run; shown once, under the family name.
+                let v = match minted.get(&family) {
+                    Some(v) => v.clone(),
+                    None => {
+                        let v = random_token(32);
+                        show_once.push((format!("*arr: {family}"), v.clone()));
+                        minted.insert(family, v.clone());
+                        v
+                    }
+                };
+                lines.push(format!("{var}={v}"));
             } else {
                 let v = random_token(32);
                 show_once.push((format!("{module}: {var}"), v.clone()));
@@ -332,10 +362,29 @@ mod tests {
     #[test]
     fn generated_env_file_has_one_line_per_required_key() {
         let mut show = Vec::new();
-        let c = generate_content("m", &["X".into(), "Y (optional)".into(), "SMTP_PASS (optional)".into()], &mut show).unwrap();
+        let c = generate_content("m", &["X".into(), "Y (optional)".into(), "SMTP_PASS (optional)".into()], &mut show, &mut BTreeMap::new()).unwrap();
         assert_eq!(c.lines().count(), 1);
         assert!(c.starts_with("X="));
         assert_eq!(show.len(), 1);
+    }
+
+    #[test]
+    fn arr_api_keys_share_one_value_across_consumers() {
+        assert_eq!(api_key_family("SONARR_API_KEY").as_deref(), Some("SONARR_API_KEY"));
+        assert_eq!(api_key_family("UN_RADARR_0_API_KEY").as_deref(), Some("RADARR_API_KEY"));
+        assert_eq!(api_key_family("LIDARR_API_KEY").as_deref(), Some("LIDARR_API_KEY"));
+        assert_eq!(api_key_family("ADMIN_TOKEN"), None);
+        assert_eq!(api_key_family("SOME_OTHER_API_KEY"), None, "two-word apps are not a family");
+
+        let mut show = Vec::new();
+        let mut minted = BTreeMap::new();
+        let stack = generate_content("arr", &["SONARR_API_KEY".into(), "RADARR_API_KEY".into()], &mut show, &mut minted).unwrap();
+        let unpackerr = generate_content("unpackerr", &["UN_SONARR_0_API_KEY".into(), "UN_RADARR_0_API_KEY".into()], &mut show, &mut minted).unwrap();
+        let decluttarr = generate_content("decluttarr", &["SONARR_API_KEY".into()], &mut show, &mut minted).unwrap();
+        let sonarr = stack.lines().find(|l| l.starts_with("SONARR_API_KEY=")).unwrap().trim_start_matches("SONARR_API_KEY=").to_string();
+        assert!(unpackerr.contains(&format!("UN_SONARR_0_API_KEY={sonarr}")), "unpackerr must carry the stack's key");
+        assert!(decluttarr.contains(&format!("SONARR_API_KEY={sonarr}")));
+        assert_eq!(show.len(), 2, "each family is shown once, not once per consumer");
     }
 
     #[test]
@@ -345,6 +394,7 @@ mod tests {
             "vaultwarden",
             &["ADMIN_TOKEN (argon2 hash)".into(), "SMTP_* (optional)".into()],
             &mut show,
+            &mut BTreeMap::new(),
         )
         .unwrap();
         assert!(c.starts_with("ADMIN_TOKEN='$argon2id$"), "got: {c}");

@@ -33,6 +33,11 @@ in
     extraOptions = [ "--network=${arrNet}" ];
   };
 
+  systemd.services.arr-api-seed-lidarr = import ../lib/arr-api-seed.nix { inherit lib pkgs; } {
+    app = "lidarr"; var = "LIDARR_API_KEY"; dir = "/var/lib/lidarr";
+    owner = s.owner; group = s.group; envFile = s.apiKeyEnvFile;
+  };
+
   systemd.services.docker-lidarr = {
     after = [ "docker-network-arr.service" ];
     requires = [ "docker-network-arr.service" ];

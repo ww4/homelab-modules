@@ -154,6 +154,19 @@
           root; root:0400 is fine.
         '';
       };
+      apiKeyEnvFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "/run/secrets/arr-api-keys";
+        description = ''
+          Env file with SONARR_API_KEY / RADARR_API_KEY / PROWLARR_API_KEY
+          (and LIDARR_API_KEY if lidarr is imported). When set, each app is
+          seeded with its key before first start, so the keys are values the
+          configuration owns rather than something copied out of a UI, and
+          recyclarr renders its secrets from the same file. Read as root;
+          root:0400 is fine. null = each *arr mints its own key on first run.
+        '';
+      };
       keepersMovies = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;

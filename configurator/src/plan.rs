@@ -77,6 +77,9 @@ impl<'a> Plan<'a> {
         let mut secret_plans = Vec::new();
         let mut phase2 = Vec::new();
         let mut secret_options = BTreeSet::new();
+        // Values minted once per run and reused wherever the same key family
+        // appears (the *arr API keys — see secrets::api_key_family).
+        let mut minted = BTreeMap::new();
         for m in &modules {
             let meta = schema.module(m).expect("closed over known modules");
             for s in &meta.secrets {
@@ -93,7 +96,7 @@ impl<'a> Plan<'a> {
                     continue;
                 }
                 secret_options.insert(s.option.clone());
-                match secrets::plan_secret(m, s, &values, schema, supplied) {
+                match secrets::plan_secret(m, s, &values, schema, supplied, &mut minted) {
                     Ok(p) => {
                         if p.source == Source::FirstBoot {
                             phase2.push(format!(
