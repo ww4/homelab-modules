@@ -94,6 +94,14 @@ in
     vhosts = [ ];
     secrets = [ ];
   };
+  snapraid = {
+    description = "SnapRAID parity for a MergerFS pool's member disks: nightly sync, weekly partial scrub; any one member recoverable per parity disk.";
+    enable = "homelab.snapraid.enable";
+    options = [ "homelab.snapraid" "homelab.pools" ];
+    requires = [ "mergerfs-pools" ];
+    vhosts = [ ];
+    secrets = [ ];
+  };
   pool-autoremount = {
     description = "Self-healing remount for pool members that drop off the bus; detects zombie mounts with real I/O.";
     enable = "import";

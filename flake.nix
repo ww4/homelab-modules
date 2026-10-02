@@ -39,6 +39,7 @@
       authelia = ./modules/services/authelia.nix;
       monitoring = ./modules/services/monitoring;
       pool-autoremount = ./modules/services/pool-autoremount.nix;
+      snapraid = ./modules/services/snapraid.nix;
       drive-temps = ./modules/services/drive-temps.nix;
       deploy-drift-watch = ./modules/services/deploy-drift-watch;
       mirror-drift-watch = ./modules/services/mirror-drift-watch;

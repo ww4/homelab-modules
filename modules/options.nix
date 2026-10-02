@@ -432,6 +432,77 @@
       };
     };
 
+    # ── snapraid (parity for a pool) ─────────────────────────────────────────
+    snapraid = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Parity-protect a MergerFS pool's member disks with SnapRAID. Off by
+          default on purpose: the first sync is a manual, hours-long step
+          after the parity disk is mounted (see the module header).
+        '';
+      };
+      pool = lib.mkOption {
+        type = lib.types.str;
+        example = "media";
+        description = "Name of the homelab.pools entry whose memberDir + members are the data disks.";
+      };
+      parityFiles = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "/mnt/parity1/snapraid.parity" ];
+        description = ''
+          One parity file per parity disk, each on a disk that is NOT a pool
+          member and at least as large as the largest member. One file =
+          any one member recoverable; two = any two.
+        '';
+      };
+      contentDir = lib.mkOption {
+        type = lib.types.str;
+        default = "/var/lib/snapraid";
+        description = "Persistent local directory for a copy of the content (database) file; every data disk also carries one.";
+      };
+      exclude = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ "*.unrecoverable" "/tmp/" "lost+found/" ".pool-member" ];
+        description = "Patterns SnapRAID skips (the pool-member sentinel the auto-remounter writes is here by default).";
+      };
+      extraExclude = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "/downloads/incomplete/" ];
+        description = "Site-specific patterns appended to `exclude` — transient download scratch, caches.";
+      };
+      sync.interval = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 04:00:00";
+        description = "OnCalendar for `snapraid sync` (a no-op when nothing changed; keep it clear of mirror jobs).";
+      };
+      scrub = {
+        interval = lib.mkOption {
+          type = lib.types.str;
+          default = "Mon *-*-* 05:00:00";
+          description = "OnCalendar for `snapraid scrub`.";
+        };
+        plan = lib.mkOption {
+          type = lib.types.ints.between 0 100;
+          default = 12;
+          description = "Percent of the array verified per scrub run.";
+        };
+        olderThan = lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = 10;
+          description = "Skip blocks scrubbed within this many days.";
+        };
+      };
+      touchBeforeSync = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Run `snapraid touch` first so files with zero sub-second timestamps get unique ones (SnapRAID's own recommendation).";
+      };
+    };
+
     # ── backup (restic) ───────────────────────────────────────────────────────
     backup = {
       paths = lib.mkOption {
