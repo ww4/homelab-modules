@@ -17,6 +17,7 @@ nix run 'git+https://git.rosemaryacres.com/ww4/homelab-modules.git?dir=configura
 | `schema [--modules a,b]` | the question set: every module, the `homelab.*` options it reads (type, default, required?), the secrets it needs and whether each is *generate*, *supply* or *first-boot* |
 | `generate --out DIR [--answers FILE] [--add m,…] [--remove m,…] [--set OPT=JSON] [--secret OPT=@file …]` | write the flake, mint keys and secrets, then evaluate the result; on a directory that already holds `answers.json`, reconfigure it (see below) |
 | `validate DIR [--build]` | evaluate (or build) a generated flake's toplevel |
+| `tui [--profile FILE] [--answers FILE] [--out DIR]` | the interactive front end: five screens (host, modules, values, secrets, review) that write an answers file and hand off to `generate`; start from a canned profile with `--profile` |
 
 `--json` on any of them gives structured output. Exit codes: 0 ok, 2 answers
 rejected (every problem listed), 3 validation failed, 1 anything else.

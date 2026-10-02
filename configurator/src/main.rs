@@ -14,6 +14,7 @@ mod keys;
 mod plan;
 mod schema;
 mod secrets;
+mod tui;
 mod validate;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -49,6 +50,21 @@ enum Cmd {
     Generate(GenerateArgs),
     /// Evaluate (or build) a generated flake.
     Validate(ValidateArgs),
+    /// Interactive front end: fill in the answers in the terminal, then generate.
+    Tui(TuiArgs),
+}
+
+#[derive(Args)]
+struct TuiArgs {
+    /// Start from an answers file or a canned profile (configurator/profiles/*.json).
+    #[arg(long, value_name = "FILE")]
+    profile: Option<PathBuf>,
+    /// Where to write the answers (default ./answers.json).
+    #[arg(long, value_name = "FILE", default_value = "answers.json")]
+    answers: PathBuf,
+    /// Output directory for `generate` when you press g (default ./my-homelab).
+    #[arg(long, value_name = "DIR", default_value = "my-homelab")]
+    out: PathBuf,
 }
 
 #[derive(Args)]
@@ -263,6 +279,21 @@ fn run(cli: Cli) -> Result<i32> {
                 print!("{}", out.render_text());
             }
             Ok(if ok { 0 } else { 3 })
+        }
+        Cmd::Tui(a) => {
+            match tui::run(&schema, a.profile.as_deref(), &a.answers, &a.out)? {
+                None => Ok(0),
+                Some(argv) => {
+                    // Re-enter through the headless path: the TUI produces an
+                    // answers file and flags, exactly as a person would type them.
+                    let exe = std::env::current_exe()?;
+                    let mut cmd = std::process::Command::new(exe);
+                    if let Some(c) = &cli.catalog { cmd.arg("--catalog").arg(c); }
+                    if let Some(o) = &cli.options { cmd.arg("--options").arg(o); }
+                    let status = cmd.args(&argv).status().context("running generate")?;
+                    Ok(status.code().unwrap_or(1))
+                }
+            }
         }
         Cmd::Validate(a) => {
             let host = match a.host {
