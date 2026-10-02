@@ -186,8 +186,9 @@ pub fn write_all(plan: &Plan, answers: &Answers, out: &Path, reconfigure: bool) 
             "rebuild: nix build .#nixosConfigurations.{host}.config.system.build.toplevel, commit, then merge (or nixos-rebuild switch --flake .#{host} on the host)"
         ));
     } else {
+        next_steps.push("install, sitting at the machine on the live USB: sudo homelab-configure install <this directory>".to_string());
         next_steps.push(format!(
-            "install: nixos-anywhere --flake .#{host} --extra-files ./extra-files --generate-hardware-config nixos-generate-config ./hosts/{host}/hardware.nix root@<target>"
+            "install, from another machine over SSH: nixos-anywhere --flake .#{host} --extra-files ./extra-files --generate-hardware-config nixos-generate-config ./hosts/{host}/hardware.nix root@<target>"
         ));
     }
     if let Some(k) = &km.admin_key_file {
@@ -239,7 +240,7 @@ FIRST-LOGIN.md
 result
 ";
 
-fn mkpasswd(plain: &str) -> Result<String> {
+pub fn mkpasswd(plain: &str) -> Result<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
     let mut child = Command::new("mkpasswd")

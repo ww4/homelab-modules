@@ -346,7 +346,7 @@ fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
         Cmd::Install(a) => {
-            let r = install::run(&a.dir, a.host.as_deref(), a.yes, a.dry_run, &a.keep_at)?;
+            let r = install::run(&schema, &a.dir, a.host.as_deref(), a.yes, a.dry_run, &a.keep_at)?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&r)?);
             } else {

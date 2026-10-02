@@ -1,10 +1,16 @@
 //! `install` — the local path: you are sitting at the machine, booted from a
 //! live USB, and the generated flake is on it. nixos-anywhere is for
 //! installing *another* machine over SSH; this runs disko and nixos-install
-//! here, through disko's own `disko-install`, and then does the two things a
-//! live-USB install forgets: it writes this machine's hardware.nix first,
-//! and it carries the flake directory (admin key included) onto the new
-//! system, because the live USB's filesystem is RAM and is gone at reboot.
+//! here, and then does the two things a live-USB install forgets: it writes
+//! this machine's hardware.nix first, and it carries the flake directory
+//! (admin key included) onto the new system, because the live USB's
+//! filesystem is RAM and is gone at reboot.
+//!
+//! Format first, then install: `disko-install` builds the whole system into
+//! the live USB's store before it touches a disk, and that store is RAM — a
+//! 4 GB box ran out before partitioning (QEMU rehearsal, 2026-10-02). Running
+//! `disko` and then `nixos-install --root /mnt` makes nixos-install download
+//! straight into the target disk's store instead.
 //!
 //! Erases every disk the answers name. Refuses without `--yes` or a typed
 //! confirmation of the host name.
@@ -17,6 +23,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::answers::Answers;
+use crate::schema::Schema;
 
 #[derive(Serialize)]
 pub struct InstallReport {
@@ -25,6 +32,11 @@ pub struct InstallReport {
     pub hardware_config: String,
     pub flake_copied_to: String,
     pub dry_run: bool,
+    /// The addresses the chosen modules answer at, once DNS points there.
+    pub urls: Vec<String>,
+    pub admin_user: String,
+    /// What `dns` did after the install (None: no Cloudflare token on hand).
+    pub dns: Option<String>,
 }
 
 impl InstallReport {
@@ -43,11 +55,24 @@ impl InstallReport {
              — FIRST-LOGIN.md is in it too: read, store, delete\n",
             self.flake_copied_to
         ));
+        if !self.dry_run {
+            s.push_str(&format!(
+                "\nWhen it is back up (give it a few minutes the first time):\n  \
+                 log in at its screen as `{}` with the password you typed (or the one in FIRST-LOGIN.md)\n  \
+                 open, from any computer on your network: {}\n",
+                self.admin_user,
+                if self.urls.is_empty() { "—".to_string() } else { self.urls.join("  ") }
+            ));
+            match &self.dns {
+                Some(d) => s.push_str(&format!("  DNS: {d}")),
+                None => s.push_str("  DNS: those names need records → this machine's address; run `homelab-configure dns` on it with a Cloudflare token, or add them at your DNS provider\n"),
+            }
+        }
         s
     }
 }
 
-pub fn run(dir: &Path, host: Option<&str>, yes: bool, dry_run: bool, keep_at: &str) -> Result<InstallReport> {
+pub fn run(schema: &Schema, dir: &Path, host: Option<&str>, yes: bool, dry_run: bool, keep_at: &str) -> Result<InstallReport> {
     let dir = dir.canonicalize().with_context(|| format!("{} does not exist", dir.display()))?;
     let answers_path = dir.join("answers.json");
     let text = fs::read_to_string(&answers_path).with_context(|| format!("{} is not a generated flake (no answers.json)", dir.display()))?;
@@ -95,30 +120,50 @@ pub fn run(dir: &Path, host: Option<&str>, yes: bool, dry_run: bool, keep_at: &s
     }
 
     let flake_ref = format!("{}#{host}", dir.display());
-    let mut cmd = Command::new("disko-install");
-    cmd.arg("--flake")
-        .arg(&flake_ref)
-        .args(["--mode", "format", "--write-efi-boot-entries"]);
-    // disko-install maps every disko disk by name on the command line; the
-    // generated layout calls the system disk `main` and each data disk by its
-    // answers name.
-    cmd.args(["--disk", "main", &answers.host.disk]);
-    for d in &answers.host.data_disks {
-        cmd.args(["--disk", &d.name, &d.device]);
-    }
-    cmd.arg("--extra-files")
-        .arg(dir.join("extra-files/etc/ssh"))
-        .arg("/etc/ssh")
-        .arg("--extra-files")
-        .arg(&dir)
-        .arg(keep_at);
+    // 1. Partition, format and mount under /mnt. The generated disko.nix
+    //    already names the devices the answers chose, so nothing is mapped
+    //    on the command line.
+    let mut disko = Command::new("disko");
+    disko.args(["--mode", "destroy,format,mount", "--yes-wipe-all-disks", "--flake", &flake_ref]);
+    // 2. Install into /mnt: nixos-install builds against the target store, so
+    //    the closure is downloaded onto the new disk, not into live-USB RAM.
+    //    The bootloader (systemd-boot, EFI variables) is written by it too.
+    let mut install = Command::new("nixos-install");
+    install.args(["--flake", &flake_ref, "--root", "/mnt", "--no-root-passwd", "--no-channel-copy"]);
     if dry_run {
-        cmd.arg("--dry-run");
+        eprintln!("would run: {disko:?}");
+        eprintln!("would run: {install:?}");
+        eprintln!("would copy: {}/extra-files/etc/ssh → /mnt/etc/ssh, {} → /mnt{keep_at}", dir.display(), dir.display());
+    } else {
+        let status = disko.status().context("running disko (is disko on PATH?)")?;
+        if !status.success() {
+            bail!("disko failed (exit {})", status.code().unwrap_or(1));
+        }
+        let status = install.status().context("running nixos-install (is it on PATH?)")?;
+        if !status.success() {
+            bail!("nixos-install failed (exit {})", status.code().unwrap_or(1));
+        }
+        // 3. What the live USB would otherwise lose: the pre-generated host
+        //    key (the secrets are encrypted to it) and the flake itself.
+        copy_tree(&dir.join("extra-files/etc/ssh"), Path::new("/mnt/etc/ssh"))?;
+        copy_tree(&dir, &Path::new("/mnt").join(keep_at.trim_start_matches('/')))?;
     }
-    let status = cmd.status().context("running disko-install (is disko on PATH?)")?;
-    if !status.success() {
-        bail!("disko-install failed (exit {})", status.code().unwrap_or(1));
-    }
+
+    let (_, names) = crate::dns::names(schema, &answers).unwrap_or_default();
+    let urls: Vec<String> = names.iter().map(|n| format!("https://{n}")).collect();
+    let admin_user = answers.values.get("homelab.adminUser").and_then(|v| v.as_str()).unwrap_or("admin").to_string();
+    // 4. DNS, when the TUI was given a Cloudflare token: the records point at
+    //    the address this machine has now, which is the one it boots with on
+    //    a home network. Not fatal — the install is done either way.
+    let token = dir.join(".secrets").join(crate::secrets::secret_name("homelab.acme.credentialsFile"));
+    let dns = if !dry_run && token.exists() {
+        Some(match crate::dns::run(schema, &dir, None, Some(&token), false) {
+            Ok(r) => r.render_text(),
+            Err(e) => format!("not done ({e}); run `homelab-configure dns {keep_at}` on the new system\n"),
+        })
+    } else {
+        None
+    };
 
     Ok(InstallReport {
         host,
@@ -126,7 +171,25 @@ pub fn run(dir: &Path, host: Option<&str>, yes: bool, dry_run: bool, keep_at: &s
         hardware_config: hw.display().to_string(),
         flake_copied_to: keep_at.to_string(),
         dry_run,
+        urls,
+        admin_user,
+        dns,
     })
+}
+
+/// `cp -a src/. dst/` — modes (the 0600 host key) and ownership kept.
+fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst).with_context(|| format!("creating {}", dst.display()))?;
+    let status = Command::new("cp")
+        .arg("-a")
+        .arg(format!("{}/.", src.display()))
+        .arg(dst)
+        .status()
+        .with_context(|| format!("copying {} to {}", src.display(), dst.display()))?;
+    if !status.success() {
+        bail!("copying {} to {} failed", src.display(), dst.display());
+    }
+    Ok(())
 }
 
 fn confirm(host: &str, erased: &[String]) -> Result<()> {

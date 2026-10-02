@@ -8,7 +8,8 @@
 # sops-materialised copy) carrying DO_SPACES_KEY_ID, DO_SPACES_SECRET and
 # DO_SPACES_ENDPOINT (https://<region>.digitaloceanspaces.com). Nothing is
 # printed from it. The Space named by --bucket is created if missing. Uploads go through rclone with the S3 backend;
-# objects: iso/homelab-installer-<date>-<rev>.iso, .sha256, and iso/latest.txt
+# objects: iso/homelab-installer-<date>-<rev>.iso, .sha256, iso/latest.txt, and the
+# stable iso/homelab-installer-latest.iso (+ .sha256) the Quick start links
 # naming the newest file.
 set -euo pipefail
 env_file=/run/secrets/digitalocean-iso; bucket=homelab-installer; build=1
@@ -53,8 +54,12 @@ RCLONE="rclone --config $conf --s3-no-check-bucket"
 $RCLONE copy --progress "$work/$name" "spaces:${bucket}/iso/"
 $RCLONE copy "$work/$name.sha256" "spaces:${bucket}/iso/"
 $RCLONE copyto "$work/latest.txt" "spaces:${bucket}/iso/latest.txt"
+# A stable name for a person following the guide (server-side copies, no re-upload).
+$RCLONE copyto "spaces:${bucket}/iso/$name" "spaces:${bucket}/iso/homelab-installer-latest.iso"
+$RCLONE copyto "spaces:${bucket}/iso/$name.sha256" "spaces:${bucket}/iso/homelab-installer-latest.iso.sha256"
 base="https://${bucket}.${region}.cdn.digitaloceanspaces.com/iso"
 echo "published:"
 echo "  $base/$name"
 echo "  $base/$name.sha256"
 echo "  $base/latest.txt"
+echo "  $base/homelab-installer-latest.iso  (stable name, same bytes)"
