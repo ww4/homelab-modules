@@ -39,6 +39,11 @@ let cfg = config.homelab.metube; in
   };
 
   config = {
+    # The library names its container units docker-*; a consumer flake does not
+    # know to enable the daemon or pick the backend (the rehearsal install had
+    # podman-* units nothing waited for, and no docker.service).
+    virtualisation.docker.enable = lib.mkDefault true;
+    virtualisation.oci-containers.backend = lib.mkDefault "docker";
     # Dedicated user; primary group `media` so output is readable by the
     # media server.
     users.groups.media = { };   # shared media group; see jellyfin.nix

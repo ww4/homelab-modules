@@ -119,6 +119,8 @@ struct App<'a> {
     /// The admin password hash carried over from an earlier run (load());
     /// kept unless a new password is typed.
     admin_hash: Option<String>,
+    /// MemTotal of the machine the TUI runs on, MiB (0 = unknown).
+    ram_mib: u64,
     host: Vec<Field>,
     host_cursor: usize,
     disks: Vec<Disk>,
@@ -229,6 +231,7 @@ impl<'a> App<'a> {
             kit_cursor: 0,
             kit: None,
             admin_hash: None,
+            ram_mib: crate::plan::machine_ram_mib(),
             host,
             host_cursor: 0,
             disks,
@@ -282,6 +285,13 @@ impl<'a> App<'a> {
         }
         self.kit = Some(self.kit_cursor);
         self.status = format!("{}: {} module(s) chosen · Tab → the machine", k.name, self.chosen().len());
+    }
+
+    /// Rough resident memory of the closed module set plus the base system,
+    /// and the verdict against this machine's RAM.
+    fn memory_line(&self, modules: &[String]) -> (u64, String) {
+        let need = crate::plan::memory_need(self.schema, modules);
+        (need, crate::plan::memory_verdict(need, self.ram_mib))
     }
 
     fn chosen(&self) -> Vec<String> {
@@ -638,7 +648,11 @@ impl<'a> App<'a> {
             .enumerate()
             .map(|(i, k)| {
                 let mark = if self.kit == Some(i) { "●" } else { "○" };
-                ListItem::new(Line::from(vec![Span::raw(format!("{mark} ")), Span::styled(format!("{:<16}", k.name), Style::default().add_modifier(Modifier::BOLD)), Span::raw(k.blurb)]))
+                let closed = self.schema.close_over_requires(&k.modules).map(|(m, _)| m).unwrap_or_else(|_| k.modules.clone());
+                let (need, _) = self.memory_line(&closed);
+                let fits = self.ram_mib == 0 || need <= self.ram_mib;
+                let mem = Span::styled(format!("~{} GB RAM  ", (need + 511) / 1024), Style::default().fg(if fits { Color::Green } else { Color::Red }));
+                ListItem::new(Line::from(vec![Span::raw(format!("{mark} ")), Span::styled(format!("{:<16}", k.name), Style::default().add_modifier(Modifier::BOLD)), mem, Span::raw(k.blurb)]))
             })
             .collect();
         let mut st = ListState::default();
@@ -649,7 +663,9 @@ impl<'a> App<'a> {
             &mut st,
         );
         let k = &self.kits[self.kit_cursor];
-        let help = if k.modules.is_empty() { "No modules until you pick them on the Modules screen.".to_string() } else { format!("modules: {}", k.modules.join(" ")) };
+        let closed = self.schema.close_over_requires(&k.modules).map(|(m, _)| m).unwrap_or_else(|_| k.modules.clone());
+        let (_, verdict) = self.memory_line(&closed);
+        let help = if k.modules.is_empty() { format!("No modules until you pick them on the Modules screen. {verdict}") } else { format!("{verdict}\nmodules: {}", k.modules.join(" ")) };
         f.render_widget(Paragraph::new(help).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::ALL).title(" what it turns on ")), help_area);
     }
 
@@ -700,7 +716,7 @@ impl<'a> App<'a> {
         st.select(Some(self.module_cursor));
         let chosen = self.chosen().len();
         f.render_stateful_widget(
-            List::new(items).block(Block::default().borders(Borders::ALL).title(format!(" Modules — {chosen} chosen; ■ = foundation, always on "))).highlight_style(Style::default().bg(Color::DarkGray)),
+            List::new(items).block(Block::default().borders(Borders::ALL).title(format!(" Modules — {chosen} chosen; ■ = foundation, always on · {} ", self.memory_line(&self.closed()).1))).highlight_style(Style::default().bg(Color::DarkGray)),
             list_area,
             &mut st,
         );
@@ -774,9 +790,11 @@ impl<'a> App<'a> {
         let closed = self.closed();
         let missing: Vec<String> = self.value_rows().into_iter().filter(|r| r.2).map(|r| r.0).collect();
         let unsupplied: Vec<String> = self.secret_metas().into_iter().filter(|(o, _)| self.secrets.get(o).map(|p| p.trim().is_empty()).unwrap_or(true)).map(|(o, _)| o).collect();
+        let (need, verdict) = self.memory_line(&closed);
         let mut lines = vec![
             Line::from(format!("host {} · {} · system disk {} · {} data disk(s)", a.host.name, a.host.time_zone, if a.host.disk.is_empty() { "—" } else { &a.host.disk }, a.host.data_disks.len())),
             Line::from(format!("modules ({}): {}", closed.len(), closed.join(" "))),
+            Line::styled(format!("memory: {verdict}"), Style::default().fg(if self.ram_mib != 0 && need > self.ram_mib { Color::Red } else { Color::Green })),
             Line::from(""),
         ];
         if missing.is_empty() && unsupplied.is_empty() {
