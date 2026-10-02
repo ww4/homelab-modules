@@ -14,6 +14,8 @@ mod keys;
 mod plan;
 mod schema;
 mod disks;
+mod dns;
+mod guides;
 mod install;
 mod secrets;
 mod tui;
@@ -54,8 +56,25 @@ enum Cmd {
     Validate(ValidateArgs),
     /// Interactive front end: fill in the answers in the terminal, then generate.
     Tui(TuiArgs),
+    /// Create the A records the chosen modules need at Cloudflare (run on the installed box, or pass --ip).
+    Dns(DnsArgs),
     /// Install a generated flake onto THIS machine (from a live USB): disko, nixos-install, host key, and the flake carried onto the new system.
     Install(InstallArgs),
+}
+
+#[derive(Args)]
+struct DnsArgs {
+    /// The generated flake directory (answers.json).
+    dir: PathBuf,
+    /// Address to point the names at; default: the tailnet address, else the default route's.
+    #[arg(long, value_name = "ADDR")]
+    ip: Option<String>,
+    /// File carrying CLOUDFLARE_DNS_API_TOKEN=…; default /run/secrets/acme-credentials or .secrets/acme-credentials.
+    #[arg(long, value_name = "FILE")]
+    token_file: Option<PathBuf>,
+    /// Show what would change; write nothing.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Args)]
@@ -316,6 +335,15 @@ fn run(cli: Cli) -> Result<i32> {
                     Ok(status.code().unwrap_or(1))
                 }
             }
+        }
+        Cmd::Dns(a) => {
+            let r = dns::run(&schema, &a.dir, a.ip.as_deref(), a.token_file.as_deref(), a.dry_run)?;
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&r)?);
+            } else {
+                print!("{}", r.render_text());
+            }
+            Ok(0)
         }
         Cmd::Install(a) => {
             let r = install::run(&a.dir, a.host.as_deref(), a.yes, a.dry_run, &a.keep_at)?;

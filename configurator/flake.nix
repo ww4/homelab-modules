@@ -65,6 +65,8 @@
       packages = forAll (system: pkgs: rec {
         homelab-configure = package system pkgs;
         default = homelab-configure;
+        # The live USB with the configurator on it: `nix build .#iso`.
+        iso = import ./iso.nix { inherit nixpkgs system; inherit homelab-configure; };
       });
 
       apps = forAll (system: pkgs: rec {

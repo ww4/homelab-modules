@@ -19,6 +19,7 @@ nix run 'git+https://git.rosemaryacres.com/ww4/homelab-modules.git?dir=configura
 | `validate DIR [--build]` | evaluate (or build) a generated flake's toplevel |
 | `tui [--profile FILE] [--answers FILE] [--out DIR]` | the interactive front end: five screens (host, modules, values, secrets, review) that write an answers file and hand off to `generate`; start from a canned profile with `--profile` |
 | `install DIR [--yes] [--dry-run] [--keep-at PATH]` | the local install, from a live USB on the machine itself: writes this machine's `hardware.nix`, then `disko-install` (partition, `nixos-install`, EFI entries), the pre-generated host key into `/etc/ssh`, and the whole flake directory onto the new system at `--keep-at` (default `/root/homelab`) — because the live USB is RAM |
+| `dns DIR [--ip ADDR] [--token-file FILE] [--dry-run]` | create the A records the chosen modules claim at Cloudflare, with the ACME token: run it on the installed box once Tailscale is up (it points the names at the tailnet address, proxied off), or pass `--ip`; idempotent |
 
 `--json` on any of them gives structured output. Exit codes: 0 ok, 2 answers
 rejected (every problem listed), 3 validation failed, 1 anything else.
@@ -109,6 +110,20 @@ you chose, installs, and carries the flake directory (your values, the
 encrypted secrets, `keys/`, `FIRST-LOGIN.md`) to `/root/homelab` on the new
 system — the live USB's filesystem is RAM and is gone at reboot. Move the
 admin age key off the machine afterwards; read and delete `FIRST-LOGIN.md`.
+
+## Guided secrets
+
+The Secrets screen explains each supply-class secret where it is needed:
+for the Cloudflare DNS token, the exact clicks to create one with the
+"Edit zone DNS" template, and `v` takes the bare token, writes it as
+`CLOUDFLARE_DNS_API_TOKEN=…` and checks it against your zone before you move
+on; for the download stack's VPN, the steps for the provider you named in
+`homelab.arrStack.vpnProvider` (which `.conf` fields map to which gluetun
+variables, and what port forwarding changes); for the offsite backup, the
+Backblaze key shape. A GitHub username on the Host screen pulls your public
+keys in. After the install, `homelab-configure dns` turns the token into the
+A records, so the whole TLS path — token, certificates, names — needs no
+hand-edited DNS.
 
 ## Reconfiguring an existing install
 

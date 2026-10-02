@@ -476,16 +476,23 @@ impl<'a> App<'a> {
                         self.editing_value = false;
                         let dir = self.out_answers.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".")).join(".secrets");
                         let file = dir.join(crate::secrets::secret_name(&opt));
+                        // The guide knows the file's shape (a bare Cloudflare token
+                        // becomes its env line) and, where an API allows, checks it.
+                        let content = crate::guides::shape(&opt, &text);
                         let written = std::fs::create_dir_all(&dir)
                             .map_err(|e| e.to_string())
                             .and_then(|_| {
                                 let _ = std::fs::remove_file(&file);
-                                crate::secrets::write_private(&file, &(text.trim_end().to_string() + "\n")).map_err(|e| e.to_string())
+                                crate::secrets::write_private(&file, &content).map_err(|e| e.to_string())
                             });
                         match written {
                             Ok(()) => {
-                                self.secrets.insert(opt, file.display().to_string());
-                                self.status = format!("wrote {} (mode 600)", file.display());
+                                self.secrets.insert(opt.clone(), file.display().to_string());
+                                self.status = match crate::guides::verify(&opt, &content, &self.values) {
+                                    Some(Ok(m)) => format!("{m} · wrote {}", file.display()),
+                                    Some(Err(m)) => format!("NOT verified: {m} · wrote {}", file.display()),
+                                    None => format!("wrote {} (mode 600)", file.display()),
+                                };
                             }
                             Err(e) => self.status = format!("could not write the secret file: {e}"),
                         }
@@ -634,7 +641,12 @@ impl<'a> App<'a> {
     }
 
     fn draw_secrets(&self, f: &mut Frame, area: Rect) {
-        let (list_area, help_area) = Self::split_list(area);
+        // The guide needs room: a short list, a tall help pane.
+        let v = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3 + self.secret_metas().len().max(1) as u16), Constraint::Min(8)])
+            .split(area);
+        let (list_area, help_area) = (v[0], v[1]);
         let metas = self.secret_metas();
         let items: Vec<ListItem> = metas
             .iter()
@@ -650,8 +662,14 @@ impl<'a> App<'a> {
             list_area,
             &mut st,
         );
-        let help = metas.get(self.secret_cursor).map(|(_, keys)| format!("the file must carry: {keys}")).unwrap_or_else(|| "the chosen modules need nothing supplied; everything else is minted".into());
-        f.render_widget(Paragraph::new(help).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::ALL).title(" what the file holds ")), help_area);
+        let (title, help) = match metas.get(self.secret_cursor) {
+            Some((opt, keys)) => match crate::guides::for_option(opt, &self.values) {
+                Some(g) => (format!(" {} ", g.title), format!("{}\n\nthe file must carry: {keys}", g.steps)),
+                None => (" what the file holds ".to_string(), format!("the file must carry: {keys}")),
+            },
+            None => (" what the file holds ".to_string(), "the chosen modules need nothing supplied; everything else is minted".to_string()),
+        };
+        f.render_widget(Paragraph::new(help).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::ALL).title(title)), help_area);
     }
 
     fn draw_review(&self, f: &mut Frame, area: Rect) {
