@@ -1,0 +1,89 @@
+{
+  "host": {
+    "name": "box",
+    "timeZone": "America/New_York",
+    "disk": "/dev/disk/by-id/REPLACE-system-disk",
+    "dataDisks": [
+      {
+        "name": "d1",
+        "device": "/dev/disk/by-id/REPLACE-data-disk-1"
+      }
+    ],
+    "sshAuthorizedKeys": [
+      "ssh-ed25519 REPLACE-with-your-public-key you@laptop"
+    ]
+  },
+  "modules": [
+    "acme",
+    "alertmanager-ntfy",
+    "arr",
+    "arr-missing-sweep",
+    "audiobookshelf",
+    "aurral",
+    "authelia",
+    "backup",
+    "boot",
+    "decluttarr",
+    "deploy-drift-watch",
+    "disk-io-watch",
+    "drive-temps",
+    "forgejo",
+    "glances",
+    "immich",
+    "jellyfin",
+    "lazylibrarian",
+    "lidarr",
+    "mergerfs-pools",
+    "metube",
+    "mirror-drift-watch",
+    "monitoring",
+    "nextcloud",
+    "nginx-access",
+    "nginx-log-paths-check",
+    "ntfy",
+    "paperless",
+    "pinchflat",
+    "pool-autoremount",
+    "qbit-vpn-watchdog",
+    "remote-desktop",
+    "silverbullet",
+    "smart-dump",
+    "snapraid",
+    "system",
+    "tandoor",
+    "unpackerr",
+    "uptime-kuma",
+    "vaultwarden"
+  ],
+  "values": {
+    "homelab.domain": "example.test",
+    "homelab.adminUser": "alice",
+    "homelab.acme.email": "alice@example.test",
+    "homelab.ntfy.baseUrl": "http://box.example.test:8090",
+    "homelab.pools": {
+      "media": {
+        "mountpoint": "/mnt/media",
+        "branches": "/mnt/disks/*",
+        "memberDir": "/mnt/disks",
+        "members": [
+          "d1"
+        ]
+      }
+    },
+    "homelab.backup.paths": [
+      "/var/lib"
+    ],
+    "homelab.backup.local.repository": "/mnt/media/restic",
+    "homelab.backup.local.requiresMountsFor": [
+      "/mnt/media"
+    ],
+    "homelab.arrStack.root": "/mnt/media/arr",
+    "homelab.arrStack.owner": "alice",
+    "homelab.arrStack.vpnProvider": "mullvad",
+    "homelab.metube.downloadDir": "/mnt/media/metube",
+    "homelab.pinchflat.mediaDir": "/mnt/media/pinchflat",
+    "homelab.snapraid.pool": "media",
+    "homelab.immich.mediaLocation": "/mnt/media/immich",
+    "homelab.deployDriftWatch.repoUrl": "https://git.example.test/alice/homelab.git"
+  }
+}

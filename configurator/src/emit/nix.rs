@@ -84,7 +84,9 @@ pub fn flake_nix(plan: &Plan) -> String {
         "{{\n  \
            description = \"{host} — homelab built from homelab-modules\";\n\n  \
            inputs = {{\n    \
-             nixpkgs.url = \"github:nixos/nixpkgs/nixos-26.05\";\n    \
+             # Pinned to the nixpkgs rev the library was validated against (the\n    \
+             # configurator's own lock). `nix flake update nixpkgs` moves it on purpose.\n    \
+             nixpkgs.url = \"github:nixos/nixpkgs/{nixpkgs}\";\n    \
              homelab-modules.url = {lib};\n    \
              sops-nix = {{\n      \
                url = \"github:Mic92/sops-nix\";\n      \
@@ -113,6 +115,7 @@ pub fn flake_nix(plan: &Plan) -> String {
         system = plan.host.system,
         lib = quote(&plan.library_url),
         imports = imports,
+        nixpkgs = crate::schema::EMBEDDED_NIXPKGS_REV.trim(),
     )
 }
 
@@ -216,7 +219,8 @@ pub fn disko_nix(plan: &Plan) -> String {
     let h = plan.host;
     let mut s = format!(
         "# Disk layout for disko — applied by nixos-anywhere at install. EVERYTHING on\n\
-         # these devices is erased. GPT, a 512M ESP, ext4 root; each data disk is one\n\
+         # these devices is erased. GPT, a 512M ESP at /boot/efi (where the library's boot\n\
+         # module expects it), ext4 root; each data disk is one\n\
          # ext4 filesystem at /mnt/disks/<name> (pool them with mergerfs-pools if you\n\
          # imported it: homelab.pools.<pool>.branches = \"/mnt/disks/*\").\n\
          {{ ... }}:\n\n\
@@ -234,7 +238,7 @@ pub fn disko_nix(plan: &Plan) -> String {
                      content = {{\n              \
                        type = \"filesystem\";\n              \
                        format = \"vfat\";\n              \
-                       mountpoint = \"/boot\";\n              \
+                       mountpoint = \"/boot/efi\";   # the library's boot module: efiSysMountPoint = /boot/efi\n              \
                        mountOptions = [ \"umask=0077\" ];\n            \
                      }};\n          \
                    }};\n          \

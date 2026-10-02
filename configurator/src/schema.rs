@@ -9,6 +9,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub const EMBEDDED_CATALOG: &str = include_str!(concat!(env!("OUT_DIR"), "/catalog.json"));
 pub const EMBEDDED_OPTIONS: &str = include_str!(concat!(env!("OUT_DIR"), "/options.json"));
+/// The nixpkgs rev the generated flake pins (from this configurator's own
+/// flake.lock at build time — the rev the library was validated against).
+pub const EMBEDDED_NIXPKGS_REV: &str = include_str!(concat!(env!("OUT_DIR"), "/nixpkgs-rev.txt"));
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ModuleMeta {

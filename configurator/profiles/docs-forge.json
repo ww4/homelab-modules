@@ -1,0 +1,59 @@
+{
+  "host": {
+    "name": "box",
+    "timeZone": "America/New_York",
+    "disk": "/dev/disk/by-id/REPLACE-system-disk",
+    "dataDisks": [
+      {
+        "name": "d1",
+        "device": "/dev/disk/by-id/REPLACE-data-disk-1"
+      }
+    ],
+    "sshAuthorizedKeys": [
+      "ssh-ed25519 REPLACE-with-your-public-key you@laptop"
+    ]
+  },
+  "modules": [
+    "acme",
+    "nginx-access",
+    "monitoring",
+    "ntfy",
+    "alertmanager-ntfy",
+    "backup",
+    "mergerfs-pools",
+    "authelia",
+    "forgejo",
+    "nextcloud",
+    "paperless",
+    "vaultwarden",
+    "silverbullet",
+    "uptime-kuma",
+    "immich",
+    "tandoor",
+    "glances"
+  ],
+  "values": {
+    "homelab.domain": "example.test",
+    "homelab.adminUser": "alice",
+    "homelab.acme.email": "alice@example.test",
+    "homelab.ntfy.baseUrl": "http://box.example.test:8090",
+    "homelab.pools": {
+      "media": {
+        "mountpoint": "/mnt/media",
+        "branches": "/mnt/disks/*",
+        "memberDir": "/mnt/disks",
+        "members": [
+          "d1"
+        ]
+      }
+    },
+    "homelab.backup.paths": [
+      "/var/lib"
+    ],
+    "homelab.backup.local.repository": "/mnt/media/restic",
+    "homelab.backup.local.requiresMountsFor": [
+      "/mnt/media"
+    ],
+    "homelab.immich.mediaLocation": "/mnt/media/immich"
+  }
+}

@@ -21,12 +21,26 @@
 #                        silently COPIES instead of linking (an incremental
 #                        backup quietly becomes a full one and fills the pool)
 #   minfreespace         headroom so a create never hits ENOSPC mid-write
-{ config, lib, ... }:
+{ config, lib, pkgs, utils, ... }:
 
+let
+  # Order a pool after its member mounts (when the pool declares them), so the
+  # branch glob is expanded against mounted disks and not against the empty
+  # mountpoint directories — which mergerfs would happily pool, putting the
+  # first writes on the root filesystem.
+  afterMembers = pool:
+    lib.optionals (pool.memberDir != null)
+      (map (m: "x-systemd.after=${utils.escapeSystemdPath "${pool.memberDir}/${m}"}.mount") pool.members);
+in
 {
   imports = [ ../options.nix ];
 
   config = {
+    # The mount helper must find `mergerfs` on its PATH (fsPackages), and the
+    # admin wants the CLI (ctrl files, `mergerfs.ctl`) on theirs.
+    system.fsPackages = [ pkgs.mergerfs ];
+    environment.systemPackages = [ pkgs.mergerfs ];
+
     fileSystems = lib.mapAttrs' (name: pool:
       lib.nameValuePair pool.mountpoint {
         device = pool.branches;
@@ -42,7 +56,8 @@
         ]
         ++ lib.optional (pool.minFreeSpace != null) "minfreespace=${pool.minFreeSpace}"
         ++ [ "func.getattr=newest" ]
-        ++ lib.optional (pool.fsname != null) "fsname=${pool.fsname}";
+        ++ lib.optional (pool.fsname != null) "fsname=${pool.fsname}"
+        ++ afterMembers pool;
       }) config.homelab.pools;
 
     # Needed for MergerFS (allow_other).
