@@ -13,6 +13,8 @@ mod emit;
 mod keys;
 mod plan;
 mod schema;
+mod disks;
+mod install;
 mod secrets;
 mod tui;
 mod validate;
@@ -52,6 +54,26 @@ enum Cmd {
     Validate(ValidateArgs),
     /// Interactive front end: fill in the answers in the terminal, then generate.
     Tui(TuiArgs),
+    /// Install a generated flake onto THIS machine (from a live USB): disko, nixos-install, host key, and the flake carried onto the new system.
+    Install(InstallArgs),
+}
+
+#[derive(Args)]
+struct InstallArgs {
+    /// The generated flake directory (holds answers.json and extra-files/).
+    dir: PathBuf,
+    /// Host name (nixosConfigurations.<host>); defaults to the one in answers.json.
+    #[arg(long)]
+    host: Option<String>,
+    /// Skip the typed confirmation. The named disks are erased.
+    #[arg(long)]
+    yes: bool,
+    /// Print what would run; touch nothing.
+    #[arg(long)]
+    dry_run: bool,
+    /// Where on the new system the flake directory is copied (it is in RAM on a live USB).
+    #[arg(long, value_name = "PATH", default_value = "/root/homelab")]
+    keep_at: String,
 }
 
 #[derive(Args)]
@@ -294,6 +316,15 @@ fn run(cli: Cli) -> Result<i32> {
                     Ok(status.code().unwrap_or(1))
                 }
             }
+        }
+        Cmd::Install(a) => {
+            let r = install::run(&a.dir, a.host.as_deref(), a.yes, a.dry_run, &a.keep_at)?;
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&r)?);
+            } else {
+                print!("{}", r.render_text());
+            }
+            Ok(0)
         }
         Cmd::Validate(a) => {
             let host = match a.host {

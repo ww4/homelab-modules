@@ -3,12 +3,13 @@
 //! then hands off to `generate`. Nothing lives only here — anything the TUI
 //! can do, the headless command can do from the same answers file.
 //!
-//! Five screens, Tab / Shift-Tab between them:
-//!   1 Host      name, time zone, disks, SSH key
-//!   2 Modules   the catalog; Space toggles; foundation entries are locked
-//!   3 Values    every homelab.* option the chosen modules read; Enter edits
-//!   4 Secrets   file paths for what only you can supply
-//!   5 Review    write answers.json (w) or write and run generate (g)
+//! Six screens, Tab / Shift-Tab between them:
+//!   1 Host      name, time zone, SSH key (and disks by hand, if the picker cannot see them)
+//!   2 Disks     every disk by stable id; Space cycles its role: system / data / parity
+//!   3 Modules   the catalog; Space toggles; foundation entries are locked
+//!   4 Values    every homelab.* option the chosen modules read; Enter edits
+//!   5 Secrets   file paths for what only you can supply, or a typed value saved to a 600 file
+//!   6 Review    write answers.json (w) or write and run generate (g)
 
 use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -24,10 +25,44 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::answers::Answers;
+use crate::disks::{self, Disk};
 use crate::plan::{FOUNDATION_ALWAYS, FOUNDATION_REQUIRED};
 use crate::schema::{Schema, Source};
 
-const SCREENS: [&str; 5] = ["1 Host", "2 Modules", "3 Values", "4 Secrets", "5 Review"];
+const SCREENS: [&str; 6] = ["1 Host", "2 Disks", "3 Modules", "4 Values", "5 Secrets", "6 Review"];
+const HOST: usize = 0;
+const DISKS: usize = 1;
+const MODULES: usize = 2;
+const VALUES: usize = 3;
+const SECRETS: usize = 4;
+const REVIEW: usize = 5;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Role {
+    Unused,
+    System,
+    Data,
+    Parity,
+}
+
+impl Role {
+    fn next(self) -> Role {
+        match self {
+            Role::Unused => Role::System,
+            Role::System => Role::Data,
+            Role::Data => Role::Parity,
+            Role::Parity => Role::Unused,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Role::Unused => "      ",
+            Role::System => "SYSTEM",
+            Role::Data => "data  ",
+            Role::Parity => "parity",
+        }
+    }
+}
 
 struct Field {
     key: &'static str,
@@ -49,6 +84,11 @@ struct App<'a> {
     screen: usize,
     host: Vec<Field>,
     host_cursor: usize,
+    disks: Vec<Disk>,
+    roles: Vec<Role>,
+    disk_cursor: usize,
+    /// Secrets screen: editing a VALUE (written to a 600 file) rather than a path.
+    editing_value: bool,
     modules: Vec<ModuleRow>,
     module_cursor: usize,
     values: BTreeMap<String, String>,
@@ -127,6 +167,7 @@ impl<'a> App<'a> {
             Field { key: "disk", label: "System disk", help: "/dev/disk/by-id/… — ERASED by the install", value: String::new() },
             Field { key: "dataDisks", label: "Data disks", help: "name=/dev/disk/by-id/…, comma-separated; each mounts at /mnt/disks/<name>", value: String::new() },
             Field { key: "sshAuthorizedKeys", label: "SSH public key", help: "your key; without it the admin can only log in at the console", value: String::new() },
+            Field { key: "githubUser", label: "GitHub user", help: "type a GitHub username and press Enter: its public keys are fetched into the field above (the way ssh-import-id does)", value: String::new() },
         ];
         let mut modules: Vec<ModuleRow> = schema
             .catalog
@@ -141,11 +182,17 @@ impl<'a> App<'a> {
             })
             .collect();
         modules.sort_by(|a, b| (!a.locked, &a.name).cmp(&(!b.locked, &b.name)));
+        let disks = disks::list();
+        let roles = vec![Role::Unused; disks.len()];
         App {
             schema,
             screen: 0,
             host,
             host_cursor: 0,
+            disks,
+            roles,
+            disk_cursor: 0,
+            editing_value: false,
             modules,
             module_cursor: 0,
             values: BTreeMap::new(),
@@ -153,7 +200,7 @@ impl<'a> App<'a> {
             secrets: BTreeMap::new(),
             secret_cursor: 0,
             editing: None,
-            status: "Tab/Shift-Tab: screens · ↑↓: move · Space: toggle · Enter: edit · q: quit".into(),
+            status: "Tab/Shift-Tab: screens · ↑↓: move · Space: toggle/cycle · Enter: edit · q: quit".into(),
             out_answers: out_answers.to_path_buf(),
             out_dir: out_dir.to_path_buf(),
             done: None,
@@ -233,12 +280,31 @@ impl<'a> App<'a> {
 
     fn answers(&self) -> Answers {
         let field = |k: &str| self.host.iter().find(|f| f.key == k).map(|f| f.value.trim().to_string()).unwrap_or_default();
-        let data_disks: Vec<serde_json::Value> = field("dataDisks")
-            .split(',')
-            .filter_map(|s| s.trim().split_once('='))
-            .map(|(n, d)| serde_json::json!({ "name": n.trim(), "device": d.trim() }))
-            .collect();
-        let keys: Vec<String> = field("sshAuthorizedKeys").split_whitespace().collect::<Vec<_>>().chunks(3).map(|c| c.join(" ")).filter(|k| !k.is_empty()).collect();
+        // Roles chosen on the Disks screen win over the typed fields.
+        let picked_system = self.disks.iter().zip(&self.roles).find(|(_, r)| **r == Role::System).map(|(d, _)| d.id.display().to_string());
+        let mut picked_data: Vec<serde_json::Value> = Vec::new();
+        let mut n = 0;
+        for (d, r) in self.disks.iter().zip(&self.roles) {
+            match r {
+                Role::Data => {
+                    n += 1;
+                    picked_data.push(serde_json::json!({ "name": format!("d{n}"), "device": d.id.display().to_string() }));
+                }
+                Role::Parity => picked_data.push(serde_json::json!({ "name": "parity", "device": d.id.display().to_string() })),
+                _ => {}
+            }
+        }
+        let system_disk = picked_system.unwrap_or_else(|| field("disk"));
+        let data_disks: Vec<serde_json::Value> = if picked_data.is_empty() {
+            field("dataDisks")
+                .split(',')
+                .filter_map(|s| s.trim().split_once('='))
+                .map(|(n, d)| serde_json::json!({ "name": n.trim(), "device": d.trim() }))
+                .collect()
+        } else {
+            picked_data
+        };
+        let keys = split_keys(&field("sshAuthorizedKeys"));
         let mut values = serde_json::Map::new();
         for (k, v) in &self.values {
             if !v.trim().is_empty() {
@@ -249,7 +315,7 @@ impl<'a> App<'a> {
             "host": {
                 "name": field("name"),
                 "timeZone": field("timeZone"),
-                "disk": field("disk"),
+                "disk": system_disk,
                 "dataDisks": data_disks,
                 "sshAuthorizedKeys": keys,
             },
@@ -295,35 +361,59 @@ impl<'a> App<'a> {
             KeyCode::Char('q') => self.done = Some(Outcome::Quit),
             KeyCode::Tab => self.screen = (self.screen + 1) % SCREENS.len(),
             KeyCode::BackTab => self.screen = (self.screen + SCREENS.len() - 1) % SCREENS.len(),
-            KeyCode::Char(c @ '1'..='5') if key.modifiers.is_empty() && self.screen != 2 => self.screen = (c as u8 - b'1') as usize,
+            KeyCode::Char(c @ '1'..='6') if key.modifiers.is_empty() && self.screen != VALUES => self.screen = (c as u8 - b'1') as usize,
             KeyCode::Up => self.move_cursor(-1),
             KeyCode::Down => self.move_cursor(1),
-            KeyCode::Char(' ') if self.screen == 1 => {
+            KeyCode::Char(' ') if self.screen == DISKS => {
+                if let Some(d) = self.disks.get(self.disk_cursor) {
+                    if !d.in_use {
+                        let r = self.roles[self.disk_cursor].next();
+                        if r == Role::System {
+                            // One system disk: demote any other.
+                            for other in self.roles.iter_mut() {
+                                if *other == Role::System {
+                                    *other = Role::Unused;
+                                }
+                            }
+                        }
+                        self.roles[self.disk_cursor] = r;
+                    }
+                }
+            }
+            KeyCode::Char(' ') if self.screen == MODULES => {
                 if let Some(m) = self.modules.get_mut(self.module_cursor) {
                     if !m.locked {
                         m.chosen = !m.chosen;
                     }
                 }
             }
+            KeyCode::Char('v') if self.screen == SECRETS => {
+                if self.secret_metas().get(self.secret_cursor).is_some() {
+                    self.editing_value = true;
+                    self.editing = Some(String::new());
+                }
+            }
             KeyCode::Enter => self.start_edit(),
-            KeyCode::Char('w') if self.screen == 4 => self.done = Some(Outcome::Written),
-            KeyCode::Char('g') if self.screen == 4 => self.done = Some(Outcome::Generate),
+            KeyCode::Char('w') if self.screen == REVIEW => self.done = Some(Outcome::Written),
+            KeyCode::Char('g') if self.screen == REVIEW => self.done = Some(Outcome::Generate),
             _ => {}
         }
     }
 
     fn move_cursor(&mut self, d: i32) {
         let len = match self.screen {
-            0 => self.host.len(),
-            1 => self.modules.len(),
-            2 => self.value_rows().len(),
-            3 => self.secret_metas().len(),
+            HOST => self.host.len(),
+            DISKS => self.disks.len(),
+            MODULES => self.modules.len(),
+            VALUES => self.value_rows().len(),
+            SECRETS => self.secret_metas().len(),
             _ => return,
         };
         let cur = match self.screen {
-            0 => &mut self.host_cursor,
-            1 => &mut self.module_cursor,
-            2 => &mut self.value_cursor,
+            HOST => &mut self.host_cursor,
+            DISKS => &mut self.disk_cursor,
+            MODULES => &mut self.module_cursor,
+            VALUES => &mut self.value_cursor,
             _ => &mut self.secret_cursor,
         };
         if len == 0 {
@@ -334,14 +424,15 @@ impl<'a> App<'a> {
 
     fn start_edit(&mut self) {
         match self.screen {
-            0 => self.editing = Some(self.host[self.host_cursor].value.clone()),
-            2 => {
+            HOST => self.editing = Some(self.host[self.host_cursor].value.clone()),
+            VALUES => {
                 if let Some((name, _, _, _)) = self.value_rows().get(self.value_cursor) {
                     self.editing = Some(self.values.get(name).cloned().unwrap_or_default());
                 }
             }
-            3 => {
+            SECRETS => {
                 if let Some((opt, _)) = self.secret_metas().get(self.secret_cursor) {
+                    self.editing_value = false;
                     self.editing = Some(self.secrets.get(opt).cloned().unwrap_or_default());
                 }
             }
@@ -351,8 +442,24 @@ impl<'a> App<'a> {
 
     fn commit_edit(&mut self, text: String) {
         match self.screen {
-            0 => self.host[self.host_cursor].value = text,
-            2 => {
+            HOST => {
+                let key = self.host[self.host_cursor].key;
+                self.host[self.host_cursor].value = text.clone();
+                if key == "githubUser" && !text.trim().is_empty() {
+                    match fetch_github_keys(text.trim()) {
+                        Ok(keys) if keys.is_empty() => self.status = format!("github.com/{} has no public keys", text.trim()),
+                        Ok(keys) => {
+                            let n = keys.len();
+                            if let Some(f) = self.host.iter_mut().find(|f| f.key == "sshAuthorizedKeys") {
+                                f.value = keys.join(" ");
+                            }
+                            self.status = format!("{n} key(s) from github.com/{}", text.trim());
+                        }
+                        Err(e) => self.status = format!("could not fetch keys: {e}"),
+                    }
+                }
+            }
+            VALUES => {
                 if let Some((name, _, _, _)) = self.value_rows().get(self.value_cursor).cloned() {
                     if text.trim().is_empty() {
                         self.values.remove(&name);
@@ -361,9 +468,30 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            3 => {
+            SECRETS => {
                 if let Some((opt, _)) = self.secret_metas().get(self.secret_cursor).cloned() {
-                    self.secrets.insert(opt, text);
+                    if self.editing_value {
+                        // A typed value goes to a 600 file next to the answers;
+                        // the answers file itself never carries it.
+                        self.editing_value = false;
+                        let dir = self.out_answers.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".")).join(".secrets");
+                        let file = dir.join(crate::secrets::secret_name(&opt));
+                        let written = std::fs::create_dir_all(&dir)
+                            .map_err(|e| e.to_string())
+                            .and_then(|_| {
+                                let _ = std::fs::remove_file(&file);
+                                crate::secrets::write_private(&file, &(text.trim_end().to_string() + "\n")).map_err(|e| e.to_string())
+                            });
+                        match written {
+                            Ok(()) => {
+                                self.secrets.insert(opt, file.display().to_string());
+                                self.status = format!("wrote {} (mode 600)", file.display());
+                            }
+                            Err(e) => self.status = format!("could not write the secret file: {e}"),
+                        }
+                    } else {
+                        self.secrets.insert(opt, text);
+                    }
                 }
             }
             _ => {}
@@ -381,10 +509,11 @@ impl<'a> App<'a> {
             .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow));
         f.render_widget(tabs, outer[0]);
         match self.screen {
-            0 => self.draw_host(f, outer[1]),
-            1 => self.draw_modules(f, outer[1]),
-            2 => self.draw_values(f, outer[1]),
-            3 => self.draw_secrets(f, outer[1]),
+            HOST => self.draw_host(f, outer[1]),
+            DISKS => self.draw_disks(f, outer[1]),
+            MODULES => self.draw_modules(f, outer[1]),
+            VALUES => self.draw_values(f, outer[1]),
+            SECRETS => self.draw_secrets(f, outer[1]),
             _ => self.draw_review(f, outer[1]),
         }
         let footer = match &self.editing {
@@ -418,6 +547,38 @@ impl<'a> App<'a> {
         );
         let help = &self.host[self.host_cursor].help;
         f.render_widget(Paragraph::new(help.to_string()).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::ALL).title(" about this field ")), help_area);
+    }
+
+    fn draw_disks(&self, f: &mut Frame, area: Rect) {
+        let (list_area, help_area) = Self::split_list(area);
+        let items: Vec<ListItem> = self
+            .disks
+            .iter()
+            .zip(&self.roles)
+            .map(|(d, r)| {
+                let style = if d.in_use { Style::default().fg(Color::DarkGray) } else { Style::default() };
+                let role = if d.in_use { "in use".to_string() } else { r.label().to_string() };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("[{role}] "), style.add_modifier(Modifier::BOLD).fg(match r { Role::System => Color::Yellow, Role::Data => Color::Green, Role::Parity => Color::Cyan, Role::Unused => Color::Reset })),
+                    Span::styled(format!("{:<8}{:>9}  {:<5} ", d.kernel, d.size_human(), d.transport), style),
+                    Span::styled(d.model.clone(), style),
+                ]))
+            })
+            .collect();
+        let mut st = ListState::default();
+        st.select(Some(self.disk_cursor.min(self.disks.len().saturating_sub(1))));
+        let title = if self.disks.is_empty() { " Disks — none visible under /dev/disk/by-id (type them on the Host screen) ".to_string() } else { " Disks — Space cycles: SYSTEM (erased, holds the OS) → data → parity → unused ".to_string() };
+        f.render_stateful_widget(
+            List::new(items).block(Block::default().borders(Borders::ALL).title(title)).highlight_style(Style::default().bg(Color::DarkGray)),
+            list_area,
+            &mut st,
+        );
+        let help = match self.disks.get(self.disk_cursor) {
+            Some(d) if d.in_use => "this disk holds the running system (or a mounted filesystem) and is not offered".to_string(),
+            Some(d) => format!("{}\nroles chosen here override the Host screen's typed disks; data disks become d1, d2… under /mnt/disks; parity needs the snapraid module", d.id.display()),
+            None => String::new(),
+        };
+        f.render_widget(Paragraph::new(help).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::ALL).title(" about this disk ")), help_area);
     }
 
     fn draw_modules(&self, f: &mut Frame, area: Rect) {
@@ -485,7 +646,7 @@ impl<'a> App<'a> {
         let mut st = ListState::default();
         st.select(Some(self.secret_cursor.min(metas.len().saturating_sub(1))));
         f.render_stateful_widget(
-            List::new(items).block(Block::default().borders(Borders::ALL).title(" Secrets only you can supply — a file path each; never the value ")).highlight_style(Style::default().bg(Color::DarkGray)),
+            List::new(items).block(Block::default().borders(Borders::ALL).title(" Secrets only you can supply — Enter: a file path · v: type the value (saved to a 600 file) ")).highlight_style(Style::default().bg(Color::DarkGray)),
             list_area,
             &mut st,
         );
@@ -520,6 +681,43 @@ impl<'a> App<'a> {
     }
 }
 
+/// Several authorized_keys entries typed on one line: a new key starts at
+/// every key-type token, so a key with or without a trailing comment splits
+/// correctly.
+fn split_keys(text: &str) -> Vec<String> {
+    let mut keys: Vec<Vec<&str>> = Vec::new();
+    for tok in text.split_whitespace() {
+        if tok.starts_with("ssh-") || tok.starts_with("ecdsa-") || tok.starts_with("sk-") || keys.is_empty() {
+            keys.push(vec![tok]);
+        } else if let Some(last) = keys.last_mut() {
+            last.push(tok);
+        }
+    }
+    keys.into_iter().map(|k| k.join(" ")).filter(|k| k.split_whitespace().count() >= 2).collect()
+}
+
+/// `https://github.com/<user>.keys` — one authorized_keys line per key. curl
+/// rather than an HTTP crate: it is on every live system and in the package's
+/// PATH, and this is the only network call the TUI makes.
+fn fetch_github_keys(user: &str) -> Result<Vec<String>> {
+    if user.is_empty() || !user.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        anyhow::bail!("not a GitHub username");
+    }
+    let out = std::process::Command::new("curl")
+        .args(["-fsSL", "--max-time", "15", &format!("https://github.com/{user}.keys")])
+        .output()
+        .context("running curl")?;
+    if !out.status.success() {
+        anyhow::bail!("github.com/{user}.keys: {}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("ssh-") || l.starts_with("ecdsa-") || l.starts_with("sk-"))
+        .map(|l| format!("{l} {user}@github"))
+        .collect())
+}
+
 fn value_text(v: &serde_json::Value) -> String {
     match v {
         serde_json::Value::String(s) => s.clone(),
@@ -548,5 +746,18 @@ mod tests {
         assert_eq!(parse_value("true"), serde_json::json!(true));
         assert_eq!(parse_value("14"), serde_json::json!(14));
         assert_eq!(parse_value("{\"k\":1}"), serde_json::json!({"k": 1}));
+    }
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::split_keys;
+
+    #[test]
+    fn keys_split_at_type_tokens_with_or_without_comments() {
+        let two = split_keys("ssh-ed25519 AAAA1 a@b ssh-rsa BBBB2");
+        assert_eq!(two, vec!["ssh-ed25519 AAAA1 a@b", "ssh-rsa BBBB2"]);
+        assert_eq!(split_keys("sk-ssh-ed25519@openssh.com CCCC3 you@laptop"), vec!["sk-ssh-ed25519@openssh.com CCCC3 you@laptop"]);
+        assert!(split_keys("").is_empty());
     }
 }

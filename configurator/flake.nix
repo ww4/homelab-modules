@@ -54,6 +54,8 @@
         postInstall = ''
           wrapProgram $out/bin/homelab-configure --prefix PATH : ${lib.makeBinPath [
             pkgs.sops pkgs.age pkgs.ssh-to-age pkgs.openssh pkgs.authelia pkgs.mkpasswd pkgs.git pkgs.nix
+            pkgs.disko pkgs.nixos-install-tools   # `install`: disko-install + nixos-generate-config
+            pkgs.curl                             # `tui`: GitHub key import
           ]}
         '';
 

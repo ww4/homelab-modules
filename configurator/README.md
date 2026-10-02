@@ -18,6 +18,7 @@ nix run 'git+https://git.rosemaryacres.com/ww4/homelab-modules.git?dir=configura
 | `generate --out DIR [--answers FILE] [--add m,…] [--remove m,…] [--set OPT=JSON] [--secret OPT=@file …]` | write the flake, mint keys and secrets, then evaluate the result; on a directory that already holds `answers.json`, reconfigure it (see below) |
 | `validate DIR [--build]` | evaluate (or build) a generated flake's toplevel |
 | `tui [--profile FILE] [--answers FILE] [--out DIR]` | the interactive front end: five screens (host, modules, values, secrets, review) that write an answers file and hand off to `generate`; start from a canned profile with `--profile` |
+| `install DIR [--yes] [--dry-run] [--keep-at PATH]` | the local install, from a live USB on the machine itself: writes this machine's `hardware.nix`, then `disko-install` (partition, `nixos-install`, EFI entries), the pre-generated host key into `/etc/ssh`, and the whole flake directory onto the new system at `--keep-at` (default `/root/homelab`) — because the live USB is RAM |
 
 `--json` on any of them gives structured output. Exit codes: 0 ok, 2 answers
 rejected (every problem listed), 3 validation failed, 1 anything else.
@@ -83,6 +84,31 @@ Then, the one supported install path:
 nixos-anywhere --flake .#<host> --extra-files ./extra-files \
   --generate-hardware-config nixos-generate-config ./hosts/<host>/hardware.nix root@<target>
 ```
+
+## From a live USB, on the machine itself
+
+Boot the NixOS installer ISO on the target, get it on the network, and:
+
+```sh
+nix run 'git+https://git.rosemaryacres.com/ww4/homelab-modules.git?dir=configurator' -- tui   # leak-scan-ok: this repo's own home
+```
+
+The Disks screen lists what the machine can see by stable id and lets you
+mark the system disk, the data disks and a parity disk; the disk the live
+USB booted from is not offered. On the Host screen a GitHub username pulls
+your public keys in. On the Secrets screen `v` lets you type a value instead
+of pointing at a file; it goes to a mode-600 file next to the answers, never
+into the answers file. `g` on the Review screen runs `generate`, then:
+
+```sh
+sudo homelab-configure install ./my-homelab
+```
+
+which types back the host name as its confirmation, erases exactly the disks
+you chose, installs, and carries the flake directory (your values, the
+encrypted secrets, `keys/`, `FIRST-LOGIN.md`) to `/root/homelab` on the new
+system — the live USB's filesystem is RAM and is gone at reboot. Move the
+admin age key off the machine afterwards; read and delete `FIRST-LOGIN.md`.
 
 ## Reconfiguring an existing install
 
