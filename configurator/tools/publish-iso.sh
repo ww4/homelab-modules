@@ -4,14 +4,14 @@
 #
 #   tools/publish-iso.sh [--env FILE] [--bucket NAME] [--no-build]
 #
-# Credentials come from an env file (default /run/secrets/digitalocean, the
+# Credentials come from an env file (default /run/secrets/digitalocean-iso, the
 # sops-materialised copy) carrying DO_SPACES_KEY_ID, DO_SPACES_SECRET and
 # DO_SPACES_ENDPOINT (https://<region>.digitaloceanspaces.com). Nothing is
 # printed from it. The Space named by --bucket is created if missing. Uploads go through rclone with the S3 backend;
 # objects: iso/homelab-installer-<date>-<rev>.iso, .sha256, and iso/latest.txt
 # naming the newest file.
 set -euo pipefail
-env_file=/run/secrets/digitalocean; bucket=homelab-installer; build=1
+env_file=/run/secrets/digitalocean-iso; bucket=homelab-installer; build=1
 while [ $# -gt 0 ]; do case "$1" in --env) env_file="$2"; shift 2 ;; --bucket) bucket="$2"; shift 2 ;; --no-build) build=0; shift ;; *) echo "unknown arg $1" >&2; exit 2 ;; esac; done
 [ -r "$env_file" ] || { echo "no credentials at $env_file" >&2; exit 1; }
 set -a
@@ -47,10 +47,12 @@ secret_access_key = $DO_SPACES_SECRET
 endpoint = $endpoint
 acl = public-read
 CONF
-rclone --config "$conf" mkdir "spaces:${bucket}" 2>/dev/null || true
-rclone --config "$conf" copy --progress "$work/$name" "spaces:${bucket}/iso/"
-rclone --config "$conf" copy "$work/$name.sha256" "spaces:${bucket}/iso/"
-rclone --config "$conf" copyto "$work/latest.txt" "spaces:${bucket}/iso/latest.txt"
+# A scoped key cannot CreateBucket, and rclone's upload path calls it as its
+# bucket-exists check: skip that (the bucket must already exist).
+RCLONE="rclone --config $conf --s3-no-check-bucket"
+$RCLONE copy --progress "$work/$name" "spaces:${bucket}/iso/"
+$RCLONE copy "$work/$name.sha256" "spaces:${bucket}/iso/"
+$RCLONE copyto "$work/latest.txt" "spaces:${bucket}/iso/latest.txt"
 base="https://${bucket}.${region}.cdn.digitaloceanspaces.com/iso"
 echo "published:"
 echo "  $base/$name"
