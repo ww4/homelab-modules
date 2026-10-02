@@ -240,7 +240,10 @@ let
         fi
       }
 
-      for entry in ${lib.escapeShellArgs entries}; do
+      # A one-member pool renders a single quoted word, which shellcheck reads
+      # as a literal command string (SC2041); an array is unambiguous.
+      entries=(${lib.escapeShellArgs entries})
+      for entry in "''${entries[@]}"; do
         IFS='|' read -r pool base unitPrefix poolMount d <<< "$entry"
 
         mp="$base/$d"

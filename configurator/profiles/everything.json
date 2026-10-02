@@ -7,6 +7,10 @@
       {
         "name": "d1",
         "device": "/dev/disk/by-id/REPLACE-data-disk-1"
+      },
+      {
+        "name": "parity",
+        "device": "/dev/disk/by-id/REPLACE-parity-disk"
       }
     ],
     "sshAuthorizedKeys": [
@@ -63,7 +67,7 @@
     "homelab.pools": {
       "media": {
         "mountpoint": "/mnt/media",
-        "branches": "/mnt/disks/*",
+        "branches": "/mnt/disks/d1",
         "memberDir": "/mnt/disks",
         "members": [
           "d1"
@@ -84,6 +88,9 @@
     "homelab.pinchflat.mediaDir": "/mnt/media/pinchflat",
     "homelab.snapraid.pool": "media",
     "homelab.immich.mediaLocation": "/mnt/media/immich",
-    "homelab.deployDriftWatch.repoUrl": "https://git.example.test/alice/homelab.git"
+    "homelab.deployDriftWatch.repoUrl": "https://git.example.test/alice/homelab.git",
+    "homelab.snapraid.parityFiles": [
+      "/mnt/disks/parity/snapraid.parity"
+    ]
   }
 }
