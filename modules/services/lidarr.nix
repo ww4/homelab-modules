@@ -15,6 +15,11 @@ let
   port = 8686;
 in
 {
+  # The library names its container units docker-*; a consumer flake does not
+  # know to enable the daemon or pick the backend (the rehearsal install had
+  # podman-* units nothing waited for, and no docker.service).
+  virtualisation.docker.enable = lib.mkDefault true;
+  virtualisation.oci-containers.backend = lib.mkDefault "docker";
   imports = [ ../options.nix ];
 
   systemd.tmpfiles.rules = [

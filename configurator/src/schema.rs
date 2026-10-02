@@ -16,6 +16,9 @@ pub const EMBEDDED_NIXPKGS_REV: &str = include_str!(concat!(env!("OUT_DIR"), "/n
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ModuleMeta {
     pub description: String,
+    /// Rough steady-state resident memory, MiB (catalog `memory`).
+    #[serde(default)]
+    pub memory: u64,
     /// "import" or the homelab.* enable option that gates the module.
     pub enable: String,
     /// homelab.* option prefixes the module reads.

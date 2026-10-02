@@ -220,7 +220,7 @@ pub fn disko_nix(plan: &Plan) -> String {
     let mut s = format!(
         "# Disk layout for disko — applied by nixos-anywhere at install. EVERYTHING on\n\
          # these devices is erased. GPT, a 512M ESP at /boot/efi (where the library's boot\n\
-         # module expects it), ext4 root; each data disk is one\n\
+         # module expects it), a 4G swap partition, ext4 root; each data disk is one\n\
          # ext4 filesystem at /mnt/disks/<name> (pool them with mergerfs-pools if you\n\
          # imported it: homelab.pools.<pool>.branches = \"/mnt/disks/*\").\n\
          {{ ... }}:\n\n\
@@ -241,6 +241,10 @@ pub fn disko_nix(plan: &Plan) -> String {
                        mountpoint = \"/boot/efi\";   # the library's boot module: efiSysMountPoint = /boot/efi\n              \
                        mountOptions = [ \"umask=0077\" ];\n            \
                      }};\n          \
+                   }};\n          \
+                   swap = {{\n            \
+                     size = \"4G\";   # the install needs it on a small box: evaluating the system\n            \
+                     content.type = \"swap\";   # OOM-killed nixos-install at 4 GB without it\n          \
                    }};\n          \
                    root = {{\n            \
                      size = \"100%\";\n            \

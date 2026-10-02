@@ -30,6 +30,8 @@ pub struct Report {
     pub files: Vec<String>,
     pub admin_key_generated: Option<String>,
     pub warnings: Vec<String>,
+    /// Rough resident memory the chosen modules need, MiB, base system included.
+    pub memory_mib: u64,
     pub next_steps: Vec<String>,
 }
 
@@ -47,6 +49,7 @@ impl Report {
     pub fn render_text(&self) -> String {
         let mut s = format!("wrote {} for host {}\n", self.out, self.host);
         s.push_str(&format!("modules: {}\n", self.modules.join(" ")));
+        s.push_str(&format!("memory: {}\n", crate::plan::memory_verdict(self.memory_mib, crate::plan::machine_ram_mib())));
         if !self.added_modules.is_empty() {
             s.push_str(&format!("  added by requires/foundation: {}\n", self.added_modules.join(" ")));
         }
@@ -186,8 +189,9 @@ pub fn write_all(plan: &Plan, answers: &Answers, out: &Path, reconfigure: bool) 
             "rebuild: nix build .#nixosConfigurations.{host}.config.system.build.toplevel, commit, then merge (or nixos-rebuild switch --flake .#{host} on the host)"
         ));
     } else {
+        next_steps.push("install, sitting at the machine on the live USB: sudo homelab-configure install <this directory>".to_string());
         next_steps.push(format!(
-            "install: nixos-anywhere --flake .#{host} --extra-files ./extra-files --generate-hardware-config nixos-generate-config ./hosts/{host}/hardware.nix root@<target>"
+            "install, from another machine over SSH: nixos-anywhere --flake .#{host} --extra-files ./extra-files --generate-hardware-config nixos-generate-config ./hosts/{host}/hardware.nix root@<target>"
         ));
     }
     if let Some(k) = &km.admin_key_file {
@@ -223,6 +227,7 @@ pub fn write_all(plan: &Plan, answers: &Answers, out: &Path, reconfigure: bool) 
         files,
         admin_key_generated: km.admin_key_file.as_ref().map(|p| p.display().to_string()),
         warnings: plan.warnings.clone(),
+        memory_mib: plan.memory_mib,
         next_steps,
     })
 }
@@ -239,7 +244,7 @@ FIRST-LOGIN.md
 result
 ";
 
-fn mkpasswd(plain: &str) -> Result<String> {
+pub fn mkpasswd(plain: &str) -> Result<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
     let mut child = Command::new("mkpasswd")

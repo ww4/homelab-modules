@@ -15,9 +15,16 @@
 #
 # To reach a service from a new network, add its source range below and
 # rebuild — a reviewable, version-controlled edit rather than a console tweak.
-{ ... }:
+{ lib, ... }:
 
 {
+  # The library's vhosts are no use without the server: a consumer flake has
+  # no reason to know it must enable nginx itself (the reference box did it
+  # in private config; the 2026-10-02 rehearsal install had no nginx at all).
+  services.nginx.enable = lib.mkDefault true;
+  services.nginx.recommendedProxySettings = lib.mkDefault true;
+  services.nginx.recommendedTlsSettings = lib.mkDefault true;
+
   services.nginx.commonHttpConfig = ''
     # --- Allowed sources: loopback, RFC1918/LAN, docker, Tailscale ---
     allow 127.0.0.0/8;          # loopback (host-local service fetches)

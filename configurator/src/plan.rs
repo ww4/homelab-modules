@@ -55,6 +55,8 @@ pub struct Plan<'a> {
     pub library_url: String,
     pub admin_recipient: Option<String>,
     pub warnings: Vec<String>,
+    /// Rough resident memory the module set needs, MiB, base system included.
+    pub memory_mib: u64,
 }
 
 impl<'a> Plan<'a> {
@@ -275,10 +277,16 @@ impl<'a> Plan<'a> {
             .clone()
             .unwrap_or_else(|| DEFAULT_LIBRARY.to_string());
 
+        let memory_mib = memory_need(schema, &modules);
+        let ram = machine_ram_mib();
+        if ram != 0 && memory_mib > ram {
+            warnings.push(format!("memory: {}", memory_verdict(memory_mib, ram)));
+        }
         Ok(Plan {
             schema,
             host: &answers.host,
             modules,
+            memory_mib,
             added_modules,
             removed_modules,
             values,
@@ -473,5 +481,40 @@ mod tests {
         );
         assert_eq!(resolve_placeholder(&schema, &values, "plain"), "plain");
         assert_eq!(resolve_placeholder(&schema, &values, "<manual: x>"), "<manual: x>");
+    }
+}
+
+/// MiB this machine has (`MemTotal` in /proc/meminfo); 0 when unreadable.
+pub fn machine_ram_mib() -> u64 {
+    std::fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|t| t.lines().find(|l| l.starts_with("MemTotal:")).and_then(|l| l.split_whitespace().nth(1)).and_then(|k| k.parse::<u64>().ok()))
+        .map(|kib| kib / 1024)
+        .unwrap_or(0)
+}
+
+/// The base system (kernel, systemd, journald, the container runtime, page
+/// cache the services need to be usable) before any module is counted.
+pub const BASE_MEMORY_MIB: u64 = 1024;
+
+/// Rough resident memory a module set needs, MiB: the catalog figures plus
+/// the base. The caller passes the closed set (requires included).
+pub fn memory_need(schema: &crate::schema::Schema, modules: &[String]) -> u64 {
+    BASE_MEMORY_MIB + modules.iter().filter_map(|m| schema.catalog.get(m)).map(|m| m.memory).sum::<u64>()
+}
+
+/// One line for a person: what the set needs against what the box has.
+/// Headroom of a quarter is the line between "runs" and "runs well".
+pub fn memory_verdict(need_mib: u64, ram_mib: u64) -> String {
+    let gb = |m: u64| format!("{:.1}", m as f64 / 1024.0);
+    if ram_mib == 0 {
+        return format!("needs about {} GB of RAM (base system included); this machine's RAM is unknown", gb(need_mib));
+    }
+    if need_mib > ram_mib {
+        format!("needs about {} GB of RAM; this machine has {} GB — SHORT by {} GB: drop a module or add memory", gb(need_mib), gb(ram_mib), gb(need_mib - ram_mib))
+    } else if need_mib * 5 > ram_mib * 4 {
+        format!("needs about {} GB of RAM; this machine has {} GB — fits, with little to spare", gb(need_mib), gb(ram_mib))
+    } else {
+        format!("needs about {} GB of RAM; this machine has {} GB — fits", gb(need_mib), gb(ram_mib))
     }
 }

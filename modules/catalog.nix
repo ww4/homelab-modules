@@ -7,6 +7,10 @@
 #
 # Per entry:
 #   description  one line, what the module is for
+#   memory       rough steady-state resident memory in MiB at household load,
+#                the number the configurator adds up against the box's RAM
+#                (bursts — a transcode, an ML job, a snapraid sync — are not in it;
+#                 0 = no long-running process of its own)
 #   enable       "import" (importing it enables it) or the homelab.* enable
 #                option that gates it
 #   options      the homelab.* option paths the module reads (prefixes; the
@@ -29,6 +33,7 @@ in
 {
   options = {
     description = "The homelab.* option set — the interface between the library and a consumer's values.";
+    memory = 0;
     enable = "import";
     options = [ ];
     requires = [ ];
@@ -39,6 +44,7 @@ in
   # ── base ───────────────────────────────────────────────────────────────────
   system = {
     description = "Locale, Nix settings, nixpkgs config for an always-on server.";
+    memory = 0;
     enable = "import";
     options = [ ];
     requires = [ ];
@@ -47,6 +53,7 @@ in
   };
   boot = {
     description = "Bootloader and power behaviour for an always-on server.";
+    memory = 0;
     enable = "import";
     options = [ ];
     requires = [ ];
@@ -57,6 +64,7 @@ in
   # ── perimeter & SSO ────────────────────────────────────────────────────────
   nginx-access = {
     description = "nginx source-access gate: allow/deny inherited by every vhost from one place.";
+    memory = 64;
     enable = "import";
     options = [ ];
     requires = [ ];
@@ -65,6 +73,7 @@ in
   };
   acme = {
     description = "Let's Encrypt via DNS-01, the TLS default for every vhost.";
+    memory = 0;
     enable = "import";
     options = [ "homelab.acme" ];
     requires = [ ];
@@ -75,6 +84,7 @@ in
   };
   authelia = {
     description = "Authelia SSO: forward-auth gateway + OIDC provider.";
+    memory = 160;
     enable = "homelab.authelia.enable";
     options = [ "homelab.domain" "homelab.adminUser" "homelab.adminDisplayName" "homelab.authelia" ];
     requires = [ "acme" "nginx-access" ];
@@ -88,6 +98,7 @@ in
   # ── storage ────────────────────────────────────────────────────────────────
   mergerfs-pools = {
     description = "Assemble homelab.pools into mounted MergerFS pools.";
+    memory = 96;
     enable = "import";
     options = [ "homelab.pools" ];
     requires = [ ];
@@ -96,6 +107,7 @@ in
   };
   snapraid = {
     description = "SnapRAID parity for a MergerFS pool's member disks: nightly sync, weekly partial scrub; any one member recoverable per parity disk.";
+    memory = 64;
     enable = "homelab.snapraid.enable";
     options = [ "homelab.snapraid" "homelab.pools" ];
     requires = [ "mergerfs-pools" ];
@@ -104,6 +116,7 @@ in
   };
   pool-autoremount = {
     description = "Self-healing remount for pool members that drop off the bus; detects zombie mounts with real I/O.";
+    memory = 8;
     enable = "import";
     options = [ "homelab.pools" "homelab.ntfy.url" ];
     requires = [ "mergerfs-pools" ];
@@ -112,6 +125,7 @@ in
   };
   smart-dump = {
     description = "Dump the full SMART table for every drive to world-readable files.";
+    memory = 8;
     enable = "import";
     options = [ ];
     requires = [ ];
@@ -120,6 +134,7 @@ in
   };
   drive-temps = {
     description = "Drive temperature + SMART-health exporter for spinning disks.";
+    memory = 8;
     enable = "import";
     options = [ "homelab.driveTemps" ];
     requires = [ "monitoring" ];
@@ -128,6 +143,7 @@ in
   };
   disk-io-watch = {
     description = "Count kernel I/O errors and USB resets per device; alert on a device that starts failing.";
+    memory = 8;
     enable = "import";
     options = [ "homelab.ntfy.url" "homelab.quietHours" ];
     requires = [ "monitoring" ];
@@ -138,6 +154,7 @@ in
   # ── monitoring & alerting ──────────────────────────────────────────────────
   monitoring = {
     description = "Prometheus + Grafana + Alertmanager with alerting provisioned declaratively.";
+    memory = 640;
     enable = "homelab.monitoring.enable";
     options = [ "homelab.domain" "homelab.monitoring" "homelab.quietHours" ];
     requires = [ "acme" "nginx-access" ];
@@ -148,6 +165,7 @@ in
   };
   alertmanager-ntfy = {
     description = "Alertmanager webhook → ntfy phone notifications.";
+    memory = 64;
     enable = "import";
     options = [ "homelab.domain" "homelab.ntfy.topic" ];
     requires = [ "monitoring" "ntfy" ];
@@ -156,6 +174,7 @@ in
   };
   ntfy = {
     description = "Self-hosted ntfy: write-only anonymous access, self-provisioning subscriber.";
+    memory = 32;
     enable = "import";
     options = [ "homelab.domain" "homelab.adminUser" "homelab.ntfy" ];
     requires = [ "acme" "nginx-access" ];
@@ -164,6 +183,7 @@ in
   };
   deploy-drift-watch = {
     description = "Alert when the forge has commits the box never deployed.";
+    memory = 8;
     enable = "homelab.deployDriftWatch.enable";
     options = [ "homelab.deployDriftWatch" ];
     requires = [ "monitoring" ];
@@ -172,6 +192,7 @@ in
   };
   mirror-drift-watch = {
     description = "Alert when a git mirror stops tracking its source.";
+    memory = 8;
     enable = "import";
     options = [ "homelab.mirrorDriftWatch" ];
     requires = [ "monitoring" ];
@@ -180,6 +201,7 @@ in
   };
   nginx-log-paths-check = {
     description = "Build-time guard: nginx may only be told to write logs where it can write.";
+    memory = 8;
     enable = "import";
     options = [ ];
     requires = [ ];
@@ -190,6 +212,7 @@ in
   # ── services ───────────────────────────────────────────────────────────────
   nextcloud = {
     description = "Nextcloud with Postgres + Redis, curated apps, optional OIDC SSO.";
+    memory = 768;
     enable = "import";
     options = [ "homelab.domain" "homelab.nextcloud" ];
     requires = [ "acme" "nginx-access" ];
@@ -201,6 +224,7 @@ in
   };
   forgejo = {
     description = "Forgejo git forge.";
+    memory = 320;
     enable = "import";
     options = [ "homelab.domain" "homelab.forgejo" ];
     requires = [ "acme" "nginx-access" ];
@@ -211,6 +235,7 @@ in
   };
   vaultwarden = {
     description = "Vaultwarden (Bitwarden-compatible) password server.";
+    memory = 96;
     enable = "import";
     options = [ "homelab.domain" "homelab.vaultwarden" ];
     requires = [ "acme" "nginx-access" ];
@@ -221,6 +246,7 @@ in
   };
   paperless = {
     description = "Paperless-ngx OCR-indexed document archive.";
+    memory = 1024;
     enable = "import";
     options = [ "homelab.domain" "homelab.paperless" ];
     requires = [ "acme" "nginx-access" ];
@@ -231,6 +257,7 @@ in
   };
   immich = {
     description = "Immich photo & video management.";
+    memory = 1536;
     enable = "import";
     options = [ "homelab.domain" "homelab.immich" ];
     requires = [ "acme" "nginx-access" ];
@@ -239,6 +266,7 @@ in
   };
   jellyfin = {
     description = "Jellyfin media server.";
+    memory = 512;
     enable = "import";
     options = [ "homelab.domain" ];
     requires = [ "acme" "nginx-access" ];
@@ -247,6 +275,7 @@ in
   };
   audiobookshelf = {
     description = "Audiobookshelf audiobook / podcast server.";
+    memory = 192;
     enable = "import";
     options = [ "homelab.domain" ];
     requires = [ "acme" "nginx-access" ];
@@ -255,6 +284,7 @@ in
   };
   tandoor = {
     description = "Tandoor Recipes.";
+    memory = 384;
     enable = "import";
     options = [ "homelab.domain" ];
     requires = [ "acme" "nginx-access" ];
@@ -263,6 +293,7 @@ in
   };
   silverbullet = {
     description = "SilverBullet markdown notes/tasks, optionally a two-writer space.";
+    memory = 128;
     enable = "import";
     options = [ "homelab.domain" "homelab.silverbullet" ];
     requires = [ "acme" "nginx-access" ];
@@ -271,6 +302,7 @@ in
   };
   uptime-kuma = {
     description = "Uptime Kuma status wall-board.";
+    memory = 192;
     enable = "import";
     options = [ "homelab.domain" ];
     requires = [ "acme" "nginx-access" ];
@@ -279,6 +311,7 @@ in
   };
   glances = {
     description = "Glances system monitor with a REST/web API.";
+    memory = 96;
     enable = "import";
     options = [ "homelab.domain" ];
     requires = [ "acme" "nginx-access" ];
@@ -287,6 +320,7 @@ in
   };
   metube = {
     description = "MeTube web GUI for yt-dlp one-off downloads.";
+    memory = 192;
     enable = "import";
     options = [ "homelab.domain" "homelab.metube" ];
     requires = [ "acme" "nginx-access" ];
@@ -295,6 +329,7 @@ in
   };
   pinchflat = {
     description = "PinchFlat YouTube archiver.";
+    memory = 320;
     enable = "import";
     options = [ "homelab.domain" "homelab.pinchflat" ];
     requires = [ "acme" "nginx-access" ];
@@ -303,6 +338,7 @@ in
   };
   remote-desktop = {
     description = "xrdp + XFCE remote desktop, Tailscale-only.";
+    memory = 256;
     enable = "import";
     options = [ ];
     requires = [ ];
@@ -311,6 +347,7 @@ in
   };
   meshagent = {
     description = "MeshCentral MeshAgent so a MeshCentral server can manage this host.";
+    memory = 48;
     enable = "import";
     options = [ "homelab.meshagent" ];
     requires = [ ];
@@ -323,6 +360,7 @@ in
   # ── download stack ─────────────────────────────────────────────────────────
   arr = {
     description = "Prowlarr + Sonarr + Radarr + Jellyseerr + qBittorrent inside a Gluetun VPN namespace.";
+    memory = 1280;
     enable = "import";
     options = [ "homelab.domain" "homelab.arrStack" ];
     requires = [ "acme" "nginx-access" ];
@@ -338,6 +376,7 @@ in
   };
   recyclarr = {
     description = "Sync TRaSH-Guides quality profiles into Sonarr & Radarr daily (bring your own profile YAML).";
+    memory = 16;
     enable = "import";
     options = [ "homelab.recyclarr" "homelab.arrStack" ];
     requires = [ "arr" ];
@@ -348,6 +387,7 @@ in
   };
   unpackerr = {
     description = "Extract RAR'd releases in place so the *arrs can import them; seeds untouched.";
+    memory = 48;
     enable = "import";
     options = [ "homelab.arrStack" "homelab.unpackerr" ];
     requires = [ "arr" ];
@@ -359,6 +399,7 @@ in
   };
   decluttarr = {
     description = "Reap stalled/failed downloads from Sonarr/Radarr and re-search.";
+    memory = 64;
     enable = "import";
     options = [ "homelab.decluttarr" ];
     requires = [ "arr" ];
@@ -369,6 +410,7 @@ in
   };
   lidarr = {
     description = "Lidarr music manager on the shared /data tree.";
+    memory = 320;
     enable = "import";
     options = [ "homelab.domain" "homelab.arrStack" ];
     requires = [ "arr" ];
@@ -377,6 +419,7 @@ in
   };
   lazylibrarian = {
     description = "LazyLibrarian ebook/audiobook automation on the shared /data tree.";
+    memory = 192;
     enable = "import";
     options = [ "homelab.domain" "homelab.arrStack" ];
     requires = [ "arr" ];
@@ -385,6 +428,7 @@ in
   };
   aurral = {
     description = "Aurral music discovery/request UI in front of Lidarr.";
+    memory = 96;
     enable = "import";
     options = [ "homelab.domain" "homelab.arrStack" "homelab.aurral" ];
     requires = [ "lidarr" ];
@@ -395,6 +439,7 @@ in
   };
   arr-missing-sweep = {
     description = "Weekly search for what is still missing in Sonarr/Radarr, with a metadata-mismatch skip rule.";
+    memory = 8;
     enable = "import";
     options = [ "homelab.arrMissingSweep" "homelab.ntfy.url" ];
     requires = [ "arr" ];
@@ -405,6 +450,7 @@ in
   };
   qbit-vpn-watchdog = {
     description = "Self-heal the gluetun-IP-change qBittorrent wedge.";
+    memory = 8;
     enable = "import";
     options = [ "homelab.ntfy.url" ];
     requires = [ "arr" ];
@@ -415,6 +461,7 @@ in
   # ── backup ─────────────────────────────────────────────────────────────────
   backup = {
     description = "restic snapshots of the irreplaceable small state: a local repo on the pool plus an optional offsite one, same paths and retention; optional SFTP push target for a second machine.";
+    memory = 64;
     enable = "import";
     options = [ "homelab.backup" "homelab.adminUser" ];
     requires = [ ];

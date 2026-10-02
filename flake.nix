@@ -16,9 +16,13 @@
     catalogNames = builtins.attrNames catalog;
     missing = builtins.filter (n: !(catalog ? ${n})) moduleNames;
     extra = builtins.filter (n: !(nixosModules ? ${n})) catalogNames;
+    # Every entry carries `memory`: rough steady-state resident MiB, so the
+    # configurator can add up a kit against the box it runs on.
+    noMemory = builtins.filter (n: !(catalog.${n} ? memory) || !builtins.isInt catalog.${n}.memory) catalogNames;
     checkedCatalog =
       if missing != [ ] then throw "catalog.nix lacks entries for: ${toString missing}"
       else if extra != [ ] then throw "catalog.nix names modules that do not exist: ${toString extra}"
+      else if noMemory != [ ] then throw "catalog.nix entries without an integer `memory`: ${toString noMemory}"
       else catalog;
   in {
     # Machine-readable index of the modules: `nix eval --json .#catalog`.
