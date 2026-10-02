@@ -21,7 +21,7 @@ nix run 'git+https://git.rosemaryacres.com/ww4/homelab-modules.git?dir=configura
 | `install DIR [--yes] [--dry-run] [--keep-at PATH]` | the local install, from a live USB on the machine itself: writes this machine's `hardware.nix`, then `disko` (partition, format, mount) and `nixos-install` into `/mnt` (so the system downloads straight onto the new disk, not into live-USB RAM; EFI entries included), the pre-generated host key into `/etc/ssh`, and the whole flake directory onto the new system at `--keep-at` (default `/root/homelab`) — because the live USB is RAM |
 | `dns DIR [--ip ADDR] [--token-file FILE] [--dry-run]` | create the A records the chosen modules claim at Cloudflare, with the ACME token: run it on the installed box once Tailscale is up (it points the names at the tailnet address, proxied off), or pass `--ip`; idempotent |
 
-`--json` on any of them gives structured output. Exit codes: 0 ok, 2 answers
+Every report carries a `memory` line: the catalog's rough resident figure for each chosen module, summed with a 1 GB base and compared with this machine's `MemTotal` (a warning when the box is short). `--json` on any of them gives structured output. Exit codes: 0 ok, 2 answers
 rejected (every problem listed), 3 validation failed, 1 anything else.
 
 The schema is baked into the binary from the library checkout it was built

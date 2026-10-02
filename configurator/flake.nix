@@ -56,6 +56,7 @@
             pkgs.sops pkgs.age pkgs.ssh-to-age pkgs.openssh pkgs.authelia pkgs.mkpasswd pkgs.git pkgs.nix
             pkgs.disko pkgs.nixos-install-tools   # `install`: disko + nixos-install + nixos-generate-config
             pkgs.curl                             # `tui`: GitHub key import
+            pkgs.util-linux                       # `install`: blkid + swapon after disko
           ]}
         '';
 

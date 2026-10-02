@@ -323,11 +323,15 @@ impl<'a> App<'a> {
     }
 
     fn secret_metas(&self) -> Vec<(String, String)> {
+        // The same rule generate applies: a nullable secret behind an
+        // `enable` that is off (backup.remote, OIDC without SSO) is not asked.
+        let closed = self.closed();
+        let values: BTreeMap<String, serde_json::Value> = self.values.iter().filter(|(_, v)| !v.trim().is_empty()).map(|(k, v)| (k.clone(), parse_value(v))).collect();
         let mut out = Vec::new();
-        for m in self.closed() {
-            if let Some(meta) = self.schema.catalog.get(&m) {
+        for m in &closed {
+            if let Some(meta) = self.schema.catalog.get(m) {
                 for s in &meta.secrets {
-                    if s.source == Source::Supply && s.option.starts_with("homelab.") {
+                    if s.source == Source::Supply && s.option.starts_with("homelab.") && !crate::plan::skip_secret(self.schema, &closed, &values, s) {
                         out.push((s.option.clone(), s.keys.join(", ")));
                     }
                 }

@@ -139,6 +139,14 @@ pub fn run(schema: &Schema, dir: &Path, host: Option<&str>, yes: bool, dry_run: 
         if !status.success() {
             bail!("disko failed (exit {})", status.code().unwrap_or(1));
         }
+        // disko formats the layout's swap but does not activate it; the
+        // install is exactly when a small box needs it (the final system
+        // build was OOM-killed at 4 GB without swap). Best effort.
+        if let Ok(o) = Command::new("blkid").args(["-t", "TYPE=swap", "-o", "device"]).output() {
+            for dev in String::from_utf8_lossy(&o.stdout).lines().map(str::trim).filter(|d| !d.is_empty()) {
+                let _ = Command::new("swapon").arg(dev).status();
+            }
+        }
         let status = install.status().context("running nixos-install (is it on PATH?)")?;
         if !status.success() {
             bail!("nixos-install failed (exit {})", status.code().unwrap_or(1));

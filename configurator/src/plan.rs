@@ -321,7 +321,7 @@ fn is_under_known_prefix(schema: &Schema, key: &str) -> bool {
 /// SSO wiring), and a secret whose option group has its own `enable` switch
 /// that is off — `homelab.backup.remote.environmentFile` is only read when
 /// `homelab.backup.remote.enable` is true.
-fn skip_secret(
+pub fn skip_secret(
     schema: &Schema,
     modules: &[String],
     values: &BTreeMap<String, serde_json::Value>,
