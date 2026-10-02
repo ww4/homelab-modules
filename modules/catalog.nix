@@ -401,4 +401,19 @@ in
     vhosts = [ ];
     secrets = [ ];
   };
+
+  # ── backup ─────────────────────────────────────────────────────────────────
+  backup = {
+    description = "restic snapshots of the irreplaceable small state: a local repo on the pool plus an optional offsite one, same paths and retention; optional SFTP push target for a second machine.";
+    enable = "import";
+    options = [ "homelab.backup" "homelab.adminUser" ];
+    requires = [ ];
+    vhosts = [ ];
+    secrets = [
+      (envRoot "homelab.backup.passwordFile" [ "<restic repository passphrase, one line>" ] "generate")
+      # Only read when homelab.backup.remote.enable is on (the option is nullable;
+      # the configurator skips a nullable secret under a disabled feature group).
+      (envRoot "homelab.backup.remote.environmentFile" [ "<backend credentials as restic env vars, e.g. B2_ACCOUNT_ID + B2_ACCOUNT_KEY>" ] "supply")
+    ];
+  };
 }

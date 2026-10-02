@@ -73,6 +73,7 @@
       qbit-vpn-watchdog = ./modules/services/qbit-vpn-watchdog.nix;
       arr-missing-sweep = ./modules/services/arr-missing-sweep.nix;
       disk-io-watch = ./modules/services/disk-io-watch.nix;
+      backup = ./modules/services/backup.nix;
     };
   };
 }

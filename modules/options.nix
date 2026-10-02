@@ -418,5 +418,140 @@
         '';
       };
     };
+
+    # ── backup (restic) ───────────────────────────────────────────────────────
+    backup = {
+      paths = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        example = [ "/var/lib/nextcloud" "/var/backup/postgresql" "/home/alice/Documents" ];
+        description = ''
+          The critical tier: every path whose loss could not be undone.
+          Application state under /var/lib, database dumps, keys, documents.
+          Not bulk media — that is a mirror job, not a restic job.
+        '';
+      };
+      exclude = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "/var/lib/jellyfin/transcodes" "/var/lib/jellyfin/cache" ];
+        description = "Regenerable subtrees of `paths` (caches, logs, transcode scratch) to leave out.";
+      };
+      passwordFile = lib.mkOption {
+        type = lib.types.str;
+        example = "/run/secrets/restic-password";
+        description = ''
+          File holding the restic repository passphrase, shared by the local
+          and remote repositories. restic cannot recover a lost passphrase:
+          keep a copy somewhere that is not this machine.
+        '';
+      };
+      keep = {
+        daily = lib.mkOption { type = lib.types.ints.positive; default = 7; description = "Daily snapshots to keep."; };
+        weekly = lib.mkOption { type = lib.types.ints.positive; default = 4; description = "Weekly snapshots to keep."; };
+        monthly = lib.mkOption { type = lib.types.ints.positive; default = 6; description = "Monthly snapshots to keep."; };
+      };
+      checkOpts = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ "--with-cache" ];
+        description = "Arguments to `restic check` after each run (structural integrity, using the local cache).";
+      };
+
+      local = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Keep a repository on local storage (fast restores; survives the system disk).";
+        };
+        name = lib.mkOption {
+          type = lib.types.str;
+          default = "critical-local";
+          description = "Job name: the unit is restic-backups-<name>.";
+        };
+        repository = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "/mnt/pool/restic";
+          description = "Directory of the local repository, normally on a storage pool rather than the system disk.";
+        };
+        onCalendar = lib.mkOption {
+          type = lib.types.str;
+          default = "02:30";
+          description = "systemd OnCalendar for the local job (missed runs are caught up).";
+        };
+        requiresMountsFor = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [ ];
+          example = [ "/mnt/pool" ];
+          description = ''
+            Mountpoints that must be mounted before the local job (and the
+            SFTP-push permission service) may run — so a pool that failed
+            to mount yields a skipped run, not a repository written into the
+            bare mountpoint on the system disk.
+          '';
+        };
+      };
+
+      remote = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = "Also push to an offsite repository (survives fire, theft and ransomware).";
+        };
+        name = lib.mkOption {
+          type = lib.types.str;
+          default = "critical-remote";
+          description = "Job name: the unit is restic-backups-<name>.";
+        };
+        repository = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "b2:my-bucket";
+          description = "A restic backend URL: b2:, s3:, azure:, gs:, sftp:, rest:.";
+        };
+        environmentFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "/run/secrets/restic-remote-env";
+          description = ''
+            File of the backend's credentials as restic environment variables
+            (for B2: B2_ACCOUNT_ID and B2_ACCOUNT_KEY; for S3:
+            AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY). Null for backends
+            that need none, such as sftp: with a key.
+          '';
+        };
+        onCalendar = lib.mkOption {
+          type = lib.types.str;
+          default = "03:00";
+          description = "systemd OnCalendar for the remote job (missed runs are caught up).";
+        };
+      };
+
+      sftpPush = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = ''
+            Let a second machine push its own restic snapshots over SFTP
+            into the local repository (one repo for the household). Creates
+            a dedicated system user whose primary group owns the repository.
+          '';
+        };
+        user = lib.mkOption {
+          type = lib.types.str;
+          default = "restic-push";
+          description = "Name of the SFTP-only system user the other machine logs in as.";
+        };
+        authorizedKeys = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [ ];
+          example = [ ''restrict,command="internal-sftp" ssh-ed25519 AAAA... backup@otherbox'' ];
+          description = ''
+            The pushing machine's public keys. Prefix each with
+            restrict,command="internal-sftp" so the key can do nothing but
+            SFTP, whatever the client asks for.
+          '';
+        };
+      };
+    };
   };
 }

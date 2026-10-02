@@ -89,7 +89,7 @@ impl<'a> Plan<'a> {
                     ));
                     continue;
                 }
-                if skip_secret(schema, &modules, s) {
+                if skip_secret(schema, &modules, &values, s) {
                     continue;
                 }
                 secret_options.insert(s.option.clone());
@@ -189,11 +189,36 @@ fn is_under_known_prefix(schema: &Schema, key: &str) -> bool {
     false
 }
 
-/// OIDC client secrets only make sense with the SSO provider present; the
-/// option is nullable and the module documents null = no SSO wiring.
-fn skip_secret(schema: &Schema, modules: &[String], s: &SecretMeta) -> bool {
+/// A nullable secret is one the module works without. Two shapes are
+/// skipped: OIDC client secrets when the SSO provider is absent (null = no
+/// SSO wiring), and a secret whose option group has its own `enable` switch
+/// that is off — `homelab.backup.remote.environmentFile` is only read when
+/// `homelab.backup.remote.enable` is true.
+fn skip_secret(
+    schema: &Schema,
+    modules: &[String],
+    values: &BTreeMap<String, serde_json::Value>,
+    s: &SecretMeta,
+) -> bool {
     let nullable = schema.option(&s.option).map(|o| o.nullable()).unwrap_or(false);
-    nullable && s.option.to_lowercase().contains("oidc") && !modules.iter().any(|m| m == "authelia")
+    if !nullable {
+        return false;
+    }
+    if s.option.to_lowercase().contains("oidc") && !modules.iter().any(|m| m == "authelia") {
+        return true;
+    }
+    if let Some((group, _)) = s.option.rsplit_once('.') {
+        let gate = format!("{group}.enable");
+        if let Some(o) = schema.option(&gate) {
+            let on = values
+                .get(&gate)
+                .and_then(|v| v.as_bool())
+                .or_else(|| o.default_str().map(|d| d == "true"))
+                .unwrap_or(false);
+            return !on;
+        }
+    }
+    false
 }
 
 /// `<homelab.x.y>` → the value, else the option's default, else the text.
