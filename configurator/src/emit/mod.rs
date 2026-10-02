@@ -8,6 +8,7 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 
+use crate::answers::Answers;
 use crate::keys;
 use crate::plan::Plan;
 use crate::schema::Source;
@@ -19,6 +20,10 @@ pub struct Report {
     pub host: String,
     pub modules: Vec<String>,
     pub added_modules: Vec<String>,
+    /// A reconfigure: modules that were in the previous answers and are gone.
+    pub removed_modules: Vec<String>,
+    /// Secret files that already existed and were left as they were.
+    pub kept_secrets: Vec<String>,
     pub auto_values: Vec<String>,
     pub secrets: Vec<SecretReport>,
     pub dns_names: Vec<String>,
@@ -35,6 +40,7 @@ pub struct SecretReport {
     pub module: String,
     pub source: Source,
     pub file: String,
+    pub kept: bool,
 }
 
 impl Report {
@@ -42,13 +48,22 @@ impl Report {
         let mut s = format!("wrote {} for host {}\n", self.out, self.host);
         s.push_str(&format!("modules: {}\n", self.modules.join(" ")));
         if !self.added_modules.is_empty() {
-            s.push_str(&format!("  added by requires: {}\n", self.added_modules.join(" ")));
+            s.push_str(&format!("  added by requires/foundation: {}\n", self.added_modules.join(" ")));
+        }
+        if !self.removed_modules.is_empty() {
+            s.push_str(&format!("  removed: {}\n", self.removed_modules.join(" ")));
         }
         if !self.auto_values.is_empty() {
             s.push_str(&format!("  enabled: {}\n", self.auto_values.join(" ")));
         }
         for sec in &self.secrets {
-            s.push_str(&format!("secret {:<32} {:?}  ({})\n", sec.file, sec.source, sec.option));
+            s.push_str(&format!(
+                "secret {:<32} {:?}{}  ({})\n",
+                sec.file,
+                sec.source,
+                if sec.kept { " kept" } else { "" },
+                sec.option
+            ));
         }
         if let Some(k) = &self.admin_key_generated {
             s.push_str(&format!("admin age key: {k}  — move it to ~/.config/sops/age/keys.txt and DELETE it here\n"));
@@ -64,7 +79,12 @@ impl Report {
     }
 }
 
-pub fn write_all(plan: &Plan, out: &Path) -> Result<Report> {
+/// `answers` is written to `<out>/answers.json` (with the admin password hash
+/// recorded) so the directory can be regenerated later. `reconfigure` says
+/// whether this run is over an existing install: then the hardware file is
+/// left alone, kept secrets are not rewritten, and the next steps say
+/// "rebuild" rather than "install".
+pub fn write_all(plan: &Plan, answers: &Answers, out: &Path, reconfigure: bool) -> Result<Report> {
     let host = &plan.host.name;
     let mut files: Vec<String> = Vec::new();
     let put = |files: &mut Vec<String>, rel: &str, content: String| -> Result<()> {
@@ -77,27 +97,37 @@ pub fn write_all(plan: &Plan, out: &Path) -> Result<Report> {
         Ok(())
     };
 
-    // Keys first: .sops.yaml must exist before any secret is encrypted.
+    // Keys first: .sops.yaml must exist before any secret is encrypted. Both
+    // keys are reused when they already exist in the output.
     let km = keys::prepare(out, host, plan.admin_recipient.as_deref())?;
     put(&mut files, ".sops.yaml", keys::sops_yaml(&km, host))?;
     put(&mut files, ".gitignore", GITIGNORE.into())?;
 
     let mut secret_reports = Vec::new();
     let mut show_once: Vec<(String, String)> = Vec::new();
+    let mut kept_secrets = Vec::new();
     for sp in &plan.secrets {
-        let path = secrets::write_encrypted(out, sp)?;
-        files.push(format!("secrets/{}.yaml", sp.name));
+        let rel = format!("secrets/{}.yaml", sp.name);
+        if sp.kept {
+            kept_secrets.push(rel.clone());
+        } else {
+            let path = secrets::write_encrypted(out, sp)?;
+            files.push(rel.clone());
+            let _ = path;
+        }
         secret_reports.push(SecretReport {
             name: sp.name.clone(),
             option: sp.option.clone(),
             module: sp.module.clone(),
             source: sp.source,
-            file: path.strip_prefix(out).unwrap_or(&path).display().to_string(),
+            file: rel,
+            kept: sp.kept,
         });
         show_once.extend(sp.show_once.iter().cloned());
     }
 
-    // The admin's console password (SSH keys are the intended path).
+    // The admin's console password (SSH keys are the intended path). Minted
+    // once; a reconfigure keeps the hash recorded in answers.json.
     let admin_user = plan
         .values
         .get("homelab.adminUser")
@@ -105,43 +135,68 @@ pub fn write_all(plan: &Plan, out: &Path) -> Result<Report> {
         .or_else(|| plan.schema.option("homelab.adminUser").and_then(|o| o.default.as_deref()).map(|d| d.trim_matches('"')))
         .unwrap_or("admin")
         .to_string();
-    let admin_password = secrets::random_token(20);
-    let admin_hash = mkpasswd(&admin_password)?;
-    show_once.insert(0, (format!("console password for `{admin_user}`"), admin_password));
+    let admin_hash = match &answers.host.admin_password_hash {
+        Some(h) => h.clone(),
+        None => {
+            let admin_password = secrets::random_token(20);
+            let hash = mkpasswd(&admin_password)?;
+            show_once.insert(0, (format!("console password for `{admin_user}`"), admin_password));
+            hash
+        }
+    };
+    let mut recorded = answers.clone();
+    recorded.host.admin_password_hash = Some(admin_hash.clone());
 
+    put(&mut files, "answers.json", serde_json::to_string_pretty(&recorded)? + "\n")?;
     put(&mut files, "flake.nix", nix::flake_nix(plan))?;
     put(&mut files, "homelab-values.nix", nix::values_nix(plan))?;
     put(&mut files, &format!("hosts/{host}/default.nix"), nix::host_nix(plan, &admin_user, &admin_hash))?;
     put(&mut files, &format!("hosts/{host}/disko.nix"), nix::disko_nix(plan))?;
-    put(&mut files, &format!("hosts/{host}/hardware.nix"), nix::hardware_placeholder())?;
+    // nixos-anywhere fills hardware.nix at install; never overwrite a real one.
+    let hw = format!("hosts/{host}/hardware.nix");
+    if !out.join(&hw).exists() {
+        put(&mut files, &hw, nix::hardware_placeholder())?;
+    }
     put(&mut files, "README.md", readme(plan, &km))?;
     if !plan.phase2.is_empty() {
         put(&mut files, "PHASE-2.md", phase2(plan))?;
     }
     // FIRST-LOGIN.md holds plaintext: git-ignored, and created mode 600 (a
-    // mode set after creation would leave a window at 644).
+    // mode set after creation would leave a window at 644). Only when there
+    // is something new to show.
     let fl = out.join("FIRST-LOGIN.md");
     if fl.exists() {
         fs::remove_file(&fl)?;
     }
-    secrets::write_private(&fl, &first_login(&show_once))?;
-    files.push("FIRST-LOGIN.md".into());
+    if !show_once.is_empty() {
+        secrets::write_private(&fl, &first_login(&show_once))?;
+        files.push("FIRST-LOGIN.md".into());
+    }
 
-    let mut next_steps = vec![
-        "read FIRST-LOGIN.md, store what it holds, delete it".to_string(),
-        format!(
-            "create DNS records → this host for: {}",
-            if plan.dns_names.is_empty() { "(none)".into() } else { plan.dns_names.join(", ") }
-        ),
-        format!(
+    let mut next_steps = Vec::new();
+    if !show_once.is_empty() {
+        next_steps.push("read FIRST-LOGIN.md, store what it holds, delete it".to_string());
+    }
+    next_steps.push(format!(
+        "create DNS records → this host for: {}",
+        if plan.dns_names.is_empty() { "(none)".into() } else { plan.dns_names.join(", ") }
+    ));
+    if reconfigure {
+        next_steps.push(format!(
+            "rebuild: nix build .#nixosConfigurations.{host}.config.system.build.toplevel, commit, then merge (or nixos-rebuild switch --flake .#{host} on the host)"
+        ));
+    } else {
+        next_steps.push(format!(
             "install: nixos-anywhere --flake .#{host} --extra-files ./extra-files --generate-hardware-config nixos-generate-config ./hosts/{host}/hardware.nix root@<target>"
-        ),
-    ];
+        ));
+    }
     if let Some(k) = &km.admin_key_file {
-        next_steps.insert(
-            0,
-            format!("move {} to ~/.config/sops/age/keys.txt (it is git-ignored, but the flake dir is not a safe home for it)", k.display()),
-        );
+        if !reconfigure {
+            next_steps.insert(
+                0,
+                format!("move {} to ~/.config/sops/age/keys.txt (it is git-ignored, but the flake dir is not a safe home for it)", k.display()),
+            );
+        }
     }
     if show_once.iter().any(|(label, _)| label.contains("digest")) {
         next_steps.push(
@@ -160,6 +215,8 @@ pub fn write_all(plan: &Plan, out: &Path) -> Result<Report> {
         host: host.clone(),
         modules: plan.modules.clone(),
         added_modules: plan.added_modules.clone(),
+        removed_modules: plan.removed_modules.clone(),
+        kept_secrets,
         auto_values: plan.auto_values.clone(),
         secrets: secret_reports,
         dns_names: plan.dns_names.clone(),

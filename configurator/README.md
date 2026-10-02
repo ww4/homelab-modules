@@ -15,7 +15,7 @@ nix run 'git+https://git.rosemaryacres.com/ww4/homelab-modules.git?dir=configura
 | command | does |
 |---|---|
 | `schema [--modules a,b]` | the question set: every module, the `homelab.*` options it reads (type, default, required?), the secrets it needs and whether each is *generate*, *supply* or *first-boot* |
-| `generate --answers FILE --out DIR [--secret OPT=@file …]` | write the flake, mint keys and secrets, then evaluate the result |
+| `generate --out DIR [--answers FILE] [--add m,…] [--remove m,…] [--set OPT=JSON] [--secret OPT=@file …]` | write the flake, mint keys and secrets, then evaluate the result; on a directory that already holds `answers.json`, reconfigure it (see below) |
 | `validate DIR [--build]` | evaluate (or build) a generated flake's toplevel |
 
 `--json` on any of them gives structured output. Exit codes: 0 ok, 2 answers
@@ -82,6 +82,42 @@ Then, the one supported install path:
 nixos-anywhere --flake .#<host> --extra-files ./extra-files \
   --generate-hardware-config nixos-generate-config ./hosts/<host>/hardware.nix root@<target>
 ```
+
+## Reconfiguring an existing install
+
+`generate` writes a copy of the answers to `<out>/answers.json`. Run it again
+on that directory and it starts from there instead of from a blank form:
+
+```sh
+homelab-configure generate --out ./my-homelab --add paperless --remove glances
+homelab-configure generate --out ./my-homelab --set homelab.backup.keep.daily=14
+homelab-configure generate --out ./my-homelab --answers new-answers.json   # replace wholesale
+```
+
+What a reconfigure keeps: every secret file already in `secrets/` (nothing is
+re-minted; pass `--secret OPTION=@file` to replace one on purpose), the admin
+age key and the host SSH key, the admin's console password (its hash is
+recorded in `answers.json`), and `hosts/<host>/hardware.nix` once
+nixos-anywhere has written the real one. `FIRST-LOGIN.md` appears only when
+there is something new to show. The next step it prints is a rebuild, not an
+install.
+
+Removal is checked. A module another chosen module `requires` cannot go
+(`--remove acme` while `jellyfin` is chosen is reported, and `acme` stays);
+the foundation modules below are refused outright; removing `authelia` warns
+which OIDC-wired apps it orphans. NixOS leaves a removed service's state under
+`/var/lib` and its secret file in `secrets/` — the run says so, and deleting
+them is yours to do.
+
+## The foundation set
+
+Some modules are not choices. `system` and `boot` are added to every plan.
+`backup` must be chosen and configured before the first install (the restore
+path has to exist before there is anything to restore), and a reconfigure
+will not remove it; the same goes for `mergerfs-pools`, because the pool shape
+is decided at install and changing it later is a data migration. A fresh
+install without `monitoring` and `ntfy` is allowed, with a warning: a box with
+no alerting is a box whose first failure is silent.
 
 ## Secret classes
 

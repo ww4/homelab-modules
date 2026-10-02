@@ -60,12 +60,22 @@ struct SchemaArgs {
 
 #[derive(Args)]
 struct GenerateArgs {
-    /// The answers file (see README for the shape).
+    /// The answers file (see README for the shape). Optional when --out already
+    /// holds an answers.json from a previous run: that is the starting point.
     #[arg(long, value_name = "FILE")]
-    answers: PathBuf,
-    /// Output directory — the new flake. Must not exist unless --force.
+    answers: Option<PathBuf>,
+    /// Output directory — the new flake, or an existing one to reconfigure.
     #[arg(long, value_name = "DIR")]
     out: PathBuf,
+    /// Reconfigure: modules to add to the previous answers. Repeatable or comma-separated.
+    #[arg(long, value_name = "MODULE", value_delimiter = ',')]
+    add: Vec<String>,
+    /// Reconfigure: modules to remove (refused when another chosen module requires it, or for a foundation module).
+    #[arg(long, value_name = "MODULE", value_delimiter = ',')]
+    remove: Vec<String>,
+    /// Reconfigure: set a homelab.* value, `homelab.x.y=<json>` (`null` unsets). Repeatable.
+    #[arg(long = "set", value_name = "OPTION=JSON")]
+    set: Vec<String>,
     /// A supplied secret: `<homelab.option>=@/path/to/file` or `<homelab.option>=env:VAR`. Repeatable.
     #[arg(long = "secret", value_name = "OPTION=SOURCE")]
     secrets: Vec<String>,
@@ -155,10 +165,54 @@ fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
         Cmd::Generate(a) => {
-            let text = fs::read_to_string(&a.answers)
-                .with_context(|| format!("reading {}", a.answers.display()))?;
-            let mut answers: Answers = serde_json::from_str(&text)
-                .with_context(|| format!("parsing {}", a.answers.display()))?;
+            // An existing install: <out>/answers.json is what it was generated
+            // from, and this run is a reconfigure over it.
+            let previous: Option<Answers> = {
+                let p = a.out.join("answers.json");
+                if p.exists() {
+                    let text = fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
+                    Some(serde_json::from_str(&text).with_context(|| format!("parsing {}", p.display()))?)
+                } else {
+                    None
+                }
+            };
+            let mut answers: Answers = match (&a.answers, &previous) {
+                (Some(file), _) => {
+                    let text = fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+                    serde_json::from_str(&text).with_context(|| format!("parsing {}", file.display()))?
+                }
+                (None, Some(prev)) => prev.clone(),
+                (None, None) => bail!(
+                    "--answers is required for a new output directory ({} has no answers.json)",
+                    a.out.display()
+                ),
+            };
+            if a.answers.is_some() {
+                if let Some(prev) = &previous {
+                    // A new answers file over an old install keeps the recorded
+                    // password hash unless the file itself carries one.
+                    if answers.host.admin_password_hash.is_none() {
+                        answers.host.admin_password_hash = prev.host.admin_password_hash.clone();
+                    }
+                }
+            }
+            let set: Vec<(String, serde_json::Value)> = a
+                .set
+                .iter()
+                .map(|kv| {
+                    let (k, v) = kv
+                        .split_once('=')
+                        .ok_or_else(|| anyhow!("--set {kv}: expected OPTION=JSON"))?;
+                    let v: serde_json::Value = serde_json::from_str(v)
+                        .or_else(|_| serde_json::from_str(&format!("\"{v}\"")))
+                        .with_context(|| format!("--set {k}: value is not JSON"))?;
+                    Ok((k.to_string(), v))
+                })
+                .collect::<Result<_>>()?;
+            if previous.is_none() && (!a.add.is_empty() || !a.remove.is_empty() || !set.is_empty()) {
+                bail!("--add/--remove/--set reconfigure an existing output; {} has no answers.json", a.out.display());
+            }
+            answers.apply(&a.add, &a.remove, &set);
             if let Some(l) = a.library {
                 answers.library = Some(l);
             }
@@ -166,10 +220,28 @@ fn run(cli: Cli) -> Result<i32> {
                 answers.sops.admin_recipient = Some(r);
             }
             let supplied = secrets::parse_supplied(&a.secrets)?;
-            let plan = plan::Plan::build(&schema, &answers, &supplied).map_err(anyhow::Error::from)?;
+            let existing_secrets = existing_secret_names(&a.out)?;
+            let plan = plan::Plan::build(&schema, &answers, &supplied, previous.as_ref(), &existing_secrets)
+                .map_err(anyhow::Error::from)?;
 
-            prepare_out(&a.out, a.force)?;
-            let report = emit::write_all(&plan, &a.out)?;
+            let reconfigure = previous.is_some();
+            prepare_out(&a.out, a.force || reconfigure)?;
+            let mut report = emit::write_all(&plan, &answers, &a.out, reconfigure)?;
+            // A --remove that `requires` pulled straight back in did nothing;
+            // say so rather than let it read as done.
+            for m in &a.remove {
+                if plan.modules.contains(m) {
+                    let dependents: Vec<&String> = plan
+                        .modules
+                        .iter()
+                        .filter(|o| schema.catalog.get(*o).map(|meta| meta.requires.contains(m)).unwrap_or(false))
+                        .collect();
+                    report.warnings.push(format!(
+                        "--remove {m}: still imported — required by {}",
+                        dependents.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", ")
+                    ));
+                }
+            }
 
             // No input override here: flake.nix already names the library the
             // answers chose (a path: reference included), so nix can write the
@@ -224,6 +296,21 @@ fn load_schema(catalog: Option<&Path>, options: Option<&Path>) -> Result<Schema>
         );
     }
     Schema::parse(&catalog_text, &options_text)
+}
+
+/// sops secret names whose encrypted file already exists under <out>/secrets/.
+fn existing_secret_names(out: &Path) -> Result<std::collections::BTreeSet<String>> {
+    let mut names = std::collections::BTreeSet::new();
+    let dir = out.join("secrets");
+    if dir.is_dir() {
+        for entry in fs::read_dir(&dir)? {
+            let p = entry?.path();
+            if let (Some(stem), Some("yaml")) = (p.file_stem(), p.extension().and_then(|e| e.to_str())) {
+                names.insert(stem.to_string_lossy().to_string());
+            }
+        }
+    }
+    Ok(names)
 }
 
 fn prepare_out(out: &Path, force: bool) -> Result<()> {

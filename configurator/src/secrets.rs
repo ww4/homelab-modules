@@ -77,6 +77,24 @@ pub struct SecretPlan {
     /// Show-once values for FIRST-LOGIN.md: (label, value).
     #[serde(skip)]
     pub show_once: Vec<(String, String)>,
+    /// The encrypted file already exists in the output (a reconfigure): it is
+    /// declared but neither minted nor written again.
+    pub kept: bool,
+}
+
+/// A secret whose file is already in the output directory: keep it.
+pub fn kept_secret(module: &str, meta: &SecretMeta, values: &BTreeMap<String, serde_json::Value>, schema: &Schema) -> SecretPlan {
+    SecretPlan {
+        module: module.to_string(),
+        option: meta.option.clone(),
+        name: secret_name(&meta.option),
+        owner: crate::plan::resolve_placeholder(schema, values, &meta.owner),
+        source: meta.source,
+        keys: meta.keys.clone(),
+        content: String::new(),
+        show_once: Vec::new(),
+        kept: true,
+    }
 }
 
 pub fn plan_secret(
@@ -120,6 +138,7 @@ pub fn plan_secret(
         keys: meta.keys.clone(),
         content,
         show_once,
+        kept: false,
     })
 }
 

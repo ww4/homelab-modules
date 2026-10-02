@@ -11,6 +11,30 @@ use crate::Rejected;
 
 pub const DEFAULT_LIBRARY: &str = "git+https://git.rosemaryacres.com/ww4/homelab-modules.git"; // leak-scan-ok: the library's own home
 
+/// Foundation modules — present from the first run, never offered as choices.
+/// `system` and `boot` are added to every plan; they read no values.
+pub const FOUNDATION_ALWAYS: &[&str] = &["system", "boot"];
+/// Foundation modules the user must choose AND configure before the first
+/// install, with the reason the plan gives when one is missing.
+pub const FOUNDATION_REQUIRED: &[(&str, &str)] = &[(
+    "backup",
+    "the restore path must exist before there is anything to restore — add `backup` with \
+     `homelab.backup.paths` (the state directories of your services) and \
+     `homelab.backup.local.repository`",
+)];
+/// Modules a reconfigure refuses to remove, with the reason.
+pub const NEVER_REMOVE: &[(&str, &str)] = &[
+    ("system", "foundation: every host needs it"),
+    ("boot", "foundation: every host needs it"),
+    ("backup", "foundation: a machine with no backup is a decision to make by hand, not with --remove"),
+    ("mergerfs-pools", "foundation: the pool shape is decided at install; changing it later is a data migration, not a reconfigure"),
+];
+/// Modules whose absence is allowed but warned about on a fresh install.
+pub const FOUNDATION_DEFAULT_ON: &[(&str, &str)] = &[
+    ("monitoring", "a box with no alerting is a box whose first failure is silent"),
+    ("ntfy", "without a notification channel the alerts have nowhere to go"),
+];
+
 pub struct Plan<'a> {
     pub schema: &'a Schema,
     pub host: &'a Host,
@@ -18,6 +42,8 @@ pub struct Plan<'a> {
     pub modules: Vec<String>,
     /// Modules the user did not name but `requires` pulled in.
     pub added_modules: Vec<String>,
+    /// Modules present in the previous answers and absent now (a reconfigure).
+    pub removed_modules: Vec<String>,
     /// homelab.* values to emit, including enable flags set automatically.
     pub values: BTreeMap<String, serde_json::Value>,
     pub auto_values: Vec<String>,
@@ -32,10 +58,16 @@ pub struct Plan<'a> {
 }
 
 impl<'a> Plan<'a> {
+    /// `previous`: the answers the output directory was last generated from
+    /// (a reconfigure), or None for a fresh install. `existing_secrets`: the
+    /// sops secret names whose files already exist in the output; those are
+    /// kept, never re-minted.
     pub fn build(
         schema: &'a Schema,
         answers: &'a Answers,
         supplied: &Supplied,
+        previous: Option<&Answers>,
+        existing_secrets: &BTreeSet<String>,
     ) -> Result<Plan<'a>, Rejected> {
         let mut problems = Vec::new();
         let mut warnings = Vec::new();
@@ -43,13 +75,90 @@ impl<'a> Plan<'a> {
         if answers.modules.is_empty() {
             problems.push("modules: choose at least one module".into());
         }
-        let (modules, added_modules) = match schema.close_over_requires(&answers.modules) {
+        // The foundation modules nobody chooses: added to every plan.
+        let mut requested = answers.modules.clone();
+        for f in FOUNDATION_ALWAYS {
+            if schema.catalog.contains_key(*f) && !requested.iter().any(|m| m == f) {
+                requested.push((*f).to_string());
+            }
+        }
+        for (f, why) in FOUNDATION_REQUIRED {
+            // On a reconfigure that drops it, the --remove refusal below is the
+            // message; on a fresh install (or one that never had it), this is.
+            let had_it = previous.map(|p| p.modules.iter().any(|m| m == f)).unwrap_or(false);
+            if schema.catalog.contains_key(*f) && !requested.iter().any(|m| m == f) && !had_it {
+                problems.push(format!("modules: `{f}` is a foundation module — {why}"));
+            }
+        }
+        if previous.is_none() {
+            for (f, why) in FOUNDATION_DEFAULT_ON {
+                if schema.catalog.contains_key(*f) && !requested.iter().any(|m| m == f) {
+                    warnings.push(format!("modules: `{f}` is not chosen — {why}"));
+                }
+            }
+        }
+        let (modules, mut added_modules) = match schema.close_over_requires(&requested) {
             Ok(x) => x,
             Err(e) => {
                 problems.push(format!("modules: {e}"));
                 (Vec::new(), Vec::new())
             }
         };
+        // The foundation set counts as added: the user never named it.
+        for f in FOUNDATION_ALWAYS {
+            if modules.iter().any(|m| m == f) && !answers.modules.iter().any(|m| m == f) && !added_modules.iter().any(|m| m == f) {
+                added_modules.push((*f).to_string());
+            }
+        }
+
+        // A reconfigure: what was there before and is not now.
+        let mut removed_modules = Vec::new();
+        if let Some(prev) = previous {
+            let prev_closed = schema
+                .close_over_requires(&prev.modules)
+                .map(|(all, _)| all)
+                .unwrap_or_else(|_| prev.modules.clone());
+            for m in &prev_closed {
+                if modules.contains(m) {
+                    continue;
+                }
+                if let Some((_, why)) = NEVER_REMOVE.iter().find(|(n, _)| n == m) {
+                    problems.push(format!("--remove {m}: refused — {why}"));
+                    continue;
+                }
+                let dependents: Vec<&String> = modules
+                    .iter()
+                    .filter(|other| schema.catalog.get(*other).map(|meta| meta.requires.contains(m)).unwrap_or(false))
+                    .collect();
+                if !dependents.is_empty() {
+                    problems.push(format!(
+                        "--remove {m}: refused — still required by {}",
+                        dependents.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", ")
+                    ));
+                    continue;
+                }
+                removed_modules.push(m.clone());
+            }
+            if removed_modules.iter().any(|m| m == "authelia") {
+                let orphans: Vec<String> = answers
+                    .values
+                    .keys()
+                    .filter(|k| k.to_lowercase().contains("oidc"))
+                    .cloned()
+                    .collect();
+                if !orphans.is_empty() {
+                    warnings.push(format!(
+                        "removing authelia orphans the SSO wiring behind {}: those apps will fail to log in until you unset them",
+                        orphans.join(", ")
+                    ));
+                }
+            }
+            for m in &removed_modules {
+                warnings.push(format!(
+                    "removed {m}: NixOS leaves its state in place (look under /var/lib) and its secret files stay in secrets/; delete both yourself if you mean it"
+                ));
+            }
+        }
 
         // Values: only homelab.* is accepted here; everything else belongs in
         // the host file the user edits afterwards.
@@ -96,6 +205,12 @@ impl<'a> Plan<'a> {
                     continue;
                 }
                 secret_options.insert(s.option.clone());
+                if existing_secrets.contains(&secrets::secret_name(&s.option)) && supplied.take(&s.option).is_none() {
+                    // A reconfigure keeps what is already encrypted; a value
+                    // passed with --secret replaces it on purpose.
+                    secret_plans.push(secrets::kept_secret(m, s, &values, schema));
+                    continue;
+                }
                 match secrets::plan_secret(m, s, &values, schema, supplied, &mut minted) {
                     Ok(p) => {
                         if p.source == Source::FirstBoot {
@@ -165,6 +280,7 @@ impl<'a> Plan<'a> {
             host: &answers.host,
             modules,
             added_modules,
+            removed_modules,
             values,
             auto_values,
             secrets: secret_plans,
@@ -249,6 +365,94 @@ pub fn resolve_placeholder(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn schema() -> Schema {
+        let catalog = r#"{
+          "system": {"description":"s","enable":"import","options":[],"requires":[],"vhosts":[],"secrets":[]},
+          "boot": {"description":"b","enable":"import","options":[],"requires":[],"vhosts":[],"secrets":[]},
+          "acme": {"description":"a","enable":"import","options":["homelab.acme"],"requires":[],"vhosts":[],"secrets":[
+             {"option":"homelab.acme.credentialsFile","keys":["TOKEN"],"owner":"root","source":"supply"}]},
+          "nginx-access": {"description":"n","enable":"import","options":[],"requires":[],"vhosts":[],"secrets":[]},
+          "jellyfin": {"description":"j","enable":"import","options":["homelab.domain"],"requires":["acme","nginx-access"],"vhosts":["jellyfin"],"secrets":[]},
+          "backup": {"description":"k","enable":"import","options":["homelab.backup"],"requires":[],"vhosts":[],"secrets":[
+             {"option":"homelab.backup.passwordFile","keys":["<passphrase>"],"owner":"root","source":"generate"}]},
+          "authelia": {"description":"au","enable":"homelab.authelia.enable","options":["homelab.authelia"],"requires":["acme"],"vhosts":["auth"],"secrets":[]}
+        }"#;
+        let options = r#"[
+          {"name":"homelab.domain","type":"string","description":"d","hasDefault":false,"default":null,"example":null},
+          {"name":"homelab.acme.email","type":"string","description":"e","hasDefault":false,"default":null,"example":null},
+          {"name":"homelab.acme.credentialsFile","type":"string","description":"c","hasDefault":false,"default":null,"example":null},
+          {"name":"homelab.backup.paths","type":"list of string","description":"p","hasDefault":false,"default":null,"example":null},
+          {"name":"homelab.backup.passwordFile","type":"string","description":"pw","hasDefault":false,"default":null,"example":null},
+          {"name":"homelab.authelia.enable","type":"boolean","description":"en","hasDefault":true,"default":"false","example":null}
+        ]"#;
+        Schema::parse(catalog, options).unwrap()
+    }
+
+    fn answers(modules: &[&str]) -> Answers {
+        let mut a: Answers = serde_json::from_str(
+            r#"{"host":{"name":"box","timeZone":"UTC","disk":"/dev/sda"},"modules":[],"values":{"homelab.domain":"a.test","homelab.acme.email":"a@a.test","homelab.backup.paths":["/var/lib/x"]}}"#,
+        )
+        .unwrap();
+        a.modules = modules.iter().map(|m| m.to_string()).collect();
+        a
+    }
+
+    fn supplied() -> Supplied {
+        let mut s = Supplied::default();
+        s.by_option.insert("homelab.acme.credentialsFile".into(), "TOKEN=x\n".into());
+        s
+    }
+
+    #[test]
+    fn foundation_is_added_and_backup_is_demanded() {
+        let s = schema();
+        let a = answers(&["jellyfin"]);
+        let err = Plan::build(&s, &a, &supplied(), None, &BTreeSet::new()).err().unwrap();
+        assert!(err.0.iter().any(|p| p.contains("`backup` is a foundation module")), "{:?}", err.0);
+
+        let a = answers(&["jellyfin", "backup"]);
+        let p = Plan::build(&s, &a, &supplied(), None, &BTreeSet::new()).unwrap();
+        assert!(p.modules.contains(&"system".to_string()) && p.modules.contains(&"boot".to_string()));
+        assert!(p.added_modules.contains(&"system".to_string()));
+        assert!(p.removed_modules.is_empty());
+    }
+
+    #[test]
+    fn removal_is_checked_against_requires_and_the_foundation() {
+        let s = schema();
+        let prev = answers(&["jellyfin", "backup"]);
+        // Removing acme while jellyfin still needs it: refused.
+        let mut a = answers(&["jellyfin", "backup"]);
+        a.values.clear();
+        let a = { let mut b = answers(&["jellyfin", "backup"]); b.modules = vec!["jellyfin".into(), "backup".into()]; b };
+        // acme is pulled in by requires either way; simulate an explicit removal of backup.
+        let mut no_backup = a.clone();
+        no_backup.modules.retain(|m| m != "backup");
+        let err = Plan::build(&s, &no_backup, &supplied(), Some(&prev), &BTreeSet::new()).err().unwrap();
+        assert!(err.0.iter().any(|p| p.contains("--remove backup: refused")), "{:?}", err.0);
+
+        // Removing jellyfin: allowed, with the state warning; acme stays (nothing else needs it, but it was requested by nothing — it is dropped too).
+        let mut no_jf = a.clone();
+        no_jf.modules.retain(|m| m != "jellyfin");
+        let p = Plan::build(&s, &no_jf, &supplied(), Some(&prev), &BTreeSet::new()).unwrap();
+        assert!(p.removed_modules.contains(&"jellyfin".to_string()));
+        assert!(p.warnings.iter().any(|w| w.contains("removed jellyfin")));
+    }
+
+    #[test]
+    fn existing_secrets_are_kept_not_reminted() {
+        let s = schema();
+        let a = answers(&["jellyfin", "backup"]);
+        let mut existing = BTreeSet::new();
+        existing.insert("backup-password".to_string());
+        let p = Plan::build(&s, &a, &supplied(), Some(&a), &existing).unwrap();
+        let bk = p.secrets.iter().find(|x| x.option == "homelab.backup.passwordFile").unwrap();
+        assert!(bk.kept);
+        assert!(bk.show_once.is_empty());
+        let acme = p.secrets.iter().find(|x| x.option == "homelab.acme.credentialsFile").unwrap();
+        assert!(!acme.kept, "a supplied value replaces the file");
+    }
 
     #[test]
     fn placeholder_resolution_order() {
