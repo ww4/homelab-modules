@@ -174,6 +174,11 @@ otherwise the nullable `*OidcSecretFile` options stay unset (no SSO wiring).
 
 ## Development
 
+`tools/publish-iso.sh [--bucket NAME]` builds the ISO and uploads it (with a
+sha256 and a `latest.txt`) to a DigitalOcean Space, public-read, with the
+Spaces key in `/run/secrets/digitalocean`. The guide links the result.
+
+
 ```sh
 cd configurator
 nix develop
