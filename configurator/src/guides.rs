@@ -12,6 +12,68 @@ pub struct Guide {
     pub steps: &'static str,
 }
 
+/// One variable inside a secret file: what to call it on screen, what it is,
+/// and whether to hide it while it is typed. A secret is a FORM, not one
+/// blob — "the file must carry WIREGUARD_PRIVATE_KEY, WIREGUARD_ADDRESSES,
+/// SERVER_COUNTRIES" is no use to someone staring at a single prompt.
+pub struct SecretField {
+    pub var: String,
+    pub label: String,
+    pub help: String,
+    pub masked: bool,
+    pub optional: bool,
+}
+
+fn f(var: &str, label: &str, help: &str, masked: bool, optional: bool) -> SecretField {
+    SecretField { var: var.into(), label: label.into(), help: help.into(), masked, optional }
+}
+
+/// The variables a secret file needs, in the order a person fills them.
+/// Empty means the value is a path to a file the user already has (the
+/// MeshCentral .msh), not a set of variables.
+pub fn fields(option: &str, values: &BTreeMap<String, String>) -> Vec<SecretField> {
+    match option {
+        "homelab.acme.credentialsFile" => vec![f(
+            "CLOUDFLARE_DNS_API_TOKEN",
+            "Cloudflare API token",
+            "The token itself, about 40 characters. Cloudflare shows it once, when you create it.",
+            true,
+            false,
+        )],
+        "homelab.arrStack.vpnEnvFile" => {
+            let provider = values.get("homelab.arrStack.vpnProvider").map(|s| s.trim().to_lowercase()).unwrap_or_default();
+            let mut out = vec![
+                f("WIREGUARD_PRIVATE_KEY", "WireGuard private key", "The PrivateKey line of the .conf your provider gave you, without `PrivateKey = `.", true, false),
+                f("WIREGUARD_ADDRESSES", "WireGuard address", "The Address line of the same file, keeping the /32, e.g. 10.64.0.2/32.", false, false),
+                f("SERVER_COUNTRIES", "Server country", "Where to come out, e.g. Netherlands. One country name.", false, false),
+            ];
+            match provider.as_str() {
+                "protonvpn" | "proton" => out.push(f("VPN_PORT_FORWARDING", "Port forwarding", "`on` to ask Proton for a forwarded port (needed for good seeding).", false, true)),
+                "mullvad" => {}
+                _ => out.push(f("FIREWALL_VPN_INPUT_PORTS", "Forwarded port", "The port your provider forwards, if it does. Leave empty otherwise; set qBittorrent's listen port to the same number.", false, true)),
+            }
+            out
+        }
+        "homelab.backup.remote.environmentFile" => vec![
+            f("B2_ACCOUNT_ID", "Application key ID", "The keyID Backblaze shows when you add an application key.", false, false),
+            f("B2_ACCOUNT_KEY", "Application key", "The applicationKey beside it, shown once.", true, false),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+/// The file content for a filled form: `KEY=value` lines, empty ones dropped.
+pub fn compose(values: &[(String, String)]) -> String {
+    let mut s = String::new();
+    for (k, v) in values {
+        let v = v.trim();
+        if !v.is_empty() {
+            s.push_str(&format!("{k}={v}\n"));
+        }
+    }
+    s
+}
+
 /// The guide for a secret option, given the current values (the VPN guide
 /// depends on `homelab.arrStack.vpnProvider`).
 pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Guide> {
@@ -23,24 +85,22 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
                     Then: dash.cloudflare.com → profile icon → My Profile → API Tokens → Create Token → \
                     use the \"Edit zone DNS\" template → Zone Resources: Include · Specific zone · your domain \
                     → Continue → Create → copy the token (shown once).\n\
-                    Press Enter and type just the token: the file is written as CLOUDFLARE_DNS_API_TOKEN=… and \
-                    the token is checked against your zone right away. ACME uses it for DNS-01 challenges; \
+                    The box below takes just the token; it is saved as CLOUDFLARE_DNS_API_TOKEN=… and \
+                    checked against your zone right away. ACME uses it for DNS-01 challenges; \
                     `homelab-configure dns` uses it later to create the A records.",
         }),
         "homelab.arrStack.vpnEnvFile" => {
             let provider = values.get("homelab.arrStack.vpnProvider").map(|s| s.trim().to_lowercase()).unwrap_or_default();
             let (title, steps) = match provider.as_str() {
                 "mullvad" => ("Mullvad WireGuard credentials", "mullvad.net → account → WireGuard configuration → generate a key (Linux) → download a config for any location. \
-                    From that .conf: PrivateKey → WIREGUARD_PRIVATE_KEY, Address → WIREGUARD_ADDRESSES (keep the /32). \
-                    Press Enter and type the lines separated by ` | `, e.g.\n  WIREGUARD_PRIVATE_KEY=… | WIREGUARD_ADDRESSES=10.x.y.z/32 | SERVER_COUNTRIES=Netherlands\n\
+                    Fill the boxes below from that .conf: PrivateKey and Address (keep the /32).\n\
                     Mullvad has no port forwarding: expect slower seeding; a tracker that needs an open port wants a provider that forwards one (Proton VPN does)."),
                 "protonvpn" | "proton" => ("Proton VPN WireGuard credentials (port forwarding on paid plans)", "account.protonvpn.com → Downloads → WireGuard configuration → Linux · pick a P2P server · enable \"NAT-PMP (port forwarding)\" → Create → download. \
-                    From the .conf: PrivateKey → WIREGUARD_PRIVATE_KEY, Address → WIREGUARD_ADDRESSES. Add VPN_PORT_FORWARDING=on for the forwarded port.\n\
-                    Press Enter and type the lines separated by ` | `."),
+                    Fill the boxes below from the .conf: PrivateKey and Address. Set port forwarding to `on` for a forwarded port."),
                 "" => ("VPN credentials for the download client", "Set homelab.arrStack.vpnProvider on the Values screen first (mullvad, protonvpn, or any provider gluetun supports); \
                     the steps for that provider appear here."),
                 _ => ("VPN credentials for the download client", "This provider is passed to gluetun as VPN_SERVICE_PROVIDER; the variables it needs are in gluetun's wiki page for it. \
-                    Most WireGuard providers need WIREGUARD_PRIVATE_KEY, WIREGUARD_ADDRESSES and SERVER_COUNTRIES; one that forwards a port adds FIREWALL_VPN_INPUT_PORTS (set qBittorrent's listen port to the same number). Press Enter and type the lines separated by ` | `. \
+                    Most WireGuard providers need a private key, an address and a country; one that forwards a port adds the port number (set qBittorrent's listen port to the same). \
                     (provider: {other})"),
             };
             let steps: &'static str = Box::leak(steps.replace("{other}", &provider).into_boxed_str());
@@ -50,7 +110,7 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
             title: "Backblaze B2 credentials for the offsite restic repository",
             steps: "backblaze.com → B2 Cloud Storage → create a bucket (private) → Application Keys → Add a New Application Key, \
                     restricted to that bucket, read and write. Set homelab.backup.remote.repository to b2:<bucket-name>.\n\
-                    Press Enter and type:  B2_ACCOUNT_ID=<keyID> | B2_ACCOUNT_KEY=<applicationKey>\n\
+                    Fill the two boxes below with the keyID and the applicationKey.\n\
                     Any restic backend works instead (S3, SFTP): then the variables are that backend's.",
         }),
         "homelab.meshagent.mshFile" => Some(Guide {
@@ -118,13 +178,26 @@ mod tests {
     }
 
     #[test]
-    fn vpn_guide_follows_the_provider() {
+    fn vpn_fields_and_guide_follow_the_provider() {
         let mut v = BTreeMap::new();
         assert!(for_option("homelab.arrStack.vpnEnvFile", &v).unwrap().steps.contains("vpnProvider"));
         v.insert("homelab.arrStack.vpnProvider".into(), "ProtonVPN".into());
-        assert!(for_option("homelab.arrStack.vpnEnvFile", &v).unwrap().steps.contains("VPN_PORT_FORWARDING"));
+        assert!(fields("homelab.arrStack.vpnEnvFile", &v).iter().any(|f| f.var == "VPN_PORT_FORWARDING"));
+        v.insert("homelab.arrStack.vpnProvider".into(), "mullvad".into());
+        assert!(fields("homelab.arrStack.vpnEnvFile", &v).iter().all(|f| f.var != "VPN_PORT_FORWARDING"));
         v.insert("homelab.arrStack.vpnProvider".into(), "ivpn".into());
         assert!(for_option("homelab.arrStack.vpnEnvFile", &v).unwrap().steps.contains("ivpn"));
         assert!(for_option("homelab.nothing", &v).is_none());
+    }
+
+    #[test]
+    fn a_secret_is_a_form_of_named_variables() {
+        let v = BTreeMap::new();
+        assert_eq!(fields("homelab.acme.credentialsFile", &v)[0].var, "CLOUDFLARE_DNS_API_TOKEN");
+        assert!(fields("homelab.acme.credentialsFile", &v)[0].masked);
+        // A path-only secret has no variables: the user points at a file.
+        assert!(fields("homelab.meshagent.mshFile", &v).is_empty());
+        // Empty values are dropped, so a skipped optional line is not written.
+        assert_eq!(compose(&[("A".into(), "1".into()), ("B".into(), "  ".into())]), "A=1\n");
     }
 }

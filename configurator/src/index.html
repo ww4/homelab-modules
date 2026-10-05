@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homelab installer</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1d1b; --muted: #5f5e58; --line: #ded9cd;
+    --accent: #2a5d8f; --ok: #1d6b3f; --bad: #a32020; --card: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16171a; --fg:#e6e4dd; --muted:#a09e95; --line:#2d2f34; --accent:#8bb8e8; --ok:#79c698; --bad:#f08a8a; --card:#1c1e22; }
+  }
+  * { box-sizing: border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif }
+  header { border-bottom:1px solid var(--line); background:var(--card) }
+  .wrap { max-width:760px; margin:0 auto; padding:1rem 1.1rem }
+  h1 { font-size:1.25rem; margin:.1rem 0 .3rem }
+  .step { color:var(--muted); font-size:.85rem }
+  .bar { height:4px; background:var(--line); border-radius:2px; margin-top:.6rem; overflow:hidden }
+  .bar i { display:block; height:100%; background:var(--accent) }
+  .intro { color:var(--muted); margin:.9rem 0 1.2rem }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.9rem 1rem; margin:.7rem 0 }
+  .card h3 { margin:.1rem 0 .4rem; font-size:1rem }
+  .row { display:flex; gap:.7rem; align-items:baseline; flex-wrap:wrap; margin:.55rem 0 }
+  .row label { flex:0 0 11rem; font-weight:600 }
+  .row .help { flex:1 1 100%; color:var(--muted); font-size:.85rem; margin-top:-.3rem }
+  input[type=text], input[type=password], select, textarea {
+    flex:1 1 14rem; min-width:0; font:inherit; padding:.5rem .6rem; color:var(--fg);
+    background:var(--bg); border:1px solid var(--line); border-radius:6px;
+  }
+  textarea { width:100%; min-height:4.2rem; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.85rem }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--accent); outline-offset:1px }
+  button { font:inherit; padding:.5rem .9rem; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600 }
+  button.danger { background:var(--bad); border-color:var(--bad); color:#fff; font-weight:600 }
+  button:disabled { opacity:.5; cursor:default }
+  .choice { display:flex; gap:.7rem; padding:.6rem; border:1px solid var(--line); border-radius:6px; margin:.4rem 0; cursor:pointer; align-items:flex-start }
+  .choice.on { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent) }
+  .choice b { display:block }
+  .choice .mem { font-variant-numeric:tabular-nums; font-weight:600 }
+  .fits { color:var(--ok) } .short { color:var(--bad) }
+  .muted { color:var(--muted) } .ok { color:var(--ok) } .bad { color:var(--bad) }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:.7rem; overflow:auto; max-height:26rem; font-size:.8rem; line-height:1.35 }
+  footer { position:sticky; bottom:0; background:var(--card); border-top:1px solid var(--line); margin-top:1.2rem }
+  footer .wrap { display:flex; gap:.7rem; align-items:center; padding:.8rem 1.1rem }
+  #status { min-height:1.4rem; font-size:.9rem }
+  ul.keys { list-style:none; padding:0; margin:.4rem 0 }
+  ul.keys li { display:flex; gap:.6rem; align-items:center; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.8rem; margin:.25rem 0 }
+  .erase { color:var(--bad); font-weight:600; font-family:ui-monospace,Menlo,Consolas,monospace }
+  .mods { max-height:22rem; overflow:auto; border:1px solid var(--line); border-radius:6px; padding:.4rem }
+  .mods label { display:flex; gap:.5rem; align-items:flex-start; padding:.25rem; font-size:.9rem }
+  .mods label span { color:var(--muted) }
+  dl { display:grid; grid-template-columns:8rem 1fr; gap:.3rem .8rem; margin:.3rem 0 }
+  dt { font-weight:600 } dd { margin:0 }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1 id="title">Homelab installer</h1>
+  <div class="step" id="stepline"></div>
+  <div class="bar"><i id="progress" style="width:0"></i></div>
+</div></header>
+
+<main class="wrap">
+  <p class="intro" id="intro"></p>
+  <div id="screen"></div>
+</main>
+
+<footer><div class="wrap">
+  <button id="back">Back</button>
+  <button id="go" class="primary">Continue</button>
+  <span id="status"></span>
+</div></footer>
+
+<script>
+const qs = new URLSearchParams(location.search);
+let code = (qs.get("code") || sessionStorage.getItem("code") || "").toUpperCase();
+if (code) sessionStorage.setItem("code", code);
+let state = null, typing = false;
+
+const el = (t, props = {}, kids = []) => {
+  const n = Object.assign(document.createElement(t), props);
+  for (const k of [].concat(kids)) n.append(k);
+  return n;
+};
+
+async function call(action) {
+  const r = await fetch(action ? "/api/action?code=" + code : "/api/state?code=" + code, {
+    method: action ? "POST" : "GET",
+    headers: action ? { "Content-Type": "application/json" } : {},
+    body: action ? JSON.stringify(action) : undefined,
+  });
+  if (r.status === 403) { askCode(); return; }
+  state = await r.json();
+  render();
+}
+
+function askCode() {
+  document.getElementById("screen").replaceChildren(
+    el("div", { className: "card" }, [
+      el("h3", { textContent: "Enter the code from the machine's screen" }),
+      el("p", { className: "muted", textContent: "The installer shows six characters next to this address. It stops anyone else on your network from driving the install." }),
+      (() => {
+        const i = el("input", { type: "text", id: "codein", placeholder: "ABC123", autocapitalize: "characters" });
+        const b = el("button", { className: "primary", textContent: "Continue", onclick: () => { code = i.value.trim().toUpperCase(); sessionStorage.setItem("code", code); call(null); } });
+        return el("div", { className: "row" }, [i, b]);
+      })(),
+    ]));
+  document.getElementById("intro").textContent = "";
+  document.getElementById("title").textContent = "Homelab installer";
+}
+
+/* one label + control line */
+function row(label, control, help) {
+  const kids = [el("label", { textContent: label }), control];
+  if (help) kids.push(el("div", { className: "help", textContent: help }));
+  return el("div", { className: "row" }, kids);
+}
+
+function textField(f, send) {
+  const input = el("input", {
+    type: f.masked ? "password" : "text",
+    value: f.masked ? "" : (f.value || ""),
+    placeholder: f.masked && f.set ? "(saved — type to replace)" : "",
+    onfocus: () => (typing = true),
+    onblur: (e) => { typing = false; send(e.target.value); },
+    onkeydown: (e) => { if (e.key === "Enter") e.target.blur(); },
+  });
+  return row(f.label, input, f.help);
+}
+
+function render() {
+  if (!state) return;
+  const s = state;
+  document.getElementById("title").textContent = s.title;
+  document.getElementById("stepline").textContent = `step ${s.index} of ${s.of}`;
+  document.getElementById("progress").style.width = (100 * s.index / s.of) + "%";
+  document.getElementById("intro").textContent = s.intro;
+  const st = document.getElementById("status");
+  st.textContent = s.status ? s.status.message : "";
+  st.className = s.status && s.status.error ? "bad" : "ok";
+
+  const back = document.getElementById("back"), go = document.getElementById("go");
+  back.style.display = ["welcome", "install", "done"].includes(s.step) ? "none" : "";
+  back.onclick = () => call({ do: "back" });
+  go.textContent = s.step === "review" ? (s.machine.live_usb ? "Install" : "Write the configuration")
+    : s.step === "install" ? "working..." : s.step === "done" ? "Finished" : "Continue";
+  go.className = s.step === "review" ? "danger" : "primary";
+  go.disabled = s.step === "install" || s.step === "done";
+  go.onclick = () => call({ do: "continue" });
+
+  const box = document.getElementById("screen");
+  box.replaceChildren(...(screens[s.step] || (() => []))(s));
+}
+
+const screens = {
+  welcome: (s) => {
+    const m = s.machine;
+    const net = !m.address ? "waiting for a network address" : `${m.address}${m.internet === false ? " · internet NOT reachable yet" : m.internet ? " · internet reachable" : ""}`;
+    return [el("div", { className: "card" }, [
+      el("h3", { textContent: "This machine" }),
+      el("dl", {}, [
+        el("dt", { textContent: "Memory" }), el("dd", { textContent: m.ram_mib ? (m.ram_mib / 1024).toFixed(1) + " GB" : "unknown" }),
+        el("dt", { textContent: "Disks" }), el("dd", { textContent: m.disks + " available to install on" }),
+        el("dt", { textContent: "Network" }), el("dd", { textContent: net }),
+      ]),
+      el("p", { className: "muted", textContent: "You are filling this in from another computer; the machine's own screen shows the same answers as you go." }),
+    ])];
+  },
+
+  kit: (s) => s.kits.map((k, i) => {
+    const node = el("div", { className: "choice" + (k.chosen ? " on" : ""), onclick: () => call({ do: "set_kit", index: i }) }, [
+      el("div", { className: "mem " + (k.fits ? "fits" : "short"), textContent: "~" + k.need_gb + " GB" }),
+      el("div", {}, [el("b", { textContent: k.name }), el("span", { className: "muted", textContent: k.blurb })]),
+    ]);
+    return node;
+  }),
+
+  storage: (s) => {
+    if (!s.disks.length) return [textField(s.disk_fallback, (v) => call({ do: "set_disk_path", value: v }))];
+    return s.disks.map((d, i) => {
+      const sel = el("select", { onchange: (e) => call({ do: "set_disk", index: i, role: e.target.value }) });
+      for (const [v, t] of [["unused", "not used"], ["system", "SYSTEM — the operating system (erased)"], ["data", "data — storage for your files (erased)"], ["parity", "parity — protects the data disks"]]) {
+        sel.append(el("option", { value: v, textContent: t, selected: d.role === v }));
+      }
+      return el("div", { className: "card" }, [
+        el("div", { className: "row" }, [el("label", { textContent: `${d.kernel} · ${d.size}` }), sel]),
+        el("div", { className: "muted", style: "font-size:.8rem", textContent: `${d.model || "disk"} · ${d.id}` }),
+      ]);
+    });
+  },
+
+  profile: (s) => s.profile.map((f) => textField(f, (v) => call({ do: "set_profile", key: f.key, value: v }))),
+
+  ssh: (s) => {
+    const user = el("input", { type: "text", placeholder: "github username", onfocus: () => (typing = true), onblur: () => (typing = false) });
+    const paste = el("textarea", { placeholder: "ssh-ed25519 AAAA... you@laptop", onfocus: () => (typing = true), onblur: () => (typing = false) });
+    const keys = el("ul", { className: "keys" }, s.ssh.keys.map((k, i) =>
+      el("li", {}, [el("span", { textContent: k.summary }), el("button", { textContent: "Remove", onclick: () => call({ do: "remove_key", index: i }) })])));
+    return [
+      el("div", { className: "card" }, [
+        el("h3", { textContent: "Import from GitHub" }),
+        el("div", { className: "row" }, [user, el("button", { textContent: "Import", onclick: () => call({ do: "github", user: user.value }) })]),
+        el("div", { className: "help", textContent: "The public keys on that GitHub account are added to the list. Nothing already in the list is removed." }),
+      ]),
+      el("div", { className: "card" }, [
+        el("h3", { textContent: "Or paste a public key" }),
+        paste,
+        el("div", { className: "row" }, [el("button", { textContent: "Add key", onclick: () => call({ do: "add_key", text: paste.value }) })]),
+      ]),
+      el("div", { className: "card" }, [el("h3", { textContent: `Keys that may log in (${s.ssh.keys.length})` }), keys]),
+    ];
+  },
+
+  domain: (s) => {
+    const out = s.domain.map((f) => textField(f, (v) => call({ do: "set_domain", key: f.key, value: v })));
+    for (const sec of s.secrets) {
+      const card = el("div", { className: "card" }, [
+        el("h3", { textContent: sec.title }),
+        el("p", { className: "muted", style: "white-space:pre-wrap; font-size:.88rem", textContent: sec.steps }),
+      ]);
+      if (sec.path_only) {
+        card.append(row("File on the machine", el("input", {
+          type: "text", value: sec.path || "",
+          onfocus: () => (typing = true),
+          onblur: (e) => { typing = false; call({ do: "set_secret", option: sec.option, var: "__path", value: e.target.value }); },
+        })));
+      } else {
+        for (const f of sec.fields) {
+          card.append(textField(f, (v) => call({ do: "set_secret", option: sec.option, var: f.key, value: v })));
+        }
+      }
+      card.append(el("div", { className: "row" }, [
+        el("button", { className: "primary", textContent: "Save", onclick: () => call({ do: "save_secret", option: sec.option }) }),
+        el("button", { textContent: "Skip for now", onclick: () => call({ do: "skip_secret", option: sec.option }) }),
+        el("span", { className: sec.skipped || (sec.verified && !sec.verified.ok) ? "bad" : sec.filled ? "ok" : "muted", textContent: sec.state }),
+      ]));
+      out.push(card);
+    }
+    return out;
+  },
+
+  extras: (s) => {
+    const out = s.values.map((v) => textField({ key: v.name, label: v.name, help: v.description, value: v.value, masked: false },
+      (val) => call({ do: "set_value", name: v.name, value: val })));
+    const list = el("div", { className: "mods" }, s.modules.map((m) =>
+      el("label", {}, [
+        el("input", { type: "checkbox", checked: m.chosen, disabled: m.locked, onchange: () => call({ do: "toggle_module", name: m.name }) }),
+        el("div", {}, [el("b", { textContent: m.name + (m.locked ? " (always on)" : "") }), el("span", { textContent: " " + m.description })]),
+      ])));
+    out.push(el("div", { className: "card" }, [el("h3", { textContent: "Modules" }), el("p", { className: s.memory.short ? "bad" : "ok", textContent: s.memory.verdict }), list]));
+    return out;
+  },
+
+  review: (s) => {
+    const r = s.review;
+    const d = el("dl", {}, [
+      el("dt", { textContent: "Machine" }), el("dd", { textContent: `${r.host} · ${r.time_zone} · admin ${r.admin}${r.minted_password ? " · password minted into FIRST-LOGIN.md" : ""}` }),
+      el("dt", { textContent: "Kit" }), el("dd", { textContent: `${r.kit} · ${r.modules.length} modules` }),
+      el("dt", { textContent: "Memory" }), el("dd", { className: s.memory.short ? "bad" : "ok", textContent: s.memory.verdict }),
+      el("dt", { textContent: "SSH keys" }), el("dd", { textContent: r.keys.length ? r.keys.join("; ") : "none (console login only)" }),
+      el("dt", { textContent: "Domain" }), el("dd", { textContent: r.domain || "—" }),
+    ]);
+    const cards = [el("div", { className: "card" }, [el("h3", { textContent: "What will be installed" }), d,
+      el("div", { className: "muted", style: "font-size:.85rem", textContent: r.modules.join(" ") })])];
+    if (r.skipped_secrets.length) {
+      cards.push(el("div", { className: "card" }, [el("h3", { textContent: "Skipped credentials" }),
+        el("p", { className: "bad", textContent: r.skipped_secrets.join(", ") + " — what depends on these will not work until you set them on the machine and rebuild." })]));
+    }
+    cards.push(el("div", { className: "card" }, [el("h3", { textContent: "These disks are erased" }),
+      el("p", { className: "erase", textContent: r.erased.join("   ") || "—" })]));
+    return cards;
+  },
+
+  install: (s) => [el("pre", { id: "log", textContent: s.install.lines.slice(-400).join("\n") })],
+
+  done: (s) => [el("pre", { textContent: s.done.report.join("\n") })],
+};
+
+async function tick() {
+  if (!code) { askCode(); return; }
+  if (!typing || (state && state.step === "install")) {
+    try { await call(null); } catch (e) { /* the machine may be rebooting */ }
+  }
+  if (state && state.step === "install") {
+    const log = document.getElementById("log");
+    if (log) log.scrollTop = log.scrollHeight;
+  }
+}
+if (code) call(null); else askCode();
+setInterval(tick, 1500);
+</script>
+</body>
+</html>

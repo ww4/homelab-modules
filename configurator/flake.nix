@@ -41,7 +41,13 @@
       package = system: pkgs: pkgs.rustPlatform.buildRustPackage {
         pname = "homelab-configure";
         version = "0.1.0";
-        src = ./.;
+        # Only what the binary is actually built from: a README or a tools/
+        # change must not give the installer a new store path, or every stick
+        # downloads a "new" installer that is the same program.
+        src = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [ ./src ./build.rs ./Cargo.toml ./Cargo.lock ./profiles ];
+        };
         cargoLock.lockFile = ./Cargo.lock;
 
         # Baked into the binary by build.rs — the schema is the checkout's.
@@ -67,7 +73,7 @@
         homelab-configure = package system pkgs;
         default = homelab-configure;
         # The live USB with the configurator on it: `nix build .#iso`.
-        iso = import ./iso.nix { inherit nixpkgs system; inherit homelab-configure; };
+        iso = import ./iso.nix { inherit nixpkgs system; inherit homelab-configure; rev = self.rev or ""; };
       });
 
       apps = forAll (system: pkgs: rec {

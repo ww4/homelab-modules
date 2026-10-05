@@ -8,7 +8,7 @@
 # Built from the same nixpkgs rev the generated flakes pin, so the live
 # system and the installed one share a store where it matters (the install
 # copies the closure the live system already evaluated).
-{ nixpkgs, homelab-configure, system }:
+{ nixpkgs, homelab-configure, system, rev ? "" }:
 
 let
   iso = nixpkgs.lib.nixosSystem {
@@ -18,7 +18,12 @@ let
       ({ pkgs, lib, ... }: {
         isoImage.isoName = lib.mkForce "homelab-installer-${system}.iso";
         isoImage.volumeID = lib.mkForce "HOMELAB";
-        environment.systemPackages = [ homelab-configure pkgs.git pkgs.curl pkgs.jq ];
+        environment.systemPackages = [ homelab-configure pkgs.git pkgs.curl pkgs.jq pkgs.qrencode ];
+        # The browser installer: the same wizard, served to any computer on the
+        # network so a long token can be pasted instead of typed.
+        networking.firewall.allowedTCPPorts = [ 8099 ];
+        networking.hostName = lib.mkForce "homelab-installer";
+        services.avahi = { enable = true; publish.enable = true; publish.addresses = true; nssmdns4 = true; };
         nix.settings.experimental-features = [ "nix-command" "flakes" ];
         # The newest configurator comes from the project's binary cache, so a
         # stick burned months ago still runs today's installer: `nix run` of
@@ -48,10 +53,20 @@ let
               until has_addr; do sleep 3; done
             fi
             echo "Network: $(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
-            echo "Looking for a newer installer (about a minute)... Ctrl-C skips it."
-            if ! nix run --refresh --no-write-lock-file --max-jobs 0 'github:ww4/homelab-modules?dir=configurator' -- tui; then
-              echo "No newer installer reachable; starting the one on this stick."
+            # Only fetch when the library has actually moved: this stick was
+            # built from ${if rev == "" then "an untracked tree" else rev}, and a `nix run` costs a
+            # minute of evaluation even when nothing changed.
+            baked=${if rev == "" then "" else rev}
+            latest=$(curl -fsS --max-time 10 https://api.github.com/repos/ww4/homelab-modules/commits/main 2>/dev/null | jq -r .sha 2>/dev/null || true)
+            if [ -n "$baked" ] && [ "$latest" = "$baked" ]; then
+              echo "This stick already has the current installer."
               homelab-configure tui
+            else
+              echo "A newer installer is available; fetching it (about a minute)... Ctrl-C skips it."
+              if ! nix run --refresh --no-write-lock-file --max-jobs 0 'github:ww4/homelab-modules?dir=configurator' -- tui; then
+                echo "Could not fetch it; starting the installer on this stick."
+                homelab-configure tui
+              fi
             fi
           fi
         '';

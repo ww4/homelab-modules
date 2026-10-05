@@ -19,6 +19,8 @@ mod guides;
 mod install;
 mod secrets;
 mod tui;
+mod web;
+mod wizard;
 mod validate;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -56,6 +58,8 @@ enum Cmd {
     Validate(ValidateArgs),
     /// Interactive front end: fill in the answers in the terminal, then generate.
     Tui(TuiArgs),
+    /// Serve the browser installer only (no terminal needed): the same wizard at http://<this machine>:8099.
+    Web(TuiArgs),
     /// Create the A records the chosen modules need at Cloudflare (run on the installed box, or pass --ip).
     Dns(DnsArgs),
     /// Install a generated flake onto THIS machine (from a live USB): disko, nixos-install, host key, and the flake carried onto the new system.
@@ -103,9 +107,15 @@ struct TuiArgs {
     /// Where to write the answers (default ./answers.json).
     #[arg(long, value_name = "FILE", default_value = "answers.json")]
     answers: PathBuf,
-    /// Output directory for `generate` when you press g (default ./my-homelab).
+    /// Output directory for `generate` (default ./my-homelab).
     #[arg(long, value_name = "DIR", default_value = "my-homelab")]
     out: PathBuf,
+    /// Do not serve the browser installer.
+    #[arg(long)]
+    no_web: bool,
+    /// Port for the browser installer (default 8099).
+    #[arg(long, default_value = "8099")]
+    port: u16,
 }
 
 #[derive(Args)]
@@ -322,12 +332,40 @@ fn run(cli: Cli) -> Result<i32> {
             Ok(if ok { 0 } else { 3 })
         }
         Cmd::Tui(a) => {
-            // The screens run generate/install themselves as child
-            // processes of this same binary; they need the global flags.
+            // The screens run generate/install themselves as child processes
+            // of this same binary; they need the global flags.
             let mut prefix = Vec::new();
             if let Some(c) = &cli.catalog { prefix.push("--catalog".to_string()); prefix.push(c.display().to_string()); }
             if let Some(o) = &cli.options { prefix.push("--options".to_string()); prefix.push(o.display().to_string()); }
-            tui::run(&schema, a.profile.as_deref(), &a.answers, &a.out, prefix)
+            // The browser front end shares the model across threads, which
+            // wants a schema that outlives them; this process ends with it.
+            let schema: &'static Schema = Box::leak(Box::new(schema));
+            tui::run(schema, a.profile.as_deref(), &a.answers, &a.out, prefix, !a.no_web, a.port)
+        }
+        Cmd::Web(a) => {
+            let mut prefix = Vec::new();
+            if let Some(c) = &cli.catalog { prefix.push("--catalog".to_string()); prefix.push(c.display().to_string()); }
+            if let Some(o) = &cli.options { prefix.push("--options".to_string()); prefix.push(o.display().to_string()); }
+            let schema: &'static Schema = Box::leak(Box::new(schema));
+            let mut wiz = wizard::Wizard::new(schema, &a.answers, &a.out, prefix, a.port);
+            if let Some(p) = &a.profile {
+                let text = std::fs::read_to_string(p)?;
+                wiz.load(&serde_json::from_str(&text)?);
+            }
+            wiz.watch_network();
+            let port = wiz.web_port;
+            let code = wiz.pairing.clone();
+            let shared = std::sync::Arc::new(std::sync::Mutex::new(wiz));
+            web::serve(shared.clone()).map_err(|e| anyhow::anyhow!(e))?;
+            let (address, _) = shared.lock().unwrap().network();
+            println!("browser installer: http://{}:{port}/?code={code}", if address.is_empty() { "<this machine>".into() } else { address });
+            println!("Ctrl-C stops it. The same answers file and flake directory as `tui`.");
+            // The install runs in its own threads; this one keeps the process
+            // alive and moves the model on when a child finishes.
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                shared.lock().unwrap().poll_install();
+            }
         }
         Cmd::Dns(a) => {
             let r = dns::run(&schema, &a.dir, a.ip.as_deref(), a.token_file.as_deref(), a.dry_run)?;
