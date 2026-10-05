@@ -10,7 +10,9 @@
 # signing key (nix key generate-secret). The matching public key is in iso.nix.
 set -euo pipefail
 env_file=${DO_ENV_FILE:-/run/secrets/digitalocean-iso}
-key_file=${CACHE_KEY_FILE:-$HOME/.config/homelab-cache/secret-key}
+# The signing key: the sops-managed copy on the reference box, else a local one.
+key_file=${CACHE_KEY_FILE:-/run/secrets/homelab-cache-key}
+[ -r "$key_file" ] || key_file=$HOME/.config/homelab-cache/secret-key
 bucket=${BUCKET:-homelab-installer}
 set -a; . "$env_file"; set +a
 : "${DO_SPACES_KEY_ID:?}" "${DO_SPACES_SECRET:?}" "${DO_SPACES_ENDPOINT:?}"
