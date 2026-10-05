@@ -195,8 +195,8 @@ struct App<'a> {
     status_is_error: bool,
     // Welcome
     ram_mib: u64,
-    address: String,
-    internet: Option<bool>,
+    /// Re-probed every few seconds by a background thread: (address, internet reachable).
+    network: Arc<Mutex<(String, Option<bool>)>>,
     live_usb: bool,
     // Kit
     kits: Vec<Kit>,
@@ -304,8 +304,7 @@ impl<'a> App<'a> {
             status: String::new(),
             status_is_error: false,
             ram_mib: crate::plan::machine_ram_mib(),
-            address: String::new(),
-            internet: None,
+            network: Arc::new(Mutex::new((String::new(), None))),
             live_usb,
             kits: kits(),
             kit: 0,
@@ -343,12 +342,21 @@ impl<'a> App<'a> {
         app
     }
 
-    /// The Welcome screen's network line, decided once at start.
-    fn with_network(mut self) -> Self {
-        let (a, i) = probe_network();
-        self.address = a;
-        self.internet = i;
+    /// The Welcome screen's network line, kept current: DHCP is often still
+    /// negotiating when the installer starts, and a cable plugged in later
+    /// must be noticed without a restart (Chris's first hardware run).
+    fn with_network(self) -> Self {
+        let shared = self.network.clone();
+        std::thread::spawn(move || loop {
+            let probe = probe_network();
+            *shared.lock().unwrap() = probe;
+            std::thread::sleep(Duration::from_secs(3));
+        });
         self
+    }
+
+    fn network(&self) -> (String, Option<bool>) {
+        self.network.lock().unwrap().clone()
     }
 
     /// Prefill from an answers file (a profile, or a second run).
@@ -853,7 +861,17 @@ impl<'a> App<'a> {
     /// The screen's checks, then the next screen.
     fn forward(&mut self) {
         match self.step {
-            Step::Welcome | Step::Kit => {}
+            Step::Welcome => {
+                let (address, internet) = self.network();
+                if address.is_empty() {
+                    self.set_status("no network address yet: plug in a network cable (wired is automatic); this screen keeps checking every few seconds", true);
+                    return;
+                }
+                if internet == Some(false) && self.soft_block("the internet is not reachable from here and the install downloads a few gigabytes") {
+                    return;
+                }
+            }
+            Step::Kit => {}
             Step::Storage => {
                 if self.system_disk().is_none() {
                     self.set_status("choose the disk the system goes on: move to it and press Space until it says SYSTEM", true);
@@ -1127,11 +1145,12 @@ impl<'a> App<'a> {
 
     fn draw_welcome(&self, f: &mut Frame, area: Rect) {
         let gb = |m: u64| format!("{:.1} GB", m as f64 / 1024.0);
-        let net = match (self.address.is_empty(), self.internet) {
-            (true, _) => "no network address yet: plug in a cable (wired is automatic), then press Ctrl-Q and start again".to_string(),
-            (false, Some(true)) => format!("network {} · internet reachable", self.address),
-            (false, Some(false)) => format!("network {} · internet NOT reachable: the install downloads a few gigabytes and needs it", self.address),
-            (false, None) => format!("network {}", self.address),
+        let (address, internet) = self.network();
+        let net = match (address.is_empty(), internet) {
+            (true, _) => "waiting for a network address — plug in a network cable (wired is automatic); checked again every few seconds".to_string(),
+            (false, Some(true)) => format!("network {address} · internet reachable"),
+            (false, Some(false)) => format!("network {address} · internet NOT reachable yet: the install downloads a few gigabytes and needs it"),
+            (false, None) => format!("network {address} · checking the internet…"),
         };
         let text = Text::from(vec![
             Line::from("This installs a complete, self-hosted homelab on this machine — a media server, apps, backups and monitoring — from a public module library, in one pass."),

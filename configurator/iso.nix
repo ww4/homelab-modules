@@ -36,7 +36,19 @@ let
         programs.bash.loginShellInit = ''
           if [ "$(tty 2>/dev/null)" = /dev/tty1 ] && [ -z "$HOMELAB_TUI_STARTED" ]; then
             export HOMELAB_TUI_STARTED=1
-            echo "Looking for a newer installer (needs the network; about a minute)… Ctrl-C skips it."
+            # The network: DHCP is still negotiating when this shell starts.
+            # Wait up to 10 s quietly, then say what is missing and keep
+            # looking every 3 s (a cable plugged in now is picked up).
+            has_addr() { ip -4 route get 1.1.1.1 >/dev/null 2>&1; }
+            n=0
+            until has_addr || [ $n -ge 10 ]; do sleep 1; n=$((n+1)); done
+            if ! has_addr; then
+              echo "No network address yet. Plug in a network cable (wired is automatic; Wi-Fi: wpa_cli)."
+              echo "Waiting for one... (Ctrl-C to go on without, with the installer from this stick)"
+              until has_addr; do sleep 3; done
+            fi
+            echo "Network: $(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
+            echo "Looking for a newer installer (about a minute)... Ctrl-C skips it."
             if ! nix run --refresh --no-write-lock-file --max-jobs 0 'github:ww4/homelab-modules?dir=configurator' -- tui; then
               echo "No newer installer reachable; starting the one on this stick."
               homelab-configure tui
