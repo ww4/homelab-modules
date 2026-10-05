@@ -192,3 +192,7 @@ cargo run -- --catalog /tmp/catalog.json --options /tmp/options.json schema
 `nix build` produces the binary with the schema embedded and the tools it
 delegates to (sops, age, ssh-to-age, ssh-keygen, authelia, mkpasswd, git,
 nix) on its PATH.
+
+### Releasing the installer
+
+The ISO's console runs `nix run --max-jobs 0 'github:ww4/homelab-modules?dir=configurator' -- tui`, substituted from the signed binary cache on the Spaces bucket, so **a merge to `main` is the release**: on the reference box a user timer (`homelab-cache-sync`, every 5 minutes) notices the new commit and runs `tools/publish-cache.sh` (build, sign, `nix copy` to the S3 store, make the objects public). A stick picks it up at its next boot. `tools/publish-iso.sh` is only needed when `iso.nix` itself changes (the baked-in fallback copy and the console script).
