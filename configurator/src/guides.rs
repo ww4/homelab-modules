@@ -23,7 +23,7 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
                     Then: dash.cloudflare.com → profile icon → My Profile → API Tokens → Create Token → \
                     use the \"Edit zone DNS\" template → Zone Resources: Include · Specific zone · your domain \
                     → Continue → Create → copy the token (shown once).\n\
-                    Press v and paste just the token: the file is written as CLOUDFLARE_DNS_API_TOKEN=… and \
+                    Press Enter and type just the token: the file is written as CLOUDFLARE_DNS_API_TOKEN=… and \
                     the token is checked against your zone right away. ACME uses it for DNS-01 challenges; \
                     `homelab-configure dns` uses it later to create the A records.",
         }),
@@ -32,15 +32,15 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
             let (title, steps) = match provider.as_str() {
                 "mullvad" => ("Mullvad WireGuard credentials", "mullvad.net → account → WireGuard configuration → generate a key (Linux) → download a config for any location. \
                     From that .conf: PrivateKey → WIREGUARD_PRIVATE_KEY, Address → WIREGUARD_ADDRESSES (keep the /32). \
-                    Press v and type the lines separated by ` | `, e.g.\n  WIREGUARD_PRIVATE_KEY=… | WIREGUARD_ADDRESSES=10.x.y.z/32 | SERVER_COUNTRIES=Netherlands\n\
+                    Press Enter and type the lines separated by ` | `, e.g.\n  WIREGUARD_PRIVATE_KEY=… | WIREGUARD_ADDRESSES=10.x.y.z/32 | SERVER_COUNTRIES=Netherlands\n\
                     Mullvad has no port forwarding: expect slower seeding; a tracker that needs an open port wants a provider that forwards one (Proton VPN does)."),
                 "protonvpn" | "proton" => ("Proton VPN WireGuard credentials (port forwarding on paid plans)", "account.protonvpn.com → Downloads → WireGuard configuration → Linux · pick a P2P server · enable \"NAT-PMP (port forwarding)\" → Create → download. \
                     From the .conf: PrivateKey → WIREGUARD_PRIVATE_KEY, Address → WIREGUARD_ADDRESSES. Add VPN_PORT_FORWARDING=on for the forwarded port.\n\
-                    Press v and type the lines separated by ` | `."),
+                    Press Enter and type the lines separated by ` | `."),
                 "" => ("VPN credentials for the download client", "Set homelab.arrStack.vpnProvider on the Values screen first (mullvad, protonvpn, or any provider gluetun supports); \
                     the steps for that provider appear here."),
                 _ => ("VPN credentials for the download client", "This provider is passed to gluetun as VPN_SERVICE_PROVIDER; the variables it needs are in gluetun's wiki page for it. \
-                    Most WireGuard providers need WIREGUARD_PRIVATE_KEY, WIREGUARD_ADDRESSES and SERVER_COUNTRIES; one that forwards a port adds FIREWALL_VPN_INPUT_PORTS (set qBittorrent's listen port to the same number). Press v and type the lines separated by ` | `. \
+                    Most WireGuard providers need WIREGUARD_PRIVATE_KEY, WIREGUARD_ADDRESSES and SERVER_COUNTRIES; one that forwards a port adds FIREWALL_VPN_INPUT_PORTS (set qBittorrent's listen port to the same number). Press Enter and type the lines separated by ` | `. \
                     (provider: {other})"),
             };
             let steps: &'static str = Box::leak(steps.replace("{other}", &provider).into_boxed_str());
@@ -50,7 +50,7 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
             title: "Backblaze B2 credentials for the offsite restic repository",
             steps: "backblaze.com → B2 Cloud Storage → create a bucket (private) → Application Keys → Add a New Application Key, \
                     restricted to that bucket, read and write. Set homelab.backup.remote.repository to b2:<bucket-name>.\n\
-                    Press v and type:  B2_ACCOUNT_ID=<keyID> | B2_ACCOUNT_KEY=<applicationKey>\n\
+                    Press Enter and type:  B2_ACCOUNT_ID=<keyID> | B2_ACCOUNT_KEY=<applicationKey>\n\
                     Any restic backend works instead (S3, SFTP): then the variables are that backend's.",
         }),
         "homelab.meshagent.mshFile" => Some(Guide {

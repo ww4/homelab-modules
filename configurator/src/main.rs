@@ -322,19 +322,12 @@ fn run(cli: Cli) -> Result<i32> {
             Ok(if ok { 0 } else { 3 })
         }
         Cmd::Tui(a) => {
-            match tui::run(&schema, a.profile.as_deref(), &a.answers, &a.out)? {
-                None => Ok(0),
-                Some(argv) => {
-                    // Re-enter through the headless path: the TUI produces an
-                    // answers file and flags, exactly as a person would type them.
-                    let exe = std::env::current_exe()?;
-                    let mut cmd = std::process::Command::new(exe);
-                    if let Some(c) = &cli.catalog { cmd.arg("--catalog").arg(c); }
-                    if let Some(o) = &cli.options { cmd.arg("--options").arg(o); }
-                    let status = cmd.args(&argv).status().context("running generate")?;
-                    Ok(status.code().unwrap_or(1))
-                }
-            }
+            // The screens run generate/install themselves as child
+            // processes of this same binary; they need the global flags.
+            let mut prefix = Vec::new();
+            if let Some(c) = &cli.catalog { prefix.push("--catalog".to_string()); prefix.push(c.display().to_string()); }
+            if let Some(o) = &cli.options { prefix.push("--options".to_string()); prefix.push(o.display().to_string()); }
+            tui::run(&schema, a.profile.as_deref(), &a.answers, &a.out, prefix)
         }
         Cmd::Dns(a) => {
             let r = dns::run(&schema, &a.dir, a.ip.as_deref(), a.token_file.as_deref(), a.dry_run)?;

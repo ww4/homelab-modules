@@ -20,15 +20,34 @@ let
         isoImage.volumeID = lib.mkForce "HOMELAB";
         environment.systemPackages = [ homelab-configure pkgs.git pkgs.curl pkgs.jq ];
         nix.settings.experimental-features = [ "nix-command" "flakes" ];
-        # The one thing the installer prints: what to type.
+        # The newest configurator comes from the project's binary cache, so a
+        # stick burned months ago still runs today's installer: `nix run` of
+        # the library's configurator, substituted (never compiled) from the
+        # cache on Spaces, signed with the key below (--max-jobs 0: download or
+        # nothing, never a compile on a live USB). No network, or anything else
+        # wrong: the copy baked into the ISO runs instead.
+        nix.settings.substituters = [ "https://cache.nixos.org" "https://homelab-installer.nyc3.digitaloceanspaces.com/cache" ];
+        nix.settings.trusted-public-keys = [
+          "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+          "homelab-installer-1:vA5hnA0yEKfAfOOxleHWVvsGBJnZAKsW+EeumRPvMes="
+        ];
+        # The installer starts by itself on the first console after the
+        # auto-login (once per login; Ctrl-Q leaves it and the shell is there).
+        programs.bash.loginShellInit = ''
+          if [ "$(tty 2>/dev/null)" = /dev/tty1 ] && [ -z "$HOMELAB_TUI_STARTED" ]; then
+            export HOMELAB_TUI_STARTED=1
+            echo "Looking for a newer installer (needs the network; about a minute)… Ctrl-C skips it."
+            if ! nix run --refresh --no-write-lock-file --max-jobs 0 'github:ww4/homelab-modules?dir=configurator' -- tui; then
+              echo "No newer installer reachable; starting the one on this stick."
+              homelab-configure tui
+            fi
+          fi
+        '';
         services.getty.helpLine = lib.mkForce ''
 
-          Homelab installer. Get on the network (wired is automatic; `wpa_cli` for Wi-Fi), then:
-
-              homelab-configure tui            # answer the questions, press g
-              sudo homelab-configure install ./my-homelab
-
-          Everything it writes lives in RAM until `install` copies it to the new system.
+          Homelab installer. Wired network is automatic (`wpa_cli` for Wi-Fi).
+          The installer opens by itself on this console; `homelab-configure tui` opens it again.
+          Everything it writes lives in RAM until the install copies it to the new system.
         '';
         # Keep the ISO small-ish: no docs, no manual.
         documentation.enable = false;

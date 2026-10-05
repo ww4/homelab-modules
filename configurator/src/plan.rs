@@ -183,6 +183,34 @@ impl<'a> Plan<'a> {
             }
         }
 
+        // Backups on a one-disk box: the library insists on an explicit
+        // repository (it belongs on a pool, not the system disk), but a
+        // first install has nowhere else. Put it on the first pool when
+        // there is one, else on the system disk, and say so.
+        if modules.iter().any(|m| m == "backup") {
+            let pool_mount = values
+                .get("homelab.pools")
+                .and_then(|p| p.as_object())
+                .and_then(|p| p.values().next())
+                .and_then(|p| p["mountpoint"].as_str())
+                .map(String::from);
+            if !values.contains_key("homelab.backup.local.repository") && values.get("homelab.backup.local.enable").and_then(|v| v.as_bool()).unwrap_or(true) {
+                let repo = match &pool_mount {
+                    Some(m) => format!("{}/restic", m.trim_end_matches('/')),
+                    None => "/srv/backups/restic".to_string(),
+                };
+                if pool_mount.is_none() {
+                    warnings.push("backup: the local restic repository is on the system disk (/srv/backups/restic) because there is no data pool — a disk failure takes both; add a data disk or set homelab.backup.remote for an offsite copy".into());
+                }
+                values.insert("homelab.backup.local.repository".into(), serde_json::Value::String(repo));
+                auto_values.push("homelab.backup.local.repository".into());
+            }
+            if !values.contains_key("homelab.backup.paths") {
+                values.insert("homelab.backup.paths".into(), serde_json::json!(["/var/lib"]));
+                auto_values.push("homelab.backup.paths".into());
+            }
+        }
+
         // Secrets, then required-option check (secret options are satisfied by
         // secrets, not values).
         let mut secret_plans = Vec::new();
