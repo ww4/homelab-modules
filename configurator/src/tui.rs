@@ -54,6 +54,10 @@ struct Ui {
     open_secret: Option<usize>,
     /// Rendered QR of the browser URL, kept for the URL it was made from.
     qr: Option<(String, Vec<String>)>,
+    /// The rows of the current screen, refreshed once per frame and before
+    /// every key. Rendering must never take the model lock twice: a std
+    /// Mutex is not reentrant, and the draw path deadlocked itself.
+    rows: Vec<Row>,
     quit: bool,
 }
 
@@ -80,7 +84,7 @@ pub fn run(schema: &'static Schema, profile: Option<&Path>, out_answers: &Path, 
         }
     }
 
-    let mut ui = Ui { w: shared.clone(), focus: 0, editing: None, open_secret: None, qr: None, quit: false };
+    let mut ui = Ui { w: shared.clone(), focus: 0, editing: None, open_secret: None, qr: None, rows: Vec::new(), quit: false };
     enable_raw_mode()?;
     io::stdout().execute(EnterAlternateScreen)?;
     let backend = ratatui::backend::CrosstermBackend::new(io::stdout());
@@ -100,10 +104,10 @@ pub fn run(schema: &'static Schema, profile: Option<&Path>, out_answers: &Path, 
 impl Ui {
     // ------------------------------------------------------------ rows
 
-    fn rows(&self) -> Vec<Row> {
-        let w = self.w.lock().unwrap();
+    /// The rows a screen has, from the model alone (no locking here).
+    fn rows_of(w: &Wizard, open_secret: Option<usize>) -> Vec<Row> {
         let mut r = Vec::new();
-        if let (Step::Domain, Some(i)) = (w.step, self.open_secret) {
+        if let (Step::Domain, Some(i)) = (w.step, open_secret) {
             if let Some(s) = w.secrets.get(i) {
                 if s.path_only {
                     r.push(Row::SecretField(0));
@@ -149,13 +153,24 @@ impl Ui {
         r
     }
 
+    /// Refresh the cached rows: the only place the row list is computed.
+    fn sync_rows(&mut self) {
+        let rows = {
+            let w = self.w.lock().unwrap();
+            Self::rows_of(&w, self.open_secret)
+        };
+        self.rows = rows;
+        if self.focus >= self.rows.len() {
+            self.focus = self.rows.len().saturating_sub(1);
+        }
+    }
+
     fn focused(&self) -> Row {
-        let rows = self.rows();
-        rows[self.focus.min(rows.len().saturating_sub(1))]
+        self.rows.get(self.focus).copied().unwrap_or(Row::Continue)
     }
 
     fn move_focus(&mut self, d: i32) {
-        let n = self.rows().len() as i32;
+        let n = self.rows.len() as i32;
         if n > 0 {
             self.focus = ((self.focus as i32 + d).rem_euclid(n)) as usize;
         }
@@ -165,6 +180,7 @@ impl Ui {
 
     fn event_loop(&mut self, terminal: &mut Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>) -> Result<()> {
         loop {
+            self.sync_rows();
             terminal.draw(|f| self.draw(f))?;
             if event::poll(Duration::from_millis(120))? {
                 if let Event::Key(key) = event::read()? {
@@ -186,6 +202,7 @@ impl Ui {
     }
 
     fn on_key(&mut self, key: KeyEvent) {
+        self.sync_rows();
         if let Some((row, buf)) = &mut self.editing {
             let row = *row;
             match key.code {
@@ -237,8 +254,7 @@ impl Ui {
             Row::Key(i) => {
                 if space {
                     self.w.lock().unwrap().remove_key(i);
-                    let n = self.rows().len();
-                    self.focus = self.focus.min(n.saturating_sub(1));
+                    self.sync_rows();
                 } else {
                     self.w.lock().unwrap().say("Space removes this key", false);
                 }
@@ -253,6 +269,7 @@ impl Ui {
             Row::Secret(i) => {
                 self.open_secret = Some(i);
                 self.focus = 0;
+                self.sync_rows();
             }
             Row::Save => {
                 if let Some(i) = self.open_secret {
@@ -516,7 +533,7 @@ impl Ui {
             f.render_widget(Paragraph::new(Line::from(spans)).block(Block::default().borders(Borders::TOP)), area);
             return;
         }
-        if self.rows().contains(&Row::Back) {
+        if self.rows.contains(&Row::Back) {
             spans.push(Span::styled("[ Back ]", self.style(Row::Back)));
             spans.push(Span::raw("   "));
         }
