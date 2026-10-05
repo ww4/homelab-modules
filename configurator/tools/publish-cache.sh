@@ -30,7 +30,10 @@ nix store sign --recursive --key-file "$key_file" "$out"
 nix copy --to "$store" "$out"
 # Spaces objects are private by default and Nix sets no ACL: make the cache
 # prefix readable by anyone (the ISO fetches it anonymously).
+acl_log=$(mktemp)
 nix shell nixpkgs#s3cmd -c s3cmd --access_key="$DO_SPACES_KEY_ID" --secret_key="$DO_SPACES_SECRET" \
   --host="$endpoint" --host-bucket="%(bucket)s.$endpoint" \
-  setacl --acl-public --recursive "s3://${bucket}/cache/" | grep -c 'ACL set' | sed 's/$/ objects made public/'
+  setacl --acl-public --recursive "s3://${bucket}/cache/" > "$acl_log" 2>&1 || { cat "$acl_log" >&2; rm -f "$acl_log"; echo "s3cmd setacl failed" >&2; exit 1; }
+echo "$(grep -c 'ACL set' "$acl_log" || true) objects made public"
+rm -f "$acl_log"
 echo "pushed to https://${bucket}.${endpoint}/cache (nix-cache-info + narinfos public-read)"
