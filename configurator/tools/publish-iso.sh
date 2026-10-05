@@ -1,65 +1,54 @@
 #!/usr/bin/env bash
-# publish-iso — build the installer ISO and put it in a DigitalOcean Space,
-# public-read, with a sha256 beside it and a `latest.txt` the guide links.
+# publish-iso — build the installer ISO and publish it as a GitHub Release on
+# the library's public mirror, the way distros do it: a dated, immutable
+# release per build, and one stable address that redirects to the newest:
 #
-#   tools/publish-iso.sh [--env FILE] [--bucket NAME] [--no-build]
+#   https://github.com/ww4/homelab-modules/releases/latest/download/homelab-installer.iso
+#   https://github.com/ww4/homelab-modules/releases/latest/download/homelab-installer.iso.sha256
 #
-# Credentials come from an env file (default /run/secrets/digitalocean-iso, the
-# sops-materialised copy) carrying DO_SPACES_KEY_ID, DO_SPACES_SECRET and
-# DO_SPACES_ENDPOINT (https://<region>.digitaloceanspaces.com). Nothing is
-# printed from it. The Space named by --bucket is created if missing. Uploads go through rclone with the S3 backend;
-# objects: iso/homelab-installer-<date>-<rev>.iso, .sha256, iso/latest.txt, and the
-# stable iso/homelab-installer-latest.iso (+ .sha256) the Quick start links
-# naming the newest file.
+#   tools/publish-iso.sh [--no-build]        (from configurator/)
+#
+# Needs: a GitHub token with Contents (releases) write on the repo, in
+# GH_TOKEN or the env file named by GH_TOKEN_FILE (default
+# ~/.config/ww4-bot/github-ww4-pat.env, variable GITHUB_BOT_TOKEN). The tag is
+# installer-<date>-<rev>, on the commit the ISO was built from, which the
+# mirror must already carry (it does within a minute of a merge).
 set -euo pipefail
-env_file=/run/secrets/digitalocean-iso; bucket=homelab-installer; build=1
-while [ $# -gt 0 ]; do case "$1" in --env) env_file="$2"; shift 2 ;; --bucket) bucket="$2"; shift 2 ;; --no-build) build=0; shift ;; *) echo "unknown arg $1" >&2; exit 2 ;; esac; done
-[ -r "$env_file" ] || { echo "no credentials at $env_file" >&2; exit 1; }
-set -a
-# shellcheck source=/dev/null
-. "$env_file"
-set +a
-: "${DO_SPACES_KEY_ID:?}" "${DO_SPACES_SECRET:?}" "${DO_SPACES_ENDPOINT:?}"
-endpoint=${DO_SPACES_ENDPOINT#https://}
-region=${endpoint%%.*}
+repo=${GH_REPO:-ww4/homelab-modules}
+build=1
+[ "${1:-}" = --no-build ] && build=0
+if [ -z "${GH_TOKEN:-}" ]; then
+  f=${GH_TOKEN_FILE:-$HOME/.config/ww4-bot/github-ww4-pat.env}
+  GH_TOKEN=$(sed -n 's/^GITHUB_BOT_TOKEN=//p' "$f")
+fi
+export GH_TOKEN
+: "${GH_TOKEN:?no GitHub token}"
 
-here=$(cd "$(dirname "$0")/.." && pwd)
-cd "$here"
+here=$(cd "$(dirname "$0")/.." && pwd); cd "$here"
+rev=$(git -C "$here" rev-parse --short HEAD)
+full_rev=$(git -C "$here" rev-parse HEAD)
 if [ "$build" = 1 ]; then
   nix build '.#packages.x86_64-linux.iso' --out-link ./result-iso
 fi
 iso=$(find result-iso/iso -name "*.iso" | head -1)
 [ -f "$iso" ] || { echo "no ISO at result-iso/iso" >&2; exit 1; }
-rev=$(git -C "$here" rev-parse --short HEAD)
-name="homelab-installer-$(date +%Y%m%d)-${rev}.iso"
-work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-cp "$iso" "$work/$name"
-( cd "$work" && sha256sum "$name" > "$name.sha256" )
-printf '%s\n' "$name" > "$work/latest.txt"
 
-# rclone config in a private temp file; the S3 backend speaks Spaces.
-conf="$work/rclone.conf"; umask 077
-cat > "$conf" <<CONF
-[spaces]
-type = s3
-provider = DigitalOcean
-access_key_id = $DO_SPACES_KEY_ID
-secret_access_key = $DO_SPACES_SECRET
-endpoint = $endpoint
-acl = public-read
-CONF
-# A scoped key cannot CreateBucket, and rclone's upload path calls it as its
-# bucket-exists check: skip that (the bucket must already exist).
-RCLONE="rclone --config $conf --s3-no-check-bucket"
-$RCLONE copy --progress "$work/$name" "spaces:${bucket}/iso/"
-$RCLONE copy "$work/$name.sha256" "spaces:${bucket}/iso/"
-$RCLONE copyto "$work/latest.txt" "spaces:${bucket}/iso/latest.txt"
-# A stable name for a person following the guide (server-side copies, no re-upload).
-$RCLONE copyto "spaces:${bucket}/iso/$name" "spaces:${bucket}/iso/homelab-installer-latest.iso"
-$RCLONE copyto "spaces:${bucket}/iso/$name.sha256" "spaces:${bucket}/iso/homelab-installer-latest.iso.sha256"
-base="https://${bucket}.${region}.cdn.digitaloceanspaces.com/iso"
+tag="installer-$(date +%Y%m%d)-${rev}"
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+# Constant asset names, so the /releases/latest/download/ redirect resolves.
+cp "$iso" "$work/homelab-installer.iso"
+( cd "$work" && sha256sum homelab-installer.iso > homelab-installer.iso.sha256 )
+notes="Installer ISO built from \`$rev\` ($(date -u +%Y-%m-%d)). The stable address \`releases/latest/download/homelab-installer.iso\` redirects here while this is the newest. Check: \`sha256sum -c homelab-installer.iso.sha256\` (Windows: \`certutil -hashfile homelab-installer.iso SHA256\`). The ISO self-updates its installer from the binary cache at boot, so an older stick is only stale in its fallback copy."
+
+gh() { nix shell nixpkgs#gh -c gh "$@"; }
+if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+  echo "release $tag exists; replacing its assets"
+  gh release upload "$tag" --repo "$repo" --clobber "$work/homelab-installer.iso" "$work/homelab-installer.iso.sha256"
+else
+  gh release create "$tag" --repo "$repo" --target "$full_rev" --latest --title "Installer $(date +%Y-%m-%d) ($rev)" --notes "$notes" \
+    "$work/homelab-installer.iso" "$work/homelab-installer.iso.sha256"
+fi
 echo "published:"
-echo "  $base/$name"
-echo "  $base/$name.sha256"
-echo "  $base/latest.txt"
-echo "  https://${bucket}.${endpoint}/iso/homelab-installer-latest.iso  (stable name, same bytes — plain host: the CDN caches an overwritten name for an hour)"
+echo "  https://github.com/$repo/releases/tag/$tag"
+echo "  https://github.com/$repo/releases/latest/download/homelab-installer.iso   (redirects to the newest)"
+echo "  https://github.com/$repo/releases/latest/download/homelab-installer.iso.sha256"
