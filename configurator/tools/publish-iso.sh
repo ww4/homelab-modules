@@ -17,6 +17,9 @@ set -euo pipefail
 repo=${GH_REPO:-ww4/homelab-modules}
 build=1
 [ "${1:-}" = --no-build ] && build=0
+# A stale result-iso is how a release gets the wrong bytes under a new tag
+# (2026-10-05): without a build, prove the link matches this checkout.
+
 if [ -z "${GH_TOKEN:-}" ]; then
   f=${GH_TOKEN_FILE:-$HOME/.config/ww4-bot/github-ww4-pat.env}
   GH_TOKEN=$(sed -n 's/^GITHUB_BOT_TOKEN=//p' "$f")
@@ -30,8 +33,13 @@ full_rev=$(git -C "$here" rev-parse HEAD)
 if [ "$build" = 1 ]; then
   nix build '.#packages.x86_64-linux.iso' --out-link ./result-iso
 fi
-iso=$(find result-iso/iso -name "*.iso" | head -1)
-[ -f "$iso" ] || { echo "no ISO at result-iso/iso" >&2; exit 1; }
+iso=$(find result-iso/iso -name "*.iso" 2>/dev/null | head -1)
+[ -f "$iso" ] || { echo "no ISO at result-iso/iso (run without --no-build)" >&2; exit 1; }
+if [ "$build" = 0 ]; then
+  want=$(nix path-info '.#packages.x86_64-linux.iso' 2>/dev/null || true)
+  have=$(readlink -f result-iso)
+  [ -z "$want" ] || [ "$want" = "$have" ] || { echo "result-iso is $have but this checkout builds $want; drop --no-build" >&2; exit 1; }
+fi
 
 tag="installer-$(date +%Y%m%d)-${rev}"
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
