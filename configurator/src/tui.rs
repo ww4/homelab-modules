@@ -344,7 +344,7 @@ impl<'a> App<'a> {
 
     /// The Welcome screen's network line, kept current: DHCP is often still
     /// negotiating when the installer starts, and a cable plugged in later
-    /// must be noticed without a restart (Chris's first hardware run).
+    /// must be noticed without a restart (the first hardware run).
     fn with_network(self) -> Self {
         let shared = self.network.clone();
         std::thread::spawn(move || loop {
