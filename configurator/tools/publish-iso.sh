@@ -56,6 +56,12 @@ else
   gh release create "$tag" --repo "$repo" --target "$full_rev" --latest --title "Installer $(date +%Y-%m-%d) ($rev)" --notes "$notes" \
     "$work/homelab-installer.iso" "$work/homelab-installer.iso.sha256"
 fi
+# gh has left a release as a draft here (2026-10-05): a draft 404s for
+# everyone without write access, which is everyone the ISO is for. Say so,
+# fix it, and prove it by asking as a stranger would.
+gh release edit "$tag" --repo "$repo" --draft=false --latest >/dev/null
+code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.github.com/repos/$repo/releases/latest" -H 'Authorization:')
+[ "$code" = 200 ] || { echo "the release is not public (anonymous GET /releases/latest gave $code)" >&2; exit 1; }
 echo "published:"
 echo "  https://github.com/$repo/releases/tag/$tag"
 echo "  https://github.com/$repo/releases/latest/download/homelab-installer.iso   (redirects to the newest)"
