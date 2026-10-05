@@ -49,6 +49,9 @@ let
           The installer opens by itself on this console; `homelab-configure tui` opens it again.
           Everything it writes lives in RAM until the install copies it to the new system.
         '';
+        # Kernel messages scribble over the wizard on tty1 (a block-layer line
+        # appeared across the Finished screen in the rehearsal): errors only.
+        boot.consoleLogLevel = 3;
         # Keep the ISO small-ish: no docs, no manual.
         documentation.enable = false;
         documentation.nixos.enable = false;
