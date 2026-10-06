@@ -1,3 +1,19 @@
+# ⚠️ NOT INSTALLED YET. This belongs at `.github/workflows/checks.yml`, and
+# it cannot be put there from here. The public GitHub repository is a push
+# mirror of a private forge, and the mirror pushes with a personal access
+# token that has no `workflow` scope. GitHub refuses any push that creates or
+# updates a file under `.github/workflows/`, so committing this to its real
+# path stopped the mirror dead: the forge moved on and the public repository
+# stayed where it was, which is also where the installer fetches its own
+# updates from.
+#
+# To install it, the mirror's token needs the `workflow` scope. Replace the
+# credential on the push mirror, then move this file to
+# `.github/workflows/checks.yml` and the next mirror push carries it.
+#
+# Until then the checks still exist and still run: `nix flake check
+# ./configurator` is the whole of what this workflow does.
+#
 # What a stranger can see being enforced.
 #
 # Pull requests live on a private forge, so this runs after a merge rather

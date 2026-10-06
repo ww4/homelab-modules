@@ -23,8 +23,12 @@ is the question set.
   nixpkgs. It asserts: catalog integrity, the configurator builds and its
   tests pass, the option documentation evaluates, every module evaluates and
   builds with values a real machine would have (`checks/every-module.nix`),
-  and the leak scan passes. The same command runs on the public mirror after
-  every merge, in `.github/workflows/checks.yml`.
+  and the leak scan passes. A workflow that runs the same command on the
+  public mirror is written and waiting at `ci/github-checks.yml`; it is not
+  installed, because the mirror's token has no `workflow` scope and GitHub
+  rejects the whole push when a file under `.github/workflows/` changes. That
+  rejection stops the mirror, which is where the installer fetches its own
+  updates, so do not move the file there until the token is replaced.
 - ⚠️ **Give the check fixture real values, not defaults.** Several modules
   interpolate an option into a shell program, and `writeShellApplication`
   runs shellcheck, so a module can be correct with the default and broken the
