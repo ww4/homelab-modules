@@ -36,4 +36,19 @@ nix shell nixpkgs#s3cmd -c s3cmd --access_key="$DO_SPACES_KEY_ID" --secret_key="
   setacl --acl-public --recursive "s3://${bucket}/cache/" > "$acl_log" 2>&1 || { cat "$acl_log" >&2; rm -f "$acl_log"; echo "s3cmd setacl failed" >&2; exit 1; }
 echo "$(grep -c 'ACL set' "$acl_log" || true) objects made public"
 rm -f "$acl_log"
+# What the installer asks before offering an update. The GitHub mirror has the
+# commit seconds after a merge, but the closure exists here only once this
+# script has run — so the updater compares against THIS file, not the mirror,
+# and never offers a version it cannot fetch. Written last, after the closure
+# is up and public, for exactly that reason.
+full=$(git -C "$here" rev-parse HEAD)
+marker=$(mktemp)
+printf '{"rev":"%s","short":"%s","store_path":"%s","published":"%s"}\n' \
+  "$full" "$rev" "$out" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$marker"
+nix shell nixpkgs#s3cmd -c s3cmd --access_key="$DO_SPACES_KEY_ID" --secret_key="$DO_SPACES_SECRET" \
+  --host="$endpoint" --host-bucket="%(bucket)s.$endpoint" --no-progress \
+  --acl-public --mime-type=application/json --add-header=Cache-Control:no-cache \
+  put "$marker" "s3://${bucket}/cache/latest-installer.json" >/dev/null || { rm -f "$marker"; echo "could not publish the latest-installer marker" >&2; exit 1; }
+rm -f "$marker"
+echo "marker: $rev is now the newest fetchable installer"
 echo "pushed to https://${bucket}.${endpoint}/cache (nix-cache-info + narinfos public-read)"

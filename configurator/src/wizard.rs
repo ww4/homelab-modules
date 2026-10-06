@@ -265,6 +265,11 @@ pub fn kits() -> Vec<Kit> {
     ]
 }
 
+/// What the installer's binary cache says it can serve. Written by
+/// `tools/publish-cache.sh` after the closure is up and public, so anything
+/// named here is fetchable.
+pub const CACHE_LATEST: &str = "https://homelab-installer.nyc3.digitaloceanspaces.com/cache/latest-installer.json";
+
 /// The marker of the kit that is not a list: "whatever is ticked".
 pub const CUSTOM: &str = "__custom";
 
@@ -349,6 +354,36 @@ pub struct Progress {
     pub exit: AtomicI32,
 }
 
+/// What a check for a newer installer found. `newest` is the newest revision
+/// the binary cache can actually serve, which is the only thing worth
+/// offering; `pending` names a newer commit that exists but is not published
+/// yet, so the answer can explain the wait instead of failing on it.
+pub struct Update {
+    pub newest: String,
+    pub newer: bool,
+    pub pending: Option<String>,
+}
+
+/// Two revisions, one of which may be abbreviated.
+pub fn same_rev(a: &str, b: &str) -> bool {
+    let n = a.len().min(b.len()).min(40);
+    n >= 7 && a[..n].eq_ignore_ascii_case(&b[..n])
+}
+
+/// Why a `nix build --max-jobs 0` failed, in a sentence a reader can act on.
+/// Nix prints `Output paths:` and the path even when the build FAILED, so
+/// taking the last line of stderr told the reader only the path it did not
+/// get — which is what the first report of this looked like.
+pub fn fetch_failure(stderr: &str) -> String {
+    let lower = stderr.to_ascii_lowercase();
+    if lower.contains("no suitable substitute") || lower.contains("local builds are disabled") || lower.contains("cannot build") {
+        return "the newer installer is not in the binary cache yet: it is built and published a few minutes after the change lands. Check again shortly.".to_string();
+    }
+    let reason = stderr.lines().map(str::trim).find(|l| l.starts_with("error:") || l.starts_with("Reason:")).unwrap_or("");
+    let tail = stderr.lines().map(str::trim).filter(|l| !l.is_empty()).last().unwrap_or("nix said nothing");
+    format!("could not fetch the newer installer: {}", if reason.is_empty() { tail } else { reason })
+}
+
 /// A refused Continue: `soft` means a second Continue accepts it.
 pub struct Blocked {
     pub message: String,
@@ -396,8 +431,8 @@ pub struct Wizard {
     /// a parity disk brings snapraid). They are not the reader's choices, so
     /// they must not turn the kit into "Custom".
     pub auto_modules: std::collections::BTreeSet<String>,
-    /// What a check for a newer installer found: (newest commit, newer?).
-    pub update: Option<(String, bool)>,
+    /// What a check for a newer installer found.
+    pub update: Option<Update>,
     /// Set when a newer installer has been fetched: the front end restores
     /// the terminal and hands the process over to it.
     pub relaunch: Option<String>,
@@ -527,30 +562,63 @@ impl Wizard {
 
     /// Ask the mirror what the newest installer is. Cheap: one small request.
     pub fn check_update(&mut self) -> Result<String, String> {
+        // The GitHub mirror has a commit seconds after a merge, but the
+        // closure reaches the binary cache only once the publisher has built
+        // it — a few minutes later. Offering the mirror's revision therefore
+        // offers something `nix build --max-jobs 0` cannot fetch, which is
+        // exactly what the first report of this looked like. So ask the cache
+        // what it can actually serve.
         let out = Command::new("curl")
-            .args(["-fsS", "--max-time", "15", "https://api.github.com/repos/ww4/homelab-modules/commits/main"])
+            .args(["-fsS", "--max-time", "15", CACHE_LATEST])
             .output()
-            .map_err(|e| format!("could not reach GitHub: {e}"))?;
+            .map_err(|e| format!("could not reach the installer cache: {e}"))?;
         if !out.status.success() {
-            return Err("could not reach GitHub to check for an update".into());
+            return Err("could not reach the installer cache to check for an update".into());
         }
-        let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|_| "GitHub returned something unexpected".to_string())?;
-        let sha = v["sha"].as_str().unwrap_or("").to_string();
-        if sha.is_empty() {
-            return Err("GitHub returned no commit".into());
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|_| "the installer cache returned something unexpected".to_string())?;
+        let published = v["rev"].as_str().unwrap_or("").to_string();
+        if published.is_empty() {
+            return Err("the installer cache names no revision".into());
         }
+        // Best effort, and only so the answer can explain a wait: the newest
+        // commit, which may be ahead of what is published.
+        let head = Self::mirror_head();
+        let pending = head.filter(|h| !same_rev(h, &published)).map(|h| h[..7.min(h.len())].to_string());
+
         let mine = Self::version();
         if mine == "dirty" {
-            self.update = Some((sha, false));
+            self.update = Some(Update { newest: published, newer: false, pending });
             return Ok("this installer was built from a work tree, so there is nothing to compare it with".into());
         }
-        let newer = !sha.starts_with(mine) && !mine.starts_with(&sha[..7.min(sha.len())]);
-        self.update = Some((sha.clone(), newer));
+        let newer = !same_rev(&published, &mine);
+        let short = published[..7.min(published.len())].to_string();
+        self.update = Some(Update { newest: published, newer, pending: pending.clone() });
         Ok(if newer {
-            format!("a newer installer is available ({})", &sha[..7.min(sha.len())])
+            format!("a newer installer is available ({short})")
+        } else if let Some(p) = pending {
+            format!("this is the newest published installer; a newer change ({p}) is not in the cache yet, so check again in a few minutes")
         } else {
             "this is the newest installer".into()
         })
+    }
+
+    /// The newest commit on the public mirror, or nothing if it cannot be
+    /// read. Never an error: this only annotates the answer.
+    fn mirror_head() -> Option<String> {
+        let out = Command::new("curl")
+            .args(["-fsS", "--max-time", "10", "https://api.github.com/repos/ww4/homelab-modules/commits/main"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+        let sha = v["sha"].as_str()?.to_string();
+        if sha.is_empty() {
+            None
+        } else {
+            Some(sha)
+        }
     }
 
     /// Fetch the newest installer and hand this process over to it, keeping
@@ -577,7 +645,7 @@ impl Wizard {
             .output()
             .map_err(|e| format!("could not run nix: {e}"))?;
         if !out.status.success() {
-            return Err(format!("could not fetch the newer installer: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("").trim()));
+            return Err(fetch_failure(&String::from_utf8_lossy(&out.stderr)));
         }
         let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
         let exe = format!("{path}/bin/homelab-configure");
@@ -1369,7 +1437,7 @@ impl Wizard {
             "done": { "report": self.done_tail(24) },
             "web": { "port": self.web_port, "code": self.pairing, "seen": self.web_seen },
             "version": Self::version(),
-            "update": self.update.as_ref().map(|(sha, newer)| json!({ "newest": sha, "newer": newer, "restarting": self.relaunch.is_some() })),
+            "update": self.update.as_ref().map(|u| json!({ "newest": u.newest, "newer": u.newer, "pending": u.pending, "restarting": self.relaunch.is_some() })),
         })
     }
 }
@@ -1625,6 +1693,37 @@ mod tests {
         let mine: std::collections::BTreeSet<&str> = kits[i].modules.iter().map(|s| s.as_str()).collect();
         let auto: std::collections::BTreeSet<&str> = ["mergerfs-pools"].into_iter().collect();
         assert_eq!(kit_for(&mine, &auto, &kits), i);
+    }
+
+    #[test]
+    fn a_short_rev_matches_the_long_one_it_abbreviates() {
+        assert!(same_rev("a5d81484168f4241321b34360954628be0e2fb36", "a5d8148"));
+        assert!(same_rev("a5d8148", "a5d81484168f4241321b34360954628be0e2fb36"));
+        assert!(!same_rev("a5d8148", "8575481"));
+        // Too short to mean anything: six characters is not a revision.
+        assert!(!same_rev("a5d814", "a5d81484168f4241321b34360954628be0e2fb36"));
+        assert!(!same_rev("", "a5d8148"));
+    }
+
+    /// The first report of this read "could not fetch the newer installer:
+    /// /nix/store/dg1699…", because nix prints `Output paths:` and the path
+    /// even when the build FAILED, and the message took the last line.
+    #[test]
+    fn a_missing_substitute_is_named_as_one() {
+        let stderr = "\
+error: Cannot build '/nix/store/k48mnl-homelab-configure-0.1.0.drv'.
+       Reason: required local builds are disabled (max-jobs = 0) and no suitable substitute was found.
+       Output paths:
+         /nix/store/dg1699hh5m0q7j22ly3mdi3hm51l45s6-homelab-configure-0.1.0";
+        let msg = fetch_failure(stderr);
+        assert!(msg.contains("not in the binary cache yet"), "got: {msg}");
+        assert!(!msg.contains("/nix/store/dg1699"), "the path is not the reason: {msg}");
+    }
+
+    #[test]
+    fn another_failure_keeps_its_error_line() {
+        let msg = fetch_failure("warning: something\nerror: unable to download: HTTP error 403\nsome trailing noise");
+        assert!(msg.contains("HTTP error 403"), "got: {msg}");
     }
 
     #[test]

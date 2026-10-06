@@ -238,6 +238,7 @@ function renderUpdate(s) {
       el("dt", { textContent: "Version" }), el("dd", { textContent: (s.version || "dirty") }),
       el("dt", { textContent: "Newest" }), el("dd", { textContent: u ? u.newest.slice(0, 7) + (u.newer ? " — newer than this one" : " — the same") : "not checked yet" }),
     ]),
+    ...(u && u.pending ? [el("p", { className: "muted", textContent: "A newer change (" + u.pending + ") has landed but is not in the cache yet. It is published a few minutes after it lands; check again shortly." })] : []),
     el("div", { className: "row" }, [
       el("button", { textContent: "Check for updates", onclick: () => call({ do: "check_update" }) }),
       el("button", {
