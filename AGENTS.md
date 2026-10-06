@@ -22,13 +22,20 @@ is the question set.
   because the library itself deliberately has no inputs, and a check needs
   nixpkgs. It asserts: catalog integrity, the configurator builds and its
   tests pass, the option documentation evaluates, every module evaluates and
-  builds with values a real machine would have (`checks/every-module.nix`),
-  and the leak scan passes. A workflow that runs the same command on the
-  public mirror is written and waiting at `ci/github-checks.yml`; it is not
-  installed, because the mirror's token has no `workflow` scope and GitHub
-  rejects the whole push when a file under `.github/workflows/` changes. That
-  rejection stops the mirror, which is where the installer fetches its own
-  updates, so do not move the file there until the token is replaced.
+  builds with values a real machine would have
+  (`configurator/checks/every-module.nix`), and the leak scan passes. Paths
+  in this file are from the repository root; a second audit went looking for
+  that fixture under the sub-flake, did not find it, and concluded the checks
+  did not exist, so the fixture now lives where a reader following the
+  command would look for it.
+- ⚠️ **The mirror workflow is written and NOT installed.** It is at
+  `ci/github-checks.yml`, not under `.github/workflows/`, and that is
+  deliberate. The mirror pushes with a token that has no `workflow` scope,
+  and GitHub rejects the whole push when any file under `.github/workflows/`
+  changes. That rejection stops the mirror, which is where the installer
+  fetches its own updates: on 2026-10-06 the forge moved on for nine minutes
+  while the public repository stayed put. Do not move the file there until
+  the mirror's token is replaced.
 - ⚠️ **Give the check fixture real values, not defaults.** Several modules
   interpolate an option into a shell program, and `writeShellApplication`
   runs shellcheck, so a module can be correct with the default and broken the

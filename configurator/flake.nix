@@ -115,7 +115,7 @@
         modules = (lib.nixosSystem {
           inherit system;
           modules = builtins.attrValues library.nixosModules
-            ++ [ ../checks/every-module.nix { nixpkgs.hostPlatform = system; } ];
+            ++ [ ./checks/every-module.nix { nixpkgs.hostPlatform = system; } ];
         }).config.system.build.toplevel;
 
         # No personal names, hosts, domains or addresses in the public tree.

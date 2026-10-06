@@ -96,6 +96,15 @@ Read the header before importing.
 - **No site values in this repo — ever.** Not in modules, comments, or
   commit messages. `tools/leak-scan.sh` runs before every push and fails on
   any identifier from the source fleet.
+- **One command checks the lot.** `nix flake check ./configurator` asserts
+  that the catalog describes exactly the modules this flake exports, that the
+  configurator builds and its tests pass, that every module evaluates and
+  builds with values a real machine would have
+  (`configurator/checks/every-module.nix`), and that the leak scan passes.
+  The checks live in the sub-flake because the library itself has no inputs
+  on purpose and a check needs nixpkgs. The same command is written up as a
+  mirror workflow at `ci/github-checks.yml`, which is deliberately not
+  installed; the file says why.
 - **Watchers must fail loudly.** Exporters here never republish stale data
   as fresh: a failed read publishes an explicit failure signal or nothing,
   and each watcher has an alert on its own liveness. A monitor whose silence
