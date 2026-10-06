@@ -84,22 +84,59 @@ fn handle(mut stream: TcpStream, w: Arc<Mutex<Wizard>>) -> std::io::Result<()> {
                     g.poll_install();
                 }
             }
-            let out = if method == "POST" {
-                let action: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+            let action: Value = if method == "POST" { serde_json::from_slice(&body).unwrap_or(json!({})) } else { json!({}) };
+            // One browser drives. A second one may watch, and may take over
+            // deliberately; the first then sees that it has lost the form.
+            let taking = action["do"].as_str() == Some("take_over");
+            {
+                let mut g = w.lock().unwrap();
+                match (&g.controller, method.as_str(), taking) {
+                    (_, _, true) => {
+                        let old = g.controller.clone();
+                        g.controller = Some(peer.clone());
+                        match old {
+                            Some(o) if o != peer => g.say(format!("the browser at {peer} took over from {o}"), false),
+                            _ => g.say(format!("the browser at {peer} is filling this in"), false),
+                        }
+                    }
+                    (None, "POST", _) => g.controller = Some(peer.clone()),
+                    (Some(c), "POST", _) if c != &peer => {
+                        let out = with_control(&g, &peer);
+                        drop(g);
+                        return reply(&mut stream, 409, "application/json", out.to_string().as_bytes());
+                    }
+                    _ => {}
+                }
+            }
+            let out = if method == "POST" && !taking {
                 apply(&w, &action)
             } else {
                 w.lock().unwrap().state_json()
             };
+            let g = w.lock().unwrap();
+            let mut out = out;
+            out["web"]["controller"] = json!(g.controller);
+            out["web"]["in_control"] = json!(g.controller.as_deref().map(|c| c == peer).unwrap_or(true));
+            drop(g);
             reply(&mut stream, 200, "application/json", out.to_string().as_bytes())
         }
         _ => reply(&mut stream, 404, "text/plain", b"not found"),
     }
 }
 
+/// The state as this peer sees it, with who holds the form.
+fn with_control(g: &Wizard, peer: &str) -> Value {
+    let mut out = g.state_json();
+    out["web"]["controller"] = json!(g.controller);
+    out["web"]["in_control"] = json!(g.controller.as_deref().map(|c| c == peer).unwrap_or(true));
+    out
+}
+
 fn reply(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -> std::io::Result<()> {
     let reason = match status {
         200 => "OK",
         403 => "Forbidden",
+        409 => "Conflict",
         404 => "Not Found",
         _ => "OK",
     };
@@ -160,6 +197,17 @@ fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
                 g.say(e, false);
             }
         }
+        "check_update" => match g.check_update() {
+            Ok(m) => g.say(m, false),
+            Err(e) => g.say(e, true),
+        },
+        "apply_update" => match g.apply_update() {
+            Ok(exe) => {
+                g.say("fetched; restarting the installer with your answers", false);
+                g.relaunch = Some(exe);
+            }
+            Err(e) => g.say(e, true),
+        },
         "back" => g.back(),
         "continue" => {
             if let Err(b) = g.advance() {

@@ -1,7 +1,7 @@
 # The homelab.* option set — the single interface between this library and a
 # consumer's flake. Implementations read these; the consumer's flake sets them.
 # Grown as modules are parameterized; never given personal defaults.
-{ lib, ... }:
+{ config, lib, ... }:
 
 {
   options.homelab = {
@@ -108,8 +108,9 @@
     arrStack = {
       root = lib.mkOption {
         type = lib.types.str;
+        default = "/mnt/media/arr";
         example = "/mnt/media/arr";
-        description = "The shared /data tree (downloads + media subdirs).";
+        description = "The shared /data tree (downloads + media subdirs). The default sits on the media pool, which is where a disk marked `data` at install is mounted.";
       };
       puid = lib.mkOption {
         type = lib.types.str;
@@ -123,7 +124,8 @@
       };
       owner = lib.mkOption {
         type = lib.types.str;
-        description = "Host user owning the stack's directories (matches puid).";
+        default = config.homelab.adminUser;
+        description = "Host user owning the stack's directories (matches puid). Defaults to homelab.adminUser: the account a fresh install is sure to have.";
       };
       group = lib.mkOption {
         type = lib.types.str;
@@ -382,8 +384,9 @@
       enable = lib.mkEnableOption "the forge-vs-deployed drift watcher";
       repoUrl = lib.mkOption {
         type = lib.types.str;
+        default = "";
         example = "https://git.example.com/me/flakes.git";
-        description = "The flake repo the GitOps applier deploys from.";
+        description = "The flake repo the GitOps applier deploys from. Empty (the default) means there is no repo yet: the check does nothing until you set it.";
       };
       branch = lib.mkOption {
         type = lib.types.str;
@@ -445,6 +448,7 @@
       };
       pool = lib.mkOption {
         type = lib.types.str;
+        default = "media";
         example = "media";
         description = "Name of the homelab.pools entry whose memberDir + members are the data disks.";
       };

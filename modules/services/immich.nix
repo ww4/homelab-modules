@@ -16,6 +16,7 @@ let cfg = config.homelab.immich; in
   options.homelab.immich = {
     mediaLocation = lib.mkOption {
       type = lib.types.str;
+      default = "/mnt/media/immich";
       example = "/mnt/media/immich";
       description = "Where Immich stores photo/video data.";
     };

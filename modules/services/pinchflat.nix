@@ -6,6 +6,7 @@
 
   options.homelab.pinchflat.mediaDir = lib.mkOption {
     type = lib.types.str;
+    default = "/mnt/media/pinchflat";
     example = "/mnt/media/pinchflat";
     description = "Where PinchFlat stores downloaded media.";
   };

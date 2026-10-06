@@ -51,6 +51,13 @@ let
         echo "deploy_drift_last_run_seconds $now"
       }
 
+      # No repo yet (a fresh install): nothing to compare against. Say so
+      # once and stop, rather than publishing a false "forge unreachable".
+      if [ -z "${cfg.repoUrl}" ]; then
+        echo "homelab.deployDriftWatch.repoUrl is empty: set it to your flake repo to turn this check on"
+        exit 0
+      fi
+
       # 1) The forge's branch head. Bounded: a hung forge must not wedge the
       # timer.
       head=$(timeout 30 git ls-remote "${cfg.repoUrl}" "refs/heads/${cfg.branch}" 2>/dev/null | awk '{print $1}' || true)

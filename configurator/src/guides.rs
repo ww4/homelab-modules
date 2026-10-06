@@ -22,10 +22,27 @@ pub struct SecretField {
     pub help: String,
     pub masked: bool,
     pub optional: bool,
+    /// A pick-list of (value, label); empty means free text.
+    pub choices: Vec<(String, String)>,
+    /// This answer is a `homelab.*` option, not a line of the credentials
+    /// file — the VPN provider decides which lines the file even needs.
+    pub is_option: bool,
 }
 
 fn f(var: &str, label: &str, help: &str, masked: bool, optional: bool) -> SecretField {
-    SecretField { var: var.into(), label: label.into(), help: help.into(), masked, optional }
+    SecretField { var: var.into(), label: label.into(), help: help.into(), masked, optional, choices: Vec::new(), is_option: false }
+}
+
+fn choice(var: &str, label: &str, help: &str, choices: &[(&str, &str)]) -> SecretField {
+    SecretField {
+        var: var.into(),
+        label: label.into(),
+        help: help.into(),
+        masked: false,
+        optional: false,
+        choices: choices.iter().map(|(v, l)| (v.to_string(), l.to_string())).collect(),
+        is_option: true,
+    }
 }
 
 /// The variables a secret file needs, in the order a person fills them.
@@ -42,11 +59,18 @@ pub fn fields(option: &str, values: &BTreeMap<String, String>) -> Vec<SecretFiel
         )],
         "homelab.arrStack.vpnEnvFile" => {
             let provider = values.get("homelab.arrStack.vpnProvider").map(|s| s.trim().to_lowercase()).unwrap_or_default();
-            let mut out = vec![
+            // The provider comes first: it decides which lines the file needs.
+            let mut out = vec![choice(
+                "homelab.arrStack.vpnProvider",
+                "VPN provider",
+                "Who you have an account with. The boxes below change to the values that provider needs; gluetun supports many more, and `other` lets you name one.",
+                &[("mullvad", "Mullvad"), ("protonvpn", "Proton VPN"), ("ivpn", "IVPN"), ("nordvpn", "NordVPN"), ("other", "another gluetun provider")],
+            )];
+            out.extend([
                 f("WIREGUARD_PRIVATE_KEY", "WireGuard private key", "The PrivateKey line of the .conf your provider gave you, without `PrivateKey = `.", true, false),
                 f("WIREGUARD_ADDRESSES", "WireGuard address", "The Address line of the same file, keeping the /32, e.g. 10.64.0.2/32.", false, false),
                 f("SERVER_COUNTRIES", "Server country", "Where to come out, e.g. Netherlands. One country name.", false, false),
-            ];
+            ]);
             match provider.as_str() {
                 "protonvpn" | "proton" => out.push(f("VPN_PORT_FORWARDING", "Port forwarding", "`on` to ask Proton for a forwarded port (needed for good seeding).", false, true)),
                 "mullvad" => {}
@@ -97,8 +121,7 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
                     Mullvad has no port forwarding: expect slower seeding; a tracker that needs an open port wants a provider that forwards one (Proton VPN does)."),
                 "protonvpn" | "proton" => ("Proton VPN WireGuard credentials (port forwarding on paid plans)", "account.protonvpn.com → Downloads → WireGuard configuration → Linux · pick a P2P server · enable \"NAT-PMP (port forwarding)\" → Create → download. \
                     Fill the boxes below from the .conf: PrivateKey and Address. Set port forwarding to `on` for a forwarded port."),
-                "" => ("VPN credentials for the download client", "Set homelab.arrStack.vpnProvider on the Values screen first (mullvad, protonvpn, or any provider gluetun supports); \
-                    the steps for that provider appear here."),
+                "" => ("VPN credentials for the download client", "Pick your provider on the first line below; the steps for that provider then appear here, and the boxes change to the values it needs."),
                 _ => ("VPN credentials for the download client", "This provider is passed to gluetun as VPN_SERVICE_PROVIDER; the variables it needs are in gluetun's wiki page for it. \
                     Most WireGuard providers need a private key, an address and a country; one that forwards a port adds the port number (set qBittorrent's listen port to the same). \
                     (provider: {other})"),
@@ -180,7 +203,10 @@ mod tests {
     #[test]
     fn vpn_fields_and_guide_follow_the_provider() {
         let mut v = BTreeMap::new();
-        assert!(for_option("homelab.arrStack.vpnEnvFile", &v).unwrap().steps.contains("vpnProvider"));
+        // With no provider chosen the guide points at the choice itself.
+        assert!(for_option("homelab.arrStack.vpnEnvFile", &v).unwrap().steps.contains("provider"));
+        assert!(fields("homelab.arrStack.vpnEnvFile", &v)[0].is_option);
+        assert!(!fields("homelab.arrStack.vpnEnvFile", &v)[0].choices.is_empty());
         v.insert("homelab.arrStack.vpnProvider".into(), "ProtonVPN".into());
         assert!(fields("homelab.arrStack.vpnEnvFile", &v).iter().any(|f| f.var == "VPN_PORT_FORWARDING"));
         v.insert("homelab.arrStack.vpnProvider".into(), "mullvad".into());

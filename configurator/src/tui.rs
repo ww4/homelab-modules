@@ -75,6 +75,7 @@ pub fn run(schema: &'static Schema, profile: Option<&Path>, out_answers: &Path, 
             }
         }
     }
+    wiz.restore_session();
     wiz.watch_network();
     let shared = Arc::new(Mutex::new(wiz));
     if web {
@@ -97,6 +98,21 @@ pub fn run(schema: &'static Schema, profile: Option<&Path>, out_answers: &Path, 
     // The install's own report, so it stays in the scrollback.
     for l in shared.lock().unwrap().install_report.iter() {
         println!("{l}");
+    }
+    // Hand over to a newer installer, with the answers it just wrote and the
+    // same pairing code, so the browser keeps talking to the same install.
+    let relaunch = shared.lock().unwrap().relaunch.clone();
+    if let Some(exe) = relaunch {
+        use std::os::unix::process::CommandExt;
+        println!("starting the newer installer...");
+        let mut c = Command::new(&exe);
+        c.arg("tui");
+        for a in std::env::args().skip(2) {
+            c.arg(a);
+        }
+        let e = c.exec();
+        eprintln!("could not start {exe}: {e}");
+        return Ok(1);
     }
     Ok(0)
 }
@@ -193,6 +209,11 @@ impl Ui {
                 let mut w = self.w.lock().unwrap();
                 if w.step == Step::Install {
                     w.poll_install();
+                }
+                // A newer installer has been fetched (from the browser's
+                // gear): give it this terminal and this process.
+                if w.relaunch.is_some() {
+                    self.quit = true;
                 }
             }
             if self.quit {
@@ -299,7 +320,27 @@ impl Ui {
                     }
                 }
             }
-            Row::Field(_) | Row::SecretField(_) | Row::Value(_) => self.start_edit(row),
+            Row::Field(_) | Row::SecretField(_) | Row::Value(_) => {
+                // A field with a list: Space walks it, Enter types a value
+                // the list does not have.
+                if space {
+                    if let Some(next) = self.next_choice(row) {
+                        self.commit(row, &next);
+                        return;
+                    }
+                }
+                self.start_edit(row)
+            }
+        }
+    }
+
+    /// The next value of a pick-list field, if this row has one.
+    fn next_choice(&self, row: Row) -> Option<String> {
+        let w = self.w.lock().unwrap();
+        match (w.step, self.open_secret, row) {
+            (Step::Profile, _, Row::Field(i)) => w.profile.get(i).and_then(|f| f.next_choice()),
+            (Step::Domain, Some(i), Row::SecretField(j)) => w.secrets.get(i).and_then(|s| s.fields.get(j)).and_then(|f| f.next_choice()),
+            _ => None,
         }
     }
 
@@ -687,9 +728,9 @@ impl Ui {
         let (i, l, h) = Self::split(area, 2, 5);
         let w = self.w.lock().unwrap();
         self.intro(f, i, w.step.intro(w.live_usb));
-        let fields: Vec<(String, String)> = w.profile.iter().map(|f| (f.label.clone(), f.shown())).collect();
+        let fields: Vec<(String, String)> = w.profile.iter().map(|f| (f.label.clone(), if f.choices.is_empty() { f.shown() } else { f.label_of(&f.value) })).collect();
         let help: Option<(String, String)> = match self.focused() {
-            Row::Field(i) => w.profile.get(i).map(|f| (f.label.clone(), f.help.clone())),
+            Row::Field(i) => w.profile.get(i).map(|f| (f.label.clone(), format!("{}{}", f.help, if f.choices.is_empty() { "" } else { "\nSpace walks the list; Enter types one the list does not have." }))),
             _ => None,
         };
         let kept = w.admin_hash.is_some() && w.field("password").is_empty();
@@ -770,10 +811,17 @@ impl Ui {
         let rows: Vec<(String, String)> = if path_only {
             vec![("File on this machine".to_string(), if s.path.is_empty() { "—".into() } else { s.path.clone() })]
         } else {
-            s.fields.iter().zip(&s.optional).map(|(f, opt)| (format!("{}{}", f.label, if *opt { " (optional)" } else { "" }), f.shown())).collect()
+            s.fields
+                .iter()
+                .zip(&s.optional)
+                .map(|(f, opt)| {
+                    let shown = if f.choices.is_empty() { f.shown() } else { f.label_of(&f.value) };
+                    (format!("{}{}", f.label, if *opt { " (optional)" } else { "" }), shown)
+                })
+                .collect()
         };
         let help: Option<(String, String)> = match self.focused() {
-            Row::SecretField(j) if !path_only => s.fields.get(j).map(|f| (f.label.clone(), f.help.clone())),
+            Row::SecretField(j) if !path_only => s.fields.get(j).map(|f| (f.label.clone(), format!("{}{}", f.help, if f.choices.is_empty() { "" } else { "\nSpace walks the list." }))),
             Row::Save => Some(("Save".to_string(), "Writes the file (mode 600) and checks the value where the provider has an API.".to_string())),
             Row::Skip => Some(("Skip".to_string(), "Leaves this credential unset. The install still runs; what depends on it does not work until you set it on the machine and rebuild.".to_string())),
             _ => None,

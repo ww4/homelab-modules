@@ -54,6 +54,12 @@
   .mods label span { color:var(--muted) }
   dl { display:grid; grid-template-columns:8rem 1fr; gap:.3rem .8rem; margin:.3rem 0 }
   dt { font-weight:600 } dd { margin:0 }
+  .colophon { border-top:1px solid var(--line); margin-top:1.5rem; padding:.8rem 0 2rem; color:var(--muted); font-size:.8rem;
+              display:flex; gap:.6rem 1rem; flex-wrap:wrap; align-items:center }
+  .colophon a { color:var(--muted) }
+  .colophon .sep { opacity:.5 }
+  .gear { margin-left:auto; font-size:1.1rem; text-decoration:none; border:1px solid var(--line); border-radius:6px; padding:.15rem .5rem }
+  .warn { border-color:var(--bad) }
 </style>
 </head>
 <body>
@@ -66,6 +72,7 @@
 <main class="wrap">
   <p class="intro" id="intro"></p>
   <div id="screen"></div>
+  <div class="colophon" id="colophon"></div>
 </main>
 
 <footer><div class="wrap">
@@ -93,7 +100,7 @@ async function call(action) {
     body: action ? JSON.stringify(action) : undefined,
   });
   if (r.status === 403) { askCode(); return; }
-  state = await r.json();
+  state = await r.json();            // 409 answers with the state too, saying who holds it
   render(!!action);
 }
 
@@ -119,19 +126,100 @@ function row(label, control, help) {
   return el("div", { className: "row" }, kids);
 }
 
+const DOTS = "\u2022".repeat(10);
+
 function textField(f, send) {
+  if (f.choices && f.choices.length) return choiceField(f, send);
+  // A saved password keeps a row of dots until the reader types a new one,
+  // and an untouched field is never sent back.
+  const saved = f.masked && f.set;
   const input = el("input", {
     type: f.masked ? "password" : "text",
-    value: f.masked ? "" : (f.value || ""),
-    placeholder: f.masked && f.set ? "(saved — type to replace)" : "",
+    value: f.masked ? (saved ? DOTS : "") : (f.value || ""),
     onfocus: () => (typing = true),
-    onblur: (e) => { typing = false; send(e.target.value); },
+    oninput: (e) => { if (e.target.dataset.fresh !== "1" && e.target.value.includes("\u2022")) e.target.value = ""; e.target.dataset.fresh = "1"; },
+    onblur: (e) => {
+      typing = false;
+      if (saved && e.target.dataset.fresh !== "1") return;   // untouched: leave the saved value alone
+      send(e.target.value);
+    },
     onkeydown: (e) => { if (e.key === "Enter") e.target.blur(); },
   });
   return row(f.label, input, f.help);
 }
 
-let lastBody = "", lastStep = "";
+function choiceField(f, send) {
+  const wrap = el("div", { style: "flex:1 1 14rem; display:flex; gap:.5rem; flex-wrap:wrap" });
+  const known = f.choices.some((c) => c.value === f.value);
+  const sel = el("select");
+  for (const c of f.choices) sel.append(el("option", { value: c.value, textContent: c.label, selected: c.value === f.value }));
+  if (f.other_ok) sel.append(el("option", { value: "__other", textContent: "Other (type it)", selected: !known && !!f.value }));
+  const other = el("input", { type: "text", value: known ? "" : (f.value || ""), placeholder: "Region/City", hidden: known || !f.value });
+  const showOther = (on) => { other.hidden = !on; if (on) other.focus(); };
+  sel.addEventListener("focus", () => (typing = true));
+  sel.addEventListener("blur", () => (typing = false));
+  sel.addEventListener("change", (e) => {
+    if (e.target.value === "__other") { showOther(true); return; }
+    showOther(false); send(e.target.value);
+  });
+  other.addEventListener("focus", () => (typing = true));
+  other.addEventListener("blur", (e) => { typing = false; if (e.target.value.trim()) send(e.target.value.trim()); });
+  other.addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.blur(); });
+  wrap.append(sel, other);
+  if (!known && f.value) showOther(true);
+  return row(f.label, wrap, f.help);
+}
+
+let lastBody = "", lastStep = "", showingUpdate = false;
+
+/* Name, address, version, where this came from — and the gear, which is the
+   only way to replace the installer with a newer one mid-session. */
+function colophon(s) {
+  const f = document.getElementById("colophon");
+  const site = "https://ww4.github.io/imperfect-homelab";
+  f.replaceChildren(
+    el("b", { textContent: "Imperfect Homelab" }),
+    el("span", { className: "sep", textContent: "·" }),
+    el("span", { textContent: "installer " + (s.version || "dirty").slice(0, 7) }),
+    el("span", { className: "sep", textContent: "·" }),
+    el("span", { textContent: s.machine.address ? s.machine.address + ":" + s.web.port : "no address" }),
+    el("span", { className: "sep", textContent: "·" }),
+    el("a", { href: site, target: "_blank", rel: "noreferrer", textContent: "guide" }),
+    el("span", { className: "sep", textContent: "·" }),
+    el("a", { href: "https://www.gnu.org/licenses/gpl-3.0.html", target: "_blank", rel: "noreferrer", textContent: "GPL-3.0" }),
+    el("a", {
+      className: "gear" + (s.update && s.update.newer ? " warn" : ""),
+      href: "#", title: "Installer updates",
+      textContent: s.update && s.update.newer ? "\u2699 update" : "\u2699",
+      onclick: (e) => { e.preventDefault(); showingUpdate = !showingUpdate; lastStep = ""; render(true); },
+    }),
+  );
+}
+
+function renderUpdate(s) {
+  const u = s.update;
+  const box = document.getElementById("screen");
+  document.getElementById("title").textContent = "Installer updates";
+  document.getElementById("intro").textContent = "This installer updates itself from the project's binary cache. Your answers and any credentials you have saved are kept; the installer restarts and comes back at the first screen with everything filled in.";
+  document.getElementById("back").style.display = "";
+  document.getElementById("back").onclick = () => { showingUpdate = false; lastStep = ""; render(true); };
+  document.getElementById("go").style.display = "none";
+  box.replaceChildren(el("div", { className: "card" }, [
+    el("h3", { textContent: "This installer" }),
+    el("dl", {}, [
+      el("dt", { textContent: "Version" }), el("dd", { textContent: (s.version || "dirty") }),
+      el("dt", { textContent: "Newest" }), el("dd", { textContent: u ? u.newest.slice(0, 7) + (u.newer ? " — newer than this one" : " — the same") : "not checked yet" }),
+    ]),
+    el("div", { className: "row" }, [
+      el("button", { textContent: "Check for updates", onclick: () => call({ do: "check_update" }) }),
+      el("button", {
+        className: "primary", textContent: "Update and restart", disabled: !(u && u.newer) || s.step === "install",
+        onclick: () => call({ do: "apply_update" }),
+      }),
+    ]),
+    el("p", { className: "muted", textContent: s.step === "install" ? "Not while the install is running." : "Updating fetches the newer installer (about a minute) and hands this session over to it. The page reconnects by itself." }),
+  ]));
+}
 
 /* The page polls so the console and the browser stay in step. Rebuilding the
    form on every poll would close an open dropdown under the user's hand, so
@@ -157,6 +245,25 @@ function render(force) {
   go.disabled = s.step === "install" || s.step === "done";
   go.onclick = () => call({ do: "continue" });
 
+  colophon(s);
+  // One browser drives. A second one is told, and may take over.
+  if (s.web && s.web.in_control === false && !showingUpdate) {
+    document.getElementById("back").style.display = "none";
+    document.getElementById("go").style.display = "none";
+    const box = document.getElementById("screen");
+    if (lastStep !== "__locked") {
+      lastStep = "__locked";
+      box.replaceChildren(el("div", { className: "card" }, [
+        el("h3", { textContent: "Someone else is filling this in" }),
+        el("p", { textContent: `A browser at ${s.web.controller} is using this installer. Two people editing the same answers would overwrite each other, so only one drives at a time.` }),
+        el("p", { className: "muted", textContent: "You can watch from here, or take over — the other browser will be told it lost the form." }),
+        el("div", { className: "row" }, [el("button", { className: "danger", textContent: "Take over", onclick: () => call({ do: "take_over" }) })]),
+      ]));
+    }
+    return;
+  }
+  document.getElementById("go").style.display = "";
+  if (showingUpdate) { renderUpdate(s); return; }
   const body = JSON.stringify([s.step, s.kits, s.disks, s.disk_fallback, s.profile, s.ssh, s.domain, s.secrets, s.values, s.modules, s.review, s.install, s.done]);
   const active = document.activeElement;
   const busy = active && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName) && s.step === lastStep;

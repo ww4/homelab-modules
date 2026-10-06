@@ -13,6 +13,7 @@ let cfg = config.homelab.metube; in
   options.homelab.metube = {
     downloadDir = lib.mkOption {
       type = lib.types.str;
+      default = "/mnt/media/youtube/metube";
       example = "/mnt/media/youtube/metube";
       description = "Host directory downloads land in (bind-mounted into the container).";
     };

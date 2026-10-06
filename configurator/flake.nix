@@ -51,6 +51,9 @@
         cargoLock.lockFile = ./Cargo.lock;
 
         # Baked into the binary by build.rs — the schema is the checkout's.
+        # The commit this binary was built from: shown in the installer's
+        # footer and compared with the mirror when it checks for an update.
+        HOMELAB_REV = self.rev or "dirty";
         HOMELAB_CATALOG_JSON = pkgs.writeText "catalog.json" (builtins.toJSON library.catalog);
         HOMELAB_OPTIONS_JSON = pkgs.writeText "options.json" (optionsJson system);
 

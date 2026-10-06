@@ -96,7 +96,7 @@ impl Step {
             Step::Profile => "The machine's name and the account you will log in with.",
             Step::Ssh => "SSH is how you reach the machine from another computer without sitting at it. Add the public keys that may log in as the admin: import them from GitHub, or paste one. Skipping is allowed; then only the machine's own screen works.",
             Step::Domain => "Every app gets a name under your domain and a real certificate, so browsers trust it. For this release the domain's DNS must be at Cloudflare (register there, or move a domain's nameservers there). Each box below is one line of a credentials file; the Cloudflare token is checked against your domain the moment you save it.",
-            Step::Extras => "The kit's modules, to adjust if you like.",
+            Step::Extras => "Everything here is already set the way the kit wants it, and those answers are good ones: if you have no preference, press Continue. The list is every module in the library, with the kit's choices ticked — tick another to add it, untick one to leave it out. Anything that needed a value from you was asked on an earlier screen.",
             Step::Review => {
                 if live_usb {
                     "Everything you have chosen. Install writes the configuration, checks it, partitions the disks, downloads the system onto the new disk and installs it: twenty to forty minutes on a home connection."
@@ -168,7 +168,8 @@ impl Role {
     }
 }
 
-/// One editable line on a screen.
+/// One editable line on a screen. `choices` turns it into a pick-list; with
+/// `other_ok` the reader can still type something the list does not have.
 #[derive(Clone)]
 pub struct Field {
     pub key: String,
@@ -176,15 +177,54 @@ pub struct Field {
     pub help: String,
     pub value: String,
     pub masked: bool,
+    pub choices: Vec<(String, String)>,
+    pub other_ok: bool,
 }
+
+/// The time zones nearly everybody wants, the United States first because
+/// that is where the readers are, then a handful of common others. Any IANA
+/// name works: the list is a shortcut, not a limit.
+pub const COMMON_TIMEZONES: [(&str, &str); 13] = [
+    ("America/New_York", "US Eastern - New York"),
+    ("America/Chicago", "US Central - Chicago"),
+    ("America/Denver", "US Mountain - Denver"),
+    ("America/Phoenix", "US Arizona - no daylight saving"),
+    ("America/Los_Angeles", "US Pacific - Los Angeles"),
+    ("America/Anchorage", "US Alaska - Anchorage"),
+    ("Pacific/Honolulu", "US Hawaii - Honolulu"),
+    ("America/Toronto", "Canada Eastern - Toronto"),
+    ("Europe/London", "UK - London"),
+    ("Europe/Berlin", "Central Europe - Berlin"),
+    ("Australia/Sydney", "Australia - Sydney"),
+    ("Asia/Tokyo", "Japan - Tokyo"),
+    ("UTC", "UTC - no local time"),
+];
 
 impl Field {
     fn new(key: &str, label: &str, help: &str, value: &str) -> Field {
-        Field { key: key.into(), label: label.into(), help: help.into(), value: value.into(), masked: false }
+        Field { key: key.into(), label: label.into(), help: help.into(), value: value.into(), masked: false, choices: Vec::new(), other_ok: true }
     }
     fn masked(mut self) -> Field {
         self.masked = true;
         self
+    }
+    fn choices(mut self, c: &[(&str, &str)], other_ok: bool) -> Field {
+        self.choices = c.iter().map(|(v, l)| (v.to_string(), l.to_string())).collect();
+        self.other_ok = other_ok;
+        self
+    }
+    /// The next value in the list, for a front end that cycles rather than
+    /// drops down (the console).
+    pub fn next_choice(&self) -> Option<String> {
+        if self.choices.is_empty() {
+            return None;
+        }
+        let at = self.choices.iter().position(|(v, _)| *v == self.value);
+        Some(self.choices[at.map(|i| (i + 1) % self.choices.len()).unwrap_or(0)].0.clone())
+    }
+    /// What a list value is called on screen.
+    pub fn label_of(&self, value: &str) -> String {
+        self.choices.iter().find(|(v, _)| v == value).map(|(_, l)| l.clone()).unwrap_or_else(|| value.to_string())
     }
     /// What to show in the value column (a masked value never leaves as text).
     pub fn shown(&self) -> String {
@@ -235,6 +275,8 @@ pub struct ModuleRow {
 /// A secret file as a form: one row per variable the module reads.
 pub struct SecretRow {
     pub option: String,
+    /// Field keys that are `homelab.*` options rather than lines of the file.
+    pub option_fields: Vec<String>,
     pub title: String,
     pub steps: String,
     /// One per variable; empty when the value is a path to a file the user has.
@@ -322,6 +364,14 @@ pub struct Wizard {
     pub web_port: u16,
     /// Set when a browser has driven this wizard, so the console says so.
     pub web_seen: Option<String>,
+    /// The browser that holds the form. A second one is shown a warning and
+    /// has to take over deliberately; the first then sees that it lost it.
+    pub controller: Option<String>,
+    /// What a check for a newer installer found: (newest commit, newer?).
+    pub update: Option<(String, bool)>,
+    /// Set when a newer installer has been fetched: the front end restores
+    /// the terminal and hands the process over to it.
+    pub relaunch: Option<String>,
 }
 
 impl Wizard {
@@ -360,7 +410,7 @@ impl Wizard {
                 Field::new("adminUser", "Admin username", "The account you log in with, at the machine's screen and over SSH. It can use sudo.", "admin"),
                 Field::new("password", "Password", "What you type to log in as the admin. Pick a good one and write it down: there is no reset email. Leave both empty to have one minted into FIRST-LOGIN.md.", "").masked(),
                 Field::new("password2", "Confirm password", "The same password again.", "").masked(),
-                Field::new("timeZone", "Time zone", "An IANA name such as America/New_York or Europe/Berlin: backups and alerts are scheduled in it.", "UTC"),
+                Field::new("timeZone", "Time zone", "Where this machine is: backups and alerts are scheduled in local time. Pick from the list, or type any IANA name (Region/City).", "America/New_York").choices(&COMMON_TIMEZONES, true),
             ],
             admin_hash: None,
             github_user: Field::new("githubUser", "Import keys from GitHub", "A GitHub username: the public keys on that account are added to the list below, the way Ubuntu's installer imports an SSH identity. Nothing already in the list is removed.", ""),
@@ -382,6 +432,9 @@ impl Wizard {
             pairing: crate::secrets::random_token(16).to_uppercase().chars().filter(|c| c.is_ascii_alphanumeric()).take(6).collect(),
             web_port,
             web_seen: None,
+            controller: None,
+            update: None,
+            relaunch: None,
         };
         if w.pairing.len() < 6 {
             w.pairing = format!("{:0>6}", w.pairing);
@@ -404,6 +457,95 @@ impl Wizard {
 
     pub fn network(&self) -> (String, Option<bool>) {
         self.network.lock().unwrap().clone()
+    }
+
+    /// The commit this binary was built from, or "dirty" from a work tree.
+    pub fn version() -> &'static str {
+        option_env!("HOMELAB_REV").unwrap_or("dirty")
+    }
+
+    /// Where the pairing code and the step live across a relaunch, beside
+    /// the answers the new process reads back.
+    fn session_path(&self) -> PathBuf {
+        self.out_answers.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".")).join(".installer-session.json")
+    }
+
+    /// Keep the code across an update: a new code would lock the browser out
+    /// of its own install.
+    pub fn restore_session(&mut self) {
+        if let Ok(t) = std::fs::read_to_string(self.session_path()) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) {
+                if let Some(c) = v["pairing"].as_str() {
+                    self.pairing = c.to_string();
+                }
+            }
+        }
+    }
+
+    fn save_session(&self) {
+        let _ = std::fs::write(self.session_path(), json!({ "pairing": self.pairing }).to_string());
+    }
+
+    /// Ask the mirror what the newest installer is. Cheap: one small request.
+    pub fn check_update(&mut self) -> Result<String, String> {
+        let out = Command::new("curl")
+            .args(["-fsS", "--max-time", "15", "https://api.github.com/repos/ww4/homelab-modules/commits/main"])
+            .output()
+            .map_err(|e| format!("could not reach GitHub: {e}"))?;
+        if !out.status.success() {
+            return Err("could not reach GitHub to check for an update".into());
+        }
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|_| "GitHub returned something unexpected".to_string())?;
+        let sha = v["sha"].as_str().unwrap_or("").to_string();
+        if sha.is_empty() {
+            return Err("GitHub returned no commit".into());
+        }
+        let mine = Self::version();
+        if mine == "dirty" {
+            self.update = Some((sha, false));
+            return Ok("this installer was built from a work tree, so there is nothing to compare it with".into());
+        }
+        let newer = !sha.starts_with(mine) && !mine.starts_with(&sha[..7.min(sha.len())]);
+        self.update = Some((sha.clone(), newer));
+        Ok(if newer {
+            format!("a newer installer is available ({})", &sha[..7.min(sha.len())])
+        } else {
+            "this is the newest installer".into()
+        })
+    }
+
+    /// Fetch the newest installer and hand this process over to it, keeping
+    /// the answers, the saved secrets and the pairing code. Never during an
+    /// install: the install is a child of this process.
+    pub fn apply_update(&mut self) -> Result<String, String> {
+        if self.progress.is_some() || self.step == Step::Install {
+            return Err("not while the install is running".into());
+        }
+        let answers = self.answers();
+        std::fs::write(&self.out_answers, serde_json::to_string_pretty(&answers).map_err(|e| e.to_string())? + "\n").map_err(|e| e.to_string())?;
+        self.save_session();
+        let out = Command::new("nix")
+            .args([
+                "build",
+                "--refresh",
+                "--no-write-lock-file",
+                "--max-jobs",
+                "0",
+                "--no-link",
+                "--print-out-paths",
+                "github:ww4/homelab-modules?dir=configurator#default",
+            ])
+            .output()
+            .map_err(|e| format!("could not run nix: {e}"))?;
+        if !out.status.success() {
+            return Err(format!("could not fetch the newer installer: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("").trim()));
+        }
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let exe = format!("{path}/bin/homelab-configure");
+        if !Path::new(&exe).exists() {
+            return Err(format!("{exe}: not there after the fetch"));
+        }
+        Ok(exe)
     }
 
     pub fn say(&mut self, msg: impl Into<String>, err: bool) {
@@ -539,16 +681,25 @@ impl Wizard {
             for f in &spec {
                 let mut fld = Field::new(&f.var, &f.label, &f.help, "");
                 fld.masked = f.masked;
+                fld.choices = f.choices.clone();
+                fld.other_ok = f.choices.is_empty();
+                // An option field answers a homelab.* option: show what is set.
+                if f.is_option {
+                    fld.value = self.values.get(&f.var).cloned().unwrap_or_default();
+                }
                 fields.push(fld);
                 optional.push(f.optional);
             }
+            let option_fields: Vec<String> = spec.iter().filter(|f| f.is_option).map(|f| f.var.clone()).collect();
             // Carry over what was typed for a variable that still exists.
             let old = self.secrets.iter_mut().find(|r| r.option == option);
             let (mut saved, mut verified, mut skipped, mut path) = (None, None, false, String::new());
             if let Some(o) = old {
                 for f in &mut fields {
                     if let Some(prev) = o.fields.iter().find(|p| p.key == f.key) {
-                        f.value = prev.value.clone();
+                        if !f.key.starts_with("homelab.") {
+                            f.value = prev.value.clone();
+                        }
                     }
                 }
                 saved = o.saved.take();
@@ -557,6 +708,7 @@ impl Wizard {
                 path = std::mem::take(&mut o.path);
             }
             next.push(SecretRow {
+                option_fields,
                 title: guide.as_ref().map(|g| g.title.to_string()).unwrap_or_else(|| option.clone()),
                 steps: guide.as_ref().map(|g| g.steps.to_string()).unwrap_or_else(|| format!("The file must carry: {}", keys.join(", "))),
                 path_only: fields.is_empty(),
@@ -577,7 +729,13 @@ impl Wizard {
     /// Required values the kit leaves open beyond domain, email and admin.
     pub fn open_values(&self) -> Vec<(String, String, String)> {
         let mods = self.closed();
-        let secret_opts: Vec<String> = self.secrets.iter().map(|r| r.option.clone()).collect();
+        // Anything a credential form already asks for — the file itself and
+        // the options that form owns, like the VPN provider — is not asked
+        // again here.
+        let mut secret_opts: Vec<String> = self.secrets.iter().map(|r| r.option.clone()).collect();
+        for r in &self.secrets {
+            secret_opts.extend(r.option_fields.iter().cloned());
+        }
         let fixed = ["homelab.domain", "homelab.acme.email", "homelab.adminUser"];
         let mut rows: Vec<(String, String, String)> = self
             .schema
@@ -773,6 +931,12 @@ impl Wizard {
         }
         let f = row.fields.iter_mut().find(|f| f.key == var).ok_or("no such field")?;
         f.value = text.trim().to_string();
+        // A homelab.* answer belongs in the values, and the rest of the form
+        // follows it (a provider decides which lines its file needs).
+        if var.starts_with("homelab.") {
+            let v = f.value.clone();
+            self.set_value(var, &v);
+        }
         Ok(())
     }
 
@@ -800,7 +964,7 @@ impl Wizard {
                     .filter(|(f, opt)| f.value.trim().is_empty() && !**opt)
                     .map(|(f, _)| f.label.clone())
                     .collect();
-                let pairs: Vec<(String, String)> = row.fields.iter().map(|f| (f.key.clone(), f.value.clone())).collect();
+                let pairs: Vec<(String, String)> = row.fields.iter().filter(|f| !row.option_fields.contains(&f.key)).map(|f| (f.key.clone(), f.value.clone())).collect();
                 (crate::guides::compose(&pairs), missing)
             }
         };
@@ -1067,7 +1231,12 @@ impl Wizard {
     pub fn state_json(&self) -> serde_json::Value {
         let (address, internet) = self.network();
         let (need, verdict, short) = self.memory();
-        let field = |f: &Field| json!({ "key": f.key, "label": f.label, "help": f.help, "value": if f.masked { String::new() } else { f.value.clone() }, "set": !f.value.is_empty(), "masked": f.masked });
+        let field = |f: &Field| json!({
+            "key": f.key, "label": f.label, "help": f.help,
+            "value": if f.masked { String::new() } else { f.value.clone() },
+            "set": !f.value.is_empty(), "masked": f.masked, "other_ok": f.other_ok,
+            "choices": f.choices.iter().map(|(v, l)| json!({ "value": v, "label": l })).collect::<Vec<_>>(),
+        });
         json!({
             "step": self.step.id(),
             "title": self.step.title(),
@@ -1102,6 +1271,7 @@ impl Wizard {
                 "fields": r.fields.iter().zip(&r.optional).map(|(f, opt)| {
                     let mut v = field(f);
                     v["optional"] = json!(opt);
+                    v["is_option"] = json!(r.option_fields.contains(&f.key));
                     v
                 }).collect::<Vec<_>>(),
                 "state": r.state(), "filled": r.filled(), "skipped": r.skipped,
@@ -1122,6 +1292,8 @@ impl Wizard {
             "install": { "lines": self.progress_lines(), "running": self.progress.is_some() },
             "done": { "report": self.done_tail(24) },
             "web": { "port": self.web_port, "code": self.pairing, "seen": self.web_seen },
+            "version": Self::version(),
+            "update": self.update.as_ref().map(|(sha, newer)| json!({ "newest": sha, "newer": newer })),
         })
     }
 }
