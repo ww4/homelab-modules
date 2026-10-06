@@ -268,6 +268,27 @@ pub fn kits() -> Vec<Kit> {
 /// The marker of the kit that is not a list: "whatever is ticked".
 pub const CUSTOM: &str = "__custom";
 
+/// Which kit a ticked set amounts to. Two sets of modules are discounted on
+/// both sides: the foundation every install has, and anything the wizard
+/// turned on by itself — marking a data disk brings in mergerfs-pools, and
+/// that is not the reader choosing a different kit.
+pub fn kit_for(chosen: &std::collections::BTreeSet<&str>, auto: &std::collections::BTreeSet<&str>, kits: &[Kit]) -> usize {
+    let strip = |set: &std::collections::BTreeSet<&str>| -> std::collections::BTreeSet<String> {
+        set.iter().filter(|n| !FOUNDATION_ALWAYS.contains(*n) && !auto.contains(*n)).map(|n| n.to_string()).collect()
+    };
+    let mine = strip(chosen);
+    for (i, k) in kits.iter().enumerate() {
+        if k.modules.iter().any(|m| m == CUSTOM) {
+            continue;
+        }
+        let theirs: std::collections::BTreeSet<&str> = k.modules.iter().map(|s| s.as_str()).collect();
+        if strip(&theirs) == mine {
+            return i;
+        }
+    }
+    kits.len() - 1
+}
+
 pub struct ModuleRow {
     pub name: String,
     pub description: String,
@@ -371,6 +392,10 @@ pub struct Wizard {
     /// The browser that holds the form. A second one is shown a warning and
     /// has to take over deliberately; the first then sees that it lost it.
     pub controller: Option<String>,
+    /// Modules the wizard turned on by itself (a data disk brings mergerfs,
+    /// a parity disk brings snapraid). They are not the reader's choices, so
+    /// they must not turn the kit into "Custom".
+    pub auto_modules: std::collections::BTreeSet<String>,
     /// What a check for a newer installer found: (newest commit, newer?).
     pub update: Option<(String, bool)>,
     /// Set when a newer installer has been fetched: the front end restores
@@ -437,6 +462,7 @@ impl Wizard {
             web_port,
             web_seen: None,
             controller: None,
+            auto_modules: Default::default(),
             update: None,
             relaunch: None,
         };
@@ -606,6 +632,16 @@ impl Wizard {
         for m in &mut self.modules {
             m.chosen = m.locked || chosen.contains(m.name.as_str());
         }
+        // A relaunch brings back modules but not why they are on. The disks
+        // say: data disks mean mergerfs was added for them, a parity disk
+        // means snapraid was.
+        let has_data = a.host.data_disks.iter().any(|d| d.name != "parity");
+        let has_parity = a.host.data_disks.iter().any(|d| d.name == "parity");
+        for (name, implied) in [("mergerfs-pools", has_data), ("snapraid", has_parity)] {
+            if implied && chosen.contains(name) {
+                self.auto_modules.insert(name.to_string());
+            }
+        }
         self.kit = self.chosen_kit();
         self.refresh_secrets();
     }
@@ -617,6 +653,7 @@ impl Wizard {
         if wanted.iter().any(|m| m == CUSTOM) {
             return; // Custom is a description of the list, not a list.
         }
+        self.auto_modules.clear();
         for m in &mut self.modules {
             if !m.locked {
                 m.chosen = wanted.contains(&m.name);
@@ -630,16 +667,8 @@ impl Wizard {
     /// visit to the Modules screen. Custom when it matches none.
     pub fn chosen_kit(&self) -> usize {
         let mine: std::collections::BTreeSet<&str> = self.modules.iter().filter(|m| m.chosen && !m.locked).map(|m| m.name.as_str()).collect();
-        for (i, k) in self.kits.iter().enumerate() {
-            if k.modules.iter().any(|m| m == CUSTOM) {
-                continue;
-            }
-            let theirs: std::collections::BTreeSet<&str> = k.modules.iter().map(|s| s.as_str()).filter(|n| !FOUNDATION_ALWAYS.contains(n)).collect();
-            if theirs == mine {
-                return i;
-            }
-        }
-        self.kits.len() - 1
+        let auto: std::collections::BTreeSet<&str> = self.auto_modules.iter().map(|s| s.as_str()).collect();
+        kit_for(&mine, &auto, &self.kits)
     }
 
     pub fn set_kit(&mut self, i: usize) {
@@ -1056,6 +1085,7 @@ impl Wizard {
             return Err("part of the foundation: always on".into());
         }
         m.chosen = !m.chosen;
+        self.auto_modules.remove(name);   // a hand on it makes it a choice
         self.refresh_secrets();
         let (_, verdict, _) = self.memory();
         self.say(verdict, false);
@@ -1100,6 +1130,9 @@ impl Wizard {
                 for (want, when) in [("mergerfs-pools", data), ("snapraid", parity)] {
                     if when {
                         if let Some(m) = self.modules.iter_mut().find(|m| m.name == want) {
+                            if !m.chosen {
+                                self.auto_modules.insert(want.to_string());
+                            }
                             m.chosen = true;
                         }
                     }
@@ -1487,6 +1520,77 @@ pub fn parse_value(text: &str) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The bug from the first hardware run: Starter was picked, a data disk
+    /// marked, and step 2 then read "Custom" — because marking the disk had
+    /// ticked mergerfs-pools.
+    #[test]
+    fn a_disk_added_module_does_not_make_the_kit_custom() {
+        let kits = kits();
+        let starter = kits.iter().position(|k| k.name == "Starter").expect("a Starter kit");
+        let mut mine: std::collections::BTreeSet<&str> = kits[starter].modules.iter().map(|s| s.as_str()).collect();
+        let none = Default::default();
+        assert_eq!(kit_for(&mine, &none, &kits), starter);
+
+        // The storage step adds mergerfs-pools for the data disk.
+        mine.insert("mergerfs-pools");
+        assert_ne!(kit_for(&mine, &none, &kits), starter, "without the auto set it reads Custom — the bug");
+        let auto: std::collections::BTreeSet<&str> = ["mergerfs-pools"].into_iter().collect();
+        assert_eq!(kit_for(&mine, &auto, &kits), starter, "discounting it reads Starter again");
+
+        // A module the reader ticks themselves is still a different list.
+        assert!(!mine.contains("forgejo"));
+        mine.insert("forgejo");
+        assert_ne!(kit_for(&mine, &auto, &kits), starter);
+    }
+
+    /// The whole path a reader walks: pick Starter, mark a system disk and a
+    /// data disk, Continue. Step 2 must still read Starter.
+    #[test]
+    fn starter_survives_the_storage_step() {
+        let catalog: String = {
+            let mut m = serde_json::Map::new();
+            for name in ["acme", "nginx-access", "jellyfin", "tandoor", "backup", "monitoring", "ntfy", "alertmanager-ntfy", "mergerfs-pools", "snapraid"] {
+                m.insert(
+                    name.to_string(),
+                    json!({"description": name, "enable": "import", "options": [], "requires": [], "vhosts": [], "secrets": []}),
+                );
+            }
+            serde_json::Value::Object(m).to_string()
+        };
+        let schema = Box::leak(Box::new(Schema::parse(&catalog, "[]").expect("a schema")));
+        let dir = std::env::temp_dir().join(format!("hl-kit-test-{}", std::process::id()));
+        let mut w = Wizard::new(schema, &dir.join("answers.json"), &dir, vec![], 0);
+        let starter = w.kits.iter().position(|k| k.name == "Starter").expect("a Starter kit");
+        w.set_kit(starter);
+        assert_eq!(w.chosen_kit(), starter, "picking it reads back");
+
+        w.disks = vec![
+            crate::disks::Disk { id: "/dev/disk/by-id/a".into(), kernel: "sda".into(), size_bytes: 1 << 40, model: "a".into(), transport: "sata".into(), in_use: false },
+            crate::disks::Disk { id: "/dev/disk/by-id/b".into(), kernel: "sdb".into(), size_bytes: 1 << 40, model: "b".into(), transport: "sata".into(), in_use: false },
+        ];
+        w.roles = vec![Role::Unused, Role::Unused];
+        w.set_disk_role(0, Role::System);
+        w.set_disk_role(1, Role::Data);
+        w.step = Step::Storage;
+        assert!(w.advance().is_ok(), "the storage step accepts a system and a data disk");
+
+        assert!(w.modules.iter().any(|m| m.name == "mergerfs-pools" && m.chosen), "the data disk brought the pool in");
+        assert_eq!(w.chosen_kit(), starter, "and the kit still reads Starter, not Custom");
+    }
+
+    /// And a kit that names those modules itself must still match when the
+    /// disks brought them in: the auto set is discounted on both sides.
+    #[test]
+    fn a_kit_that_names_mergerfs_still_matches() {
+        let kits = kits();
+        let Some(i) = kits.iter().position(|k| k.modules.iter().any(|m| m == "mergerfs-pools")) else {
+            return;
+        };
+        let mine: std::collections::BTreeSet<&str> = kits[i].modules.iter().map(|s| s.as_str()).collect();
+        let auto: std::collections::BTreeSet<&str> = ["mergerfs-pools"].into_iter().collect();
+        assert_eq!(kit_for(&mine, &auto, &kits), i);
+    }
 
     #[test]
     fn editor_text_becomes_json_or_string() {
