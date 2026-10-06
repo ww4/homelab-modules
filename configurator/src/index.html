@@ -118,6 +118,17 @@ function apply(node, props) {
     // answers out of the state that render was looking at.
     if (typeof v === "function") { node[k] = v; continue; }
     if (was[k] === v) continue;
+    // Writing textContent throws the text node away and makes another one,
+    // which takes any selection inside it with it; writing the existing text
+    // node keeps the node, so only the characters change.
+    if (k === "textContent" && node.firstChild && node.firstChild.nodeType === 3 && !node.firstChild.nextSibling) {
+      const t = node.firstChild;
+      // The install log only ever grows: appending to the text keeps a
+      // selection made in the lines already there, which is where someone
+      // copying an error message is working.
+      if (v !== t.nodeValue) { if (v.startsWith(t.nodeValue)) t.appendData(v.slice(t.nodeValue.length)); else t.nodeValue = v; }
+      continue;
+    }
     // What the reader is holding is theirs: never overwrite the contents of
     // the control they are typing in, or of a dropdown they have open.
     if ((k === "value" || k === "checked" || k === "selected") && (node === held || node.parentNode === held)) continue;
@@ -191,8 +202,11 @@ function show(id, kids) {
   return fresh;
 }
 
+/* The furniture outside the screen box is written the same way: compare first,
+   write only on a difference. */
 const setText = (id, text) => { const n = document.getElementById(id); if (n.textContent !== text) n.textContent = text; };
 const setProp = (node, k, v) => { if (node[k] !== v) node[k] = v; };
+const setDisplay = (node, v) => { if (node.style.display !== v) node.style.display = v; };
 
 async function call(action) {
   const r = await fetch(action ? "/api/action?code=" + code : "/api/state?code=" + code, {
@@ -203,7 +217,7 @@ async function call(action) {
   if (r.status === 403) { askCode(); return; }
   state = await r.json();            // 409 answers with the state too, saying who holds it
   noticeVersion(state);
-  render(!!action);
+  render();
 }
 
 /* Asking for the code is a dead end until it is given: nothing here polls,
@@ -222,6 +236,7 @@ function askCode() {
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
   document.getElementById("title").textContent = "Homelab installer";
   document.getElementById("intro").textContent = "";
+  shown = "__code";                 // the box is handed to the code form; a later render must rebuild
   document.getElementById("colophon").replaceChildren();
   document.getElementById("back").style.display = "none";
   document.getElementById("go").style.display = "none";
@@ -237,10 +252,10 @@ function askCode() {
 }
 
 /* one label + control line */
-function row(label, control, help) {
+function row(label, control, help, key) {
   const kids = [el("label", { textContent: label }), control];
   if (help) kids.push(el("div", { className: "help", textContent: help }));
-  return el("div", { className: "row" }, kids);
+  return el("div", { className: "row", key }, kids);
 }
 
 const DOTS = "\u2022".repeat(10);
@@ -251,198 +266,206 @@ function textField(f, send) {
   // and an untouched field is never sent back.
   const saved = f.masked && f.set;
   const input = el("input", {
+    key: "in",
     type: f.masked ? "password" : "text",
     value: f.masked ? (saved ? DOTS : "") : (f.value || ""),
-    onfocus: () => (typing = true),
     oninput: (e) => { if (e.target.dataset.fresh !== "1" && e.target.value.includes("\u2022")) e.target.value = ""; e.target.dataset.fresh = "1"; },
     onblur: (e) => {
-      typing = false;
       if (saved && e.target.dataset.fresh !== "1") return;   // untouched: leave the saved value alone
       send(e.target.value);
     },
     onkeydown: (e) => { if (e.key === "Enter") e.target.blur(); },
   });
-  return row(f.label, input, f.help);
+  return row(f.label, input, f.help, f.key);
 }
 
 function choiceField(f, send) {
-  const wrap = el("div", { style: "flex:1 1 14rem; display:flex; gap:.5rem; flex-wrap:wrap" });
   const known = f.choices.some((c) => c.value === f.value);
-  const sel = el("select");
-  for (const c of f.choices) sel.append(el("option", { value: c.value, textContent: c.label, selected: c.value === f.value }));
-  if (f.other_ok) sel.append(el("option", { value: "__other", textContent: "Other (type it)", selected: !known && !!f.value }));
-  const other = el("input", { type: "text", value: known ? "" : (f.value || ""), placeholder: "Region/City", hidden: known || !f.value });
-  const showOther = (on) => { other.hidden = !on; if (on) other.focus(); };
-  sel.addEventListener("focus", () => (typing = true));
-  sel.addEventListener("blur", () => (typing = false));
-  sel.addEventListener("change", (e) => {
-    if (e.target.value === "__other") { showOther(true); return; }
-    showOther(false); send(e.target.value);
+  // The handler finds the box by id rather than closing over it: the node this
+  // render built is thrown away once its properties have been merged into the
+  // live one, and a closure over it would be writing to nothing.
+  const otherId = "other-" + f.key;
+  const sel = el("select", {
+    key: "sel",
+    onchange: (e) => {
+      const box = document.getElementById(otherId);
+      if (e.target.value === "__other") { box.hidden = false; box.focus(); return; }
+      box.hidden = true;
+      send(e.target.value);
+    },
   });
-  other.addEventListener("focus", () => (typing = true));
-  other.addEventListener("blur", (e) => { typing = false; if (e.target.value.trim()) send(e.target.value.trim()); });
-  other.addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.blur(); });
-  wrap.append(sel, other);
-  if (!known && f.value) showOther(true);
-  return row(f.label, wrap, f.help);
+  for (const c of f.choices) sel.append(el("option", { key: c.value, value: c.value, textContent: c.label, selected: c.value === f.value }));
+  if (f.other_ok) sel.append(el("option", { key: "__other", value: "__other", textContent: "Other (type it)", selected: !known && !!f.value }));
+  const other = el("input", {
+    key: "other", id: otherId, type: "text", value: known ? "" : (f.value || ""),
+    placeholder: "Region/City", hidden: known || !f.value,
+    onblur: (e) => { if (e.target.value.trim()) send(e.target.value.trim()); },
+    onkeydown: (e) => { if (e.key === "Enter") e.target.blur(); },
+  });
+  const wrap = el("div", { style: "flex:1 1 14rem; display:flex; gap:.5rem; flex-wrap:wrap" }, [sel, other]);
+  return row(f.label, wrap, f.help, f.key);
 }
 
-let lastBody = "", lastStep = "", showingUpdate = false, bootVersion = null, updating = false;
+let showingUpdate = false, bootVersion = null, updating = false;
 
 /* Name, address, version, where this came from — and the gear, which is the
    only way to replace the installer with a newer one mid-session. */
 function colophon(s) {
   const f = document.getElementById("colophon");
   const site = "https://ww4.github.io/imperfect-homelab";
-  f.replaceChildren(
-    el("b", { textContent: "Imperfect Homelab" }),
-    el("span", { className: "sep", textContent: "·" }),
-    el("span", { textContent: "installer " + (s.version || "dirty").slice(0, 7) }),
-    el("span", { className: "sep", textContent: "·" }),
-    el("span", { textContent: s.machine.address ? s.machine.address + ":" + s.web.port : "no address" }),
-    el("span", { className: "sep", textContent: "·" }),
-    el("a", { href: site, target: "_blank", rel: "noreferrer", textContent: "guide" }),
-    el("span", { className: "sep", textContent: "·" }),
-    el("a", { href: "https://www.gnu.org/licenses/gpl-3.0.html", target: "_blank", rel: "noreferrer", textContent: "GPL-3.0" }),
+  patchChildren(f, [
+    el("b", { key: "name", textContent: "Imperfect Homelab" }),
+    el("span", { key: "s1", className: "sep", textContent: "·" }),
+    el("span", { key: "ver", textContent: "installer " + (s.version || "dirty").slice(0, 7) }),
+    el("span", { key: "s2", className: "sep", textContent: "·" }),
+    el("span", { key: "addr", textContent: s.machine.address ? s.machine.address + ":" + s.web.port : "no address" }),
+    el("span", { key: "s3", className: "sep", textContent: "·" }),
+    el("a", { key: "guide", href: site, target: "_blank", rel: "noreferrer", textContent: "guide" }),
+    el("span", { key: "s4", className: "sep", textContent: "·" }),
+    el("a", { key: "gpl", href: "https://www.gnu.org/licenses/gpl-3.0.html", target: "_blank", rel: "noreferrer", textContent: "GPL-3.0" }),
     el("a", {
+      key: "gear",
       className: "gear" + (s.update && s.update.newer ? " warn" : ""),
       href: "#", title: "Installer updates",
       textContent: s.update && s.update.newer ? "\u2699 update" : "\u2699",
-      onclick: (e) => { e.preventDefault(); showingUpdate = !showingUpdate; lastStep = ""; render(true); },
+      onclick: (e) => { e.preventDefault(); showingUpdate = !showingUpdate; render(); },
     }),
-  );
+  ]);
 }
 
 function renderUpdate(s) {
   const u = s.update;
-  const box = document.getElementById("screen");
   if (updating || (u && u.restarting)) {
     updating = true;
-    document.getElementById("title").textContent = "Updating the installer";
-    document.getElementById("intro").textContent = "";
-    document.getElementById("back").style.display = "none";
-    box.replaceChildren(el("div", { className: "card" }, [
+    setText("title", "Updating the installer");
+    setText("intro", "");
+    setDisplay(document.getElementById("back"), "none");
+    show("__updating", [el("div", { className: "card" }, [
       el("h3", { textContent: "Fetching and restarting" }),
       el("p", { textContent: "The installer is being replaced with the newer one. This page reconnects by itself and comes back at the first screen, with your answers still in it." }),
       el("p", { className: "muted", textContent: "A minute at most. Leave this page open." }),
-    ]));
+    ])]);
     return;
   }
-  document.getElementById("title").textContent = "Installer updates";
-  document.getElementById("intro").textContent = "This installer updates itself from the project's binary cache. Your answers and any credentials you have saved are kept; the installer restarts and comes back at the first screen with everything filled in.";
-  document.getElementById("back").style.display = "";
-  document.getElementById("back").onclick = () => { showingUpdate = false; lastStep = ""; render(true); };
-  document.getElementById("go").style.display = "none";
-  box.replaceChildren(el("div", { className: "card" }, [
-    el("h3", { textContent: "This installer" }),
-    el("dl", {}, [
+  setText("title", "Installer updates");
+  setText("intro", "This installer updates itself from the project's binary cache. Your answers and any credentials you have saved are kept; the installer restarts and comes back at the first screen with everything filled in.");
+  setDisplay(document.getElementById("back"), "");
+  document.getElementById("back").onclick = () => { showingUpdate = false; render(); };
+  setDisplay(document.getElementById("go"), "none");
+  // Keys here, on children that come and go: without them the trust card would
+  // be matched against whatever sits in its place when it is absent.
+  show("__update", [el("div", { className: "card" }, [
+    el("h3", { key: "head", textContent: "This installer" }),
+    el("dl", { key: "versions" }, [
       el("dt", { textContent: "Version" }), el("dd", { textContent: (s.version || "dirty") }),
       el("dt", { textContent: "Newest" }), el("dd", { textContent: u ? u.newest.slice(0, 7) + (u.newer ? " — newer than this one" : " — the same") : "not checked yet" }),
     ]),
-    ...(u && u.pending ? [el("p", { className: "muted", textContent: "A newer change (" + u.pending + ") has landed but is not in the cache yet. It is published a few minutes after it lands; check again shortly." })] : []),
+    ...(u && u.pending ? [el("p", { key: "pending", className: "muted", textContent: "A newer change (" + u.pending + ") has landed but is not in the cache yet. It is published a few minutes after it lands; check again shortly." })] : []),
     // Say what is about to replace this program, before it does. "It is
     // signed" means nothing without naming the key it is signed by.
-    ...(u && u.newer ? [el("div", { className: "card" }, [
-      el("h3", { textContent: "What this will trust" }),
-      el("dl", {}, [
+    ...(u && u.newer ? [el("div", { key: "trust", className: "card" }, [
+      el("h3", { key: "head", textContent: "What this will trust" }),
+      el("dl", { key: "facts" }, [
         el("dt", { textContent: "Commit" }), el("dd", { textContent: u.newest }),
         el("dt", { textContent: "Built as" }), el("dd", { textContent: u.store_path || "unknown" }),
         el("dt", { textContent: "Published" }), el("dd", { textContent: u.published || "unknown" }),
         el("dt", { textContent: "Signed by" }), el("dd", { textContent: u.key_name }),
         el("dt", { textContent: "This machine trusts" }), el("dd", { textContent: (u.trusted_keys && u.trusted_keys.length) ? u.trusted_keys.join("  ") : "could not be read, so nothing can be said about what will be accepted" }),
       ]),
-      el("p", { className: "muted", textContent: "That exact revision is built, not whatever the branch points at now, and the result must be the store path above or the update stops. Nix checks the signature against the keys listed here and refuses a build none of them signed." }),
-      ...((u.trusted_keys || []).some(k => k.startsWith(u.key_name + ":")) ? [] : [el("p", { className: "bad", textContent: "This machine does not list the project's key among the ones it trusts, so an update cannot be taken from the cache. It would have to be built here from source, which takes far longer. The installer image carries the key; a machine configured by hand may not." })]),
+      el("p", { key: "how", className: "muted", textContent: "That exact revision is built, not whatever the branch points at now, and the result must be the store path above or the update stops. Nix checks the signature against the keys listed here and refuses a build none of them signed." }),
+      ...((u.trusted_keys || []).some(k => k.startsWith(u.key_name + ":")) ? [] : [el("p", { key: "untrusted", className: "bad", textContent: "This machine does not list the project's key among the ones it trusts, so an update cannot be taken from the cache. It would have to be built here from source, which takes far longer. The installer image carries the key; a machine configured by hand may not." })]),
     ])] : []),
-    el("div", { className: "row" }, [
-      el("button", { textContent: "Check for updates", onclick: () => call({ do: "check_update" }) }),
+    el("div", { key: "actions", className: "row" }, [
+      el("button", { key: "check", textContent: "Check for updates", onclick: () => call({ do: "check_update" }) }),
       el("button", {
+        key: "apply",
         className: "primary", textContent: "Update and restart", disabled: !(u && u.newer) || s.step === "install",
         onclick: () => call({ do: "apply_update" }),
       }),
     ]),
-    el("p", { className: "muted", textContent: s.step === "install" ? "Not while the install is running." : "Updating fetches the newer installer (about a minute) and hands this session over to it. The page reconnects by itself." }),
-  ]));
+    el("p", { key: "note", className: "muted", textContent: s.step === "install" ? "Not while the install is running." : "Updating fetches the newer installer (about a minute) and hands this session over to it. The page reconnects by itself." }),
+  ])]);
 }
 
-/* The page polls so the console and the browser stay in step. Rebuilding the
-   form on every poll would close an open dropdown under the user's hand, so
-   the body is rebuilt only when it has something new in it and no control is
-   in use. The header, status line and buttons are cheap and always current. */
-function render(force) {
+/* The page polls so the console and the browser stay in step. A poll used to
+   rebuild the screen, which threw away whatever the reader was holding — a
+   half-made text selection, a caret, an open dropdown — so it had to be
+   suppressed whenever anything was in use. Now every poll renders, and the new
+   tree is merged into the live one node by node, so a poll that changes one
+   number touches one number and leaves the rest of the page exactly as it was.
+   Nothing here depends on the state having changed. */
+function render() {
   if (!state) return;
   const s = state;
-  document.getElementById("title").textContent = s.title;
-  document.getElementById("stepline").textContent = `step ${s.index} of ${s.of}`;
-  document.getElementById("progress").style.width = (100 * s.index / s.of) + "%";
-  document.getElementById("intro").textContent = s.intro;
-  const st = document.getElementById("status");
-  st.textContent = s.status ? s.status.message : "";
-  st.className = s.status && s.status.error ? "bad" : "ok";
+  setText("title", s.title);
+  setText("stepline", `step ${s.index} of ${s.of}`);
+  const bar = document.getElementById("progress"), width = (100 * s.index / s.of) + "%";
+  if (bar.style.width !== width) bar.style.width = width;
+  setText("intro", s.intro);
+  setText("status", s.status ? s.status.message : "");
+  setProp(document.getElementById("status"), "className", s.status && s.status.error ? "bad" : "ok");
 
   const back = document.getElementById("back"), go = document.getElementById("go");
-  back.style.display = ["welcome", "install", "done"].includes(s.step) ? "none" : "";
+  setDisplay(back, ["welcome", "install", "done"].includes(s.step) ? "none" : "");
   back.onclick = () => call({ do: "back" });
-  go.textContent = s.step === "review" ? (s.machine.live_usb ? "Install" : "Write the configuration")
-    : s.step === "install" ? "working..." : s.step === "done" ? "Finished" : "Continue";
-  go.className = s.step === "review" ? "danger" : "primary";
-  go.disabled = s.step === "install" || s.step === "done";
+  setProp(go, "textContent", s.step === "review" ? (s.machine.live_usb ? "Install" : "Write the configuration")
+    : s.step === "install" ? "working..." : s.step === "done" ? "Finished" : "Continue");
+  setProp(go, "className", s.step === "review" ? "danger" : "primary");
+  setProp(go, "disabled", s.step === "install" || s.step === "done");
   go.onclick = () => call({ do: "continue" });
 
   colophon(s);
   // One browser drives. A second one is told, and may take over.
   if (s.web && s.web.in_control === false && !showingUpdate) {
-    document.getElementById("back").style.display = "none";
-    document.getElementById("go").style.display = "none";
-    const box = document.getElementById("screen");
-    if (lastStep !== "__locked") {
-      lastStep = "__locked";
-      box.replaceChildren(el("div", { className: "card" }, [
-        el("h3", { textContent: "Someone else is filling this in" }),
-        el("p", { textContent: `A browser at ${s.web.controller} is using this installer. Two people editing the same answers would overwrite each other, so only one drives at a time.` }),
-        el("p", { className: "muted", textContent: "You can watch from here, or take over — the other browser will be told it lost the form." }),
-        el("div", { className: "row" }, [el("button", { className: "danger", textContent: "Take over", onclick: () => call({ do: "take_over" }) })]),
-      ]));
-    }
+    setDisplay(back, "none");
+    setDisplay(go, "none");
+    show("__locked", [el("div", { className: "card" }, [
+      el("h3", { textContent: "Someone else is filling this in" }),
+      el("p", { textContent: `A browser at ${s.web.controller} is using this installer. Two people editing the same answers would overwrite each other, so only one drives at a time.` }),
+      el("p", { className: "muted", textContent: "You can watch from here, or take over — the other browser will be told it lost the form." }),
+      el("div", { className: "row" }, [el("button", { className: "danger", textContent: "Take over", onclick: () => call({ do: "take_over" }) })]),
+    ])]);
     return;
   }
-  document.getElementById("go").style.display = "";
+  setDisplay(go, "");
   if (showingUpdate) { renderUpdate(s); return; }
   // Install was pressed here, and the machine's own screen is showing a
   // number. Nothing is erased until it is typed in, so a browser alone can
   // never do this.
   if (s.awaiting_pin) {
-    document.getElementById("go").style.display = "none";
-    document.getElementById("back").style.display = "none";
-    if (lastStep !== "__pin") {
-      lastStep = "__pin";
-      const field = el("input", { type: "text", inputMode: "numeric", autocomplete: "off", maxLength: 7, className: "pin", placeholder: "000 000" });
-      const send = () => { const v = field.value; field.value = ""; call({ do: "confirm_install", pin: v }); };
-      field.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } };
-      document.getElementById("screen").replaceChildren(el("div", { className: "card" }, [
-        el("h3", { textContent: "Go and look at the machine" }),
-        el("p", { textContent: "Its own screen is showing a six-digit number. Type it here to erase the disks and install. The number is never sent to this page, so being able to read it means being in the room." }),
-        el("div", { className: "row" }, [field, el("button", { className: "danger", textContent: "Erase and install", onclick: send })]),
-        el("p", { className: "muted", textContent: "Pressing Esc at the machine refuses the request." }),
-      ]));
-      field.focus();
-    }
+    setDisplay(go, "none");
+    setDisplay(back, "none");
+    // The field carries no value of its own, so a poll has nothing to write
+    // into it and the digits already typed stay where they are. Both handlers
+    // read the live field by id: the one built here is merged away.
+    const send = () => {
+      const f = document.getElementById("pin");
+      const v = f.value;
+      f.value = "";
+      call({ do: "confirm_install", pin: v });
+    };
+    const fresh = show("__pin", [el("div", { className: "card" }, [
+      el("h3", { textContent: "Go and look at the machine" }),
+      el("p", { textContent: "Its own screen is showing a six-digit number. Type it here to erase the disks and install. The number is never sent to this page, so being able to read it means being in the room." }),
+      el("div", { className: "row" }, [
+        el("input", {
+          key: "pin", id: "pin", type: "text", inputMode: "numeric", autocomplete: "off", maxLength: 7,
+          className: "pin", placeholder: "000 000",
+          onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } },
+        }),
+        el("button", { key: "go", className: "danger", textContent: "Erase and install", onclick: send }),
+      ]),
+      el("p", { className: "muted", textContent: "Pressing Esc at the machine refuses the request." }),
+    ])]);
+    if (fresh) document.getElementById("pin").focus();   // only when the screen is new: never steal focus from a later poll
     return;
   }
-  const body = JSON.stringify([s.step, s.kits, s.disks, s.disk_fallback, s.profile, s.ssh, s.domain, s.secrets, s.values, s.modules, s.review, s.install, s.done]);
-  // Rebuilding destroys whatever the reader is in the middle of using, so a
-  // focused control holds the screen still — tabbing from one field to the
-  // next sends the first one, and that answer must not yank the second away.
-  const active = document.activeElement;
-  const busy = active && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName) && s.step === lastStep;
-  if (busy) return;
-  if (!force && body === lastBody) return;
-  lastBody = body;
-  lastStep = s.step;
-  const box = document.getElementById("screen");
-  box.replaceChildren(...(screens[s.step] || (() => []))(s));
+  show(s.step, (screens[s.step] || (() => []))(s));
 }
 
+/* Every repeated thing carries a key — a module's name, a disk's id, a
+   secret's option — so that adding or removing one patches that row alone
+   instead of shifting the contents of every row after it. */
 const screens = {
   welcome: (s) => {
     const m = s.machine;
@@ -458,24 +481,20 @@ const screens = {
     ])];
   },
 
-  kit: (s) => s.kits.map((k, i) => {
-    const node = el("div", { className: "choice" + (k.chosen ? " on" : ""), onclick: () => call({ do: "set_kit", index: i }) }, [
+  kit: (s) => s.kits.map((k, i) =>
+    el("div", { key: k.name, className: "choice" + (k.chosen ? " on" : ""), onclick: () => call({ do: "set_kit", index: i }) }, [
       el("div", { className: "mem " + (k.fits ? "fits" : "short"), textContent: "~" + k.need_gb + " GB" }),
       el("div", {}, [el("b", { textContent: k.name }), el("span", { className: "muted", textContent: k.blurb })]),
-    ]);
-    return node;
-  }),
+    ])),
 
   storage: (s) => {
     if (!s.disks.length) return [textField(s.disk_fallback, (v) => call({ do: "set_disk_path", value: v }))];
     return s.disks.map((d, i) => {
-      const sel = el("select", { onchange: (e) => call({ do: "set_disk", index: i, role: e.target.value }) });
-      sel.addEventListener("focus", () => (typing = true));
-      sel.addEventListener("blur", () => (typing = false));
+      const sel = el("select", { key: "role", onchange: (e) => call({ do: "set_disk", index: i, role: e.target.value }) });
       for (const [v, t] of [["unused", "not used"], ["system", "SYSTEM — the operating system (erased)"], ["data", "data — storage for your files (erased)"], ["parity", "parity — protects the data disks"]]) {
-        sel.append(el("option", { value: v, textContent: t, selected: d.role === v }));
+        sel.append(el("option", { key: v, value: v, textContent: t, selected: d.role === v }));
       }
-      return el("div", { className: "card" }, [
+      return el("div", { key: d.id || d.kernel, className: "card" }, [
         el("div", { className: "row" }, [el("label", { textContent: `${d.kernel} · ${d.size}` }), sel]),
         el("div", { className: "muted", style: "font-size:.8rem", textContent: `${d.model || "disk"} · ${d.id}` }),
       ]);
@@ -485,51 +504,54 @@ const screens = {
   profile: (s) => s.profile.map((f) => textField(f, (v) => call({ do: "set_profile", key: f.key, value: v }))),
 
   ssh: (s) => {
-    const user = el("input", { type: "text", placeholder: "github username", onfocus: () => (typing = true), onblur: () => (typing = false) });
-    const paste = el("textarea", { placeholder: "ssh-ed25519 AAAA... you@laptop", onfocus: () => (typing = true), onblur: () => (typing = false) });
+    // Both boxes are read by id when the button is pressed: the nodes this
+    // call builds are merged into the live ones and then dropped, so a handler
+    // holding on to one would be reading an element nobody can see.
     const keys = el("ul", { className: "keys" }, s.ssh.keys.map((k, i) =>
-      el("li", {}, [el("span", { textContent: k.summary }), el("button", { textContent: "Remove", onclick: () => call({ do: "remove_key", index: i }) })])));
+      el("li", { key: k.summary }, [el("span", { textContent: k.summary }), el("button", { textContent: "Remove", onclick: () => call({ do: "remove_key", index: i }) })])));
     return [
-      el("div", { className: "card" }, [
+      el("div", { key: "github", className: "card" }, [
         el("h3", { textContent: "Import from GitHub" }),
-        el("div", { className: "row" }, [user, el("button", { textContent: "Import", onclick: () => call({ do: "github", user: user.value }) })]),
+        el("div", { className: "row" }, [
+          el("input", { key: "user", id: "gh-user", type: "text", placeholder: "github username" }),
+          el("button", { key: "import", textContent: "Import", onclick: () => call({ do: "github", user: document.getElementById("gh-user").value }) }),
+        ]),
         el("div", { className: "help", textContent: "The public keys on that GitHub account are added to the list. Nothing already in the list is removed." }),
       ]),
-      el("div", { className: "card" }, [
+      el("div", { key: "paste", className: "card" }, [
         el("h3", { textContent: "Or paste a public key" }),
-        paste,
-        el("div", { className: "row" }, [el("button", { textContent: "Add key", onclick: () => call({ do: "add_key", text: paste.value }) })]),
+        el("textarea", { key: "text", id: "key-paste", placeholder: "ssh-ed25519 AAAA... you@laptop" }),
+        el("div", { className: "row" }, [el("button", { textContent: "Add key", onclick: () => call({ do: "add_key", text: document.getElementById("key-paste").value }) })]),
       ]),
-      el("div", { className: "card" }, [el("h3", { textContent: `Keys that may log in (${s.ssh.keys.length})` }), keys]),
+      el("div", { key: "list", className: "card" }, [el("h3", { textContent: `Keys that may log in (${s.ssh.keys.length})` }), keys]),
     ];
   },
 
   domain: (s) => {
     const out = s.domain.map((f) => textField(f, (v) => call({ do: "set_domain", key: f.key, value: v })));
     for (const sec of s.secrets) {
-      const card = el("div", { className: "card" }, [
-        el("h3", { textContent: sec.title }),
-        el("p", { className: "muted", style: "white-space:pre-wrap; font-size:.88rem", textContent: sec.steps }),
-        ...(sec.walkthrough ? [el("p", {}, [
+      const card = el("div", { key: sec.option, className: "card" }, [
+        el("h3", { key: "title", textContent: sec.title }),
+        el("p", { key: "steps", className: "muted", style: "white-space:pre-wrap; font-size:.88rem", textContent: sec.steps }),
+        ...(sec.walkthrough ? [el("p", { key: "walk" }, [
           el("a", { href: sec.walkthrough, target: "_blank", rel: "noreferrer", textContent: "Step-by-step walkthrough with screenshots" }),
           el("span", { className: "muted", textContent: " (opens the guide site in a new tab)" }),
         ])] : []),
       ]);
       if (sec.path_only) {
         card.append(row("File on the machine", el("input", {
-          type: "text", value: sec.path || "",
-          onfocus: () => (typing = true),
-          onblur: (e) => { typing = false; call({ do: "set_secret", option: sec.option, var: "__path", value: e.target.value }); },
-        })));
+          key: "path", type: "text", value: sec.path || "",
+          onblur: (e) => call({ do: "set_secret", option: sec.option, var: "__path", value: e.target.value }),
+        }), null, "__path"));
       } else {
         for (const f of sec.fields) {
           card.append(textField(f, (v) => call({ do: "set_secret", option: sec.option, var: f.key, value: v })));
         }
       }
-      card.append(el("div", { className: "row" }, [
-        el("button", { className: "primary", textContent: "Save", onclick: () => call({ do: "save_secret", option: sec.option }) }),
-        el("button", { textContent: "Skip for now", onclick: () => call({ do: "skip_secret", option: sec.option }) }),
-        el("span", { className: sec.skipped || (sec.verified && !sec.verified.ok) ? "bad" : sec.filled ? "ok" : "muted", textContent: sec.state }),
+      card.append(el("div", { key: "actions", className: "row" }, [
+        el("button", { key: "save", className: "primary", textContent: "Save", onclick: () => call({ do: "save_secret", option: sec.option }) }),
+        el("button", { key: "skip", textContent: "Skip for now", onclick: () => call({ do: "skip_secret", option: sec.option }) }),
+        el("span", { key: "state", className: sec.skipped || (sec.verified && !sec.verified.ok) ? "bad" : sec.filled ? "ok" : "muted", textContent: sec.state }),
       ]));
       out.push(card);
     }
@@ -540,11 +562,11 @@ const screens = {
     const out = s.values.map((v) => textField({ key: v.name, label: v.name, help: v.description, value: v.value, masked: false },
       (val) => call({ do: "set_value", name: v.name, value: val })));
     const list = el("div", { className: "mods" }, s.modules.map((m) =>
-      el("label", {}, [
+      el("label", { key: m.name }, [
         el("input", { type: "checkbox", checked: m.chosen, disabled: m.locked, onchange: () => call({ do: "toggle_module", name: m.name }) }),
         el("div", {}, [el("b", { textContent: m.name + (m.locked ? " (always on)" : "") }), el("span", { textContent: " " + m.description })]),
       ])));
-    out.push(el("div", { className: "card" }, [el("h3", { textContent: "Modules" }), el("p", { className: s.memory.short ? "bad" : "ok", textContent: s.memory.verdict }), list]));
+    out.push(el("div", { key: "modules", className: "card" }, [el("h3", { textContent: "Modules" }), el("p", { className: s.memory.short ? "bad" : "ok", textContent: s.memory.verdict }), list]));
     return out;
   },
 
@@ -557,20 +579,20 @@ const screens = {
       el("dt", { textContent: "SSH keys" }), el("dd", { textContent: r.keys.length ? r.keys.join("; ") : "none (console login only)" }),
       el("dt", { textContent: "Domain" }), el("dd", { textContent: r.domain || "—" }),
     ]);
-    const cards = [el("div", { className: "card" }, [el("h3", { textContent: "What will be installed" }), d,
+    const cards = [el("div", { key: "plan", className: "card" }, [el("h3", { textContent: "What will be installed" }), d,
       el("div", { className: "muted", style: "font-size:.85rem", textContent: r.modules.join(" ") })])];
     if (r.skipped_secrets.length) {
-      cards.push(el("div", { className: "card" }, [el("h3", { textContent: "Skipped credentials" }),
+      cards.push(el("div", { key: "skipped", className: "card" }, [el("h3", { textContent: "Skipped credentials" }),
         el("p", { className: "bad", textContent: r.skipped_secrets.join(", ") + " — what depends on these will not work until you set them on the machine and rebuild." })]));
     }
-    cards.push(el("div", { className: "card" }, [el("h3", { textContent: "These disks are erased" }),
+    cards.push(el("div", { key: "erased", className: "card" }, [el("h3", { textContent: "These disks are erased" }),
       el("p", { className: "erase", textContent: r.erased.join("   ") || "—" })]));
     return cards;
   },
 
-  install: (s) => [el("pre", { id: "log", textContent: s.install.lines.slice(-400).join("\n") })],
+  install: (s) => [el("pre", { key: "log", id: "log", textContent: s.install.lines.slice(-400).join("\n") })],
 
-  done: (s) => [el("pre", { textContent: s.done.report.join("\n") })],
+  done: (s) => [el("pre", { key: "report", textContent: s.done.report.join("\n") })],
 };
 
 /* The relaunched installer answers on the same port with the same code: when
@@ -582,17 +604,16 @@ function noticeVersion(s) {
     bootVersion = s.version;
     updating = false;
     showingUpdate = false;
-    lastStep = "";
-    lastBody = "";
+    shown = "";                     // a different program answered: build the screen fresh
     s.status = { message: "updated to installer " + s.version.slice(0, 7) + " — your answers came with it", error: false };
   }
 }
 
 async function tick() {
   if (!code || needCode) return;   // the code screen is not synced with anything
-  if (!typing || (state && state.step === "install") || updating) {
-    try { await call(null); } catch (e) { /* restarting, or the machine is rebooting */ }
-  }
+  // Polling no longer stops for a control in use: a poll patches, so the rest
+  // of the page can go on updating while someone is typing in one field.
+  try { await call(null); } catch (e) { /* restarting, or the machine is rebooting */ }
   if (state && state.step === "install") {
     const log = document.getElementById("log");
     if (log) log.scrollTop = log.scrollHeight;
