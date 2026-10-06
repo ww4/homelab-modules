@@ -14,6 +14,7 @@ anyhow = "1"
 argon2 = "0.5"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
+crypto_box = { version = "0.9", features = ["seal"] }
 rand = "0.8"
 ratatui = "0.29"
 serde = { version = "1", features = ["derive"] }

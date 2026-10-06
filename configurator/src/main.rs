@@ -17,6 +17,7 @@ mod disks;
 mod dns;
 mod guides;
 mod install;
+mod sealed;
 mod secrets;
 mod tui;
 mod web;

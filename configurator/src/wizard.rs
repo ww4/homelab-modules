@@ -562,6 +562,13 @@ pub struct Wizard {
     /// can see an attempt and clear it.
     pub code_failures: std::collections::BTreeMap<String, u32>,
     pub locked_out: std::collections::BTreeSet<String>,
+    /// This run's key pair, for values the page must not send in the clear.
+    pub sealer: crate::sealed::Sealer,
+    /// A masked value arrived unsealed. Not refused, because the console
+    /// front end and an older page both send plain text, but said out loud
+    /// on the Review screen: it means that value crossed the network
+    /// readable by anyone watching.
+    pub saw_cleartext_secret: bool,
     /// Set when a newer installer has been fetched: the front end restores
     /// the terminal and hands the process over to it.
     pub relaunch: Option<String>,
@@ -632,6 +639,8 @@ impl Wizard {
             pin_failures: 0,
             code_failures: Default::default(),
             locked_out: Default::default(),
+            sealer: crate::sealed::Sealer::new(),
+            saw_cleartext_secret: false,
             relaunch: None,
         };
 
@@ -1673,6 +1682,11 @@ impl Wizard {
             "done": { "report": self.done_tail(24) },
             "web": { "port": self.web_port, "code": self.pairing, "seen": self.web_seen },
             "version": Self::version(),
+            // The page seals secret values to this key. The fingerprint is
+            // on the console so a reader can check they are talking to this
+            // machine; it is never used as a secret.
+            "sealing": { "public_key": self.sealer.public_hex(), "fingerprint": self.sealer.fingerprint() },
+            "cleartext_secret_seen": self.saw_cleartext_secret,
             "awaiting_pin": self.install_pin.is_some(),
             "pin_tries_left": self.install_pin.as_ref().map(|_| 3 - self.pin_failures),
             "update": self.update.as_ref().map(|u| json!({

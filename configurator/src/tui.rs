@@ -866,6 +866,10 @@ impl Ui {
             Some(url) => format!("{}\n\nThe full walkthrough, with pictures: {url}", s.steps),
             None => s.steps.clone(),
         };
+        // The browser seals what it sends to this machine's key. Printing the
+        // fingerprint here is what makes that checkable: the page shows the
+        // same one, and a mismatch means something is sitting in between.
+        let steps = format!("{steps}\n\nTyped in a browser, this value is sealed to this machine before it leaves. Key {}", w.sealer.fingerprint());
         let path_only = s.path_only;
         let rows: Vec<(String, String)> = if path_only {
             vec![("File on this machine".to_string(), if s.path.is_empty() { "—".into() } else { s.path.clone() })]

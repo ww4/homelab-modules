@@ -230,6 +230,30 @@ fn reply(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -
     stream.flush()
 }
 
+/// A value from the page, which may have arrived sealed.
+///
+/// ⚠️ The page seals anything secret, because this server speaks plain HTTP
+/// and a token typed into the form would otherwise be readable by anyone on
+/// the network segment. A plain value is still accepted: the console front
+/// end sends one, and so would an older page. When a value that should have
+/// been sealed arrives in the clear we remember it and say so on the Review
+/// screen, because by then it has already crossed the network readable.
+fn value_from(g: &mut Wizard, a: &Value, field: &str, secret: bool) -> Result<String, String> {
+    match a.get("sealed") {
+        Some(v) => g.sealer.open(
+            v["epk"].as_str().unwrap_or(""),
+            v["nonce"].as_str().unwrap_or(""),
+            v["ct"].as_str().unwrap_or(""),
+        ),
+        None => {
+            if secret {
+                g.saw_cleartext_secret = true;
+            }
+            Ok(a[field].as_str().unwrap_or("").to_string())
+        }
+    }
+}
+
 /// One action from the page, then the new state. Every rule lives in the
 /// model, so the browser cannot do anything the console could not.
 fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
@@ -240,10 +264,14 @@ fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
         "set_kit" => g.set_kit(n("index")),
         "set_disk" => g.set_disk_role(n("index"), Role::from_id(&s("role"))),
         "set_disk_path" => g.set_disk_path(&s("value")),
-        "set_profile" => match g.set_profile(&s("key"), &s("value")) {
-            Ok(()) => g.say("kept", false),
-            Err(e) => g.say(e, true),
-        },
+        "set_profile" => {
+            let key = s("key");
+            let secret = key == "password" || key == "password2";
+            match value_from(&mut g, a, "value", secret).and_then(|v| g.set_profile(&key, &v)) {
+                Ok(()) => g.say("kept", false),
+                Err(e) => g.say(e, true),
+            }
+        }
         "github" => match g.import_github_keys(&s("user")) {
             Ok(m) if !m.is_empty() => g.say(m, false),
             Ok(_) => {}
@@ -260,8 +288,10 @@ fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
             Err(e) => g.say(e, true),
         },
         "set_secret" => {
-            if let Err(e) = g.set_secret_field(&s("option"), &s("var"), &s("value")) {
-                g.say(e, true);
+            let (option, var) = (s("option"), s("var"));
+            match value_from(&mut g, a, "value", true).and_then(|v| g.set_secret_field(&option, &var, &v)) {
+                Ok(()) => {}
+                Err(e) => g.say(e, true),
             }
         }
         "save_secret" => match g.save_secret(&s("option")) {
