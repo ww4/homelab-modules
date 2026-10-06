@@ -51,16 +51,23 @@ let
         echo "deploy_drift_last_run_seconds $now"
       }
 
+      # The repo as a VARIABLE, not interpolated at each use: a configured
+      # URL makes `[ -z "<literal>" ]` a constant, which shellcheck rejects
+      # (SC2157) and writeShellApplication turns into a build failure. So the
+      # reference box could not build the library at all while an unset URL
+      # built fine, which is the wrong way round for a default.
+      repo=${lib.escapeShellArg cfg.repoUrl}
+
       # No repo yet (a fresh install): nothing to compare against. Say so
       # once and stop, rather than publishing a false "forge unreachable".
-      if [ -z "${cfg.repoUrl}" ]; then
+      if [ -z "$repo" ]; then
         echo "homelab.deployDriftWatch.repoUrl is empty: set it to your flake repo to turn this check on"
         exit 0
       fi
 
       # 1) The forge's branch head. Bounded: a hung forge must not wedge the
       # timer.
-      head=$(timeout 30 git ls-remote "${cfg.repoUrl}" "refs/heads/${cfg.branch}" 2>/dev/null | awk '{print $1}' || true)
+      head=$(timeout 30 git ls-remote "$repo" "refs/heads/${cfg.branch}" 2>/dev/null | awk '{print $1}' || true)
       if [ -z "$head" ]; then
         { emit_common; echo "deploy_drift_fetch_ok 0"; } > "$tmp"
         chmod 0644 "$tmp"; mv -f "$tmp" "$OUT"
@@ -80,7 +87,7 @@ let
         mkdir -p "$scratch"
         [ -d "$scratch/.git" ] || git -C "$scratch" init -q
         ct=""
-        if timeout 60 git -C "$scratch" fetch -q --depth 1 "${cfg.repoUrl}" "${cfg.branch}" 2>/dev/null; then
+        if timeout 60 git -C "$scratch" fetch -q --depth 1 "$repo" "${cfg.branch}" 2>/dev/null; then
           ct=$(git -C "$scratch" log -1 --format=%ct FETCH_HEAD 2>/dev/null || true)
         fi
         if [ -n "$ct" ]; then
