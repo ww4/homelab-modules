@@ -119,12 +119,18 @@ pub enum Role {
 }
 
 impl Role {
-    pub fn next(self) -> Role {
-        match self {
-            Role::Unused => Role::System,
-            Role::System => Role::Data,
-            Role::Data => Role::Parity,
-            Role::Parity => Role::Unused,
+    /// The next role when Space is pressed. `system_taken` is true when
+    /// ANOTHER disk is already the system disk: then SYSTEM comes last
+    /// rather than first, so walking a second disk to `data` cannot
+    /// silently steal it from the first (the console flow the first hardware run hit).
+    pub fn next(self, system_taken: bool) -> Role {
+        match (self, system_taken) {
+            (Role::Unused, false) => Role::System,
+            (Role::Unused, true) => Role::Data,
+            (Role::System, _) => Role::Data,
+            (Role::Data, _) => Role::Parity,
+            (Role::Parity, true) => Role::System,
+            (Role::Parity, false) => Role::Unused,
         }
     }
     pub fn label(self) -> &'static str {
@@ -649,22 +655,28 @@ impl Wizard {
         if i >= self.disks.len() {
             return;
         }
-        self.set_disk_role(i, self.roles[i].next());
+        let taken = self.roles.iter().enumerate().any(|(j, r)| j != i && *r == Role::System);
+        self.set_disk_role(i, self.roles[i].next(taken));
     }
 
     pub fn set_disk_role(&mut self, i: usize, r: Role) {
         if i >= self.disks.len() {
             return;
         }
+        let mut moved_from = None;
         if r == Role::System {
-            for other in self.roles.iter_mut() {
-                if *other == Role::System {
+            for (j, other) in self.roles.iter_mut().enumerate() {
+                if j != i && *other == Role::System {
                     *other = Role::Unused;
+                    moved_from = Some(j);
                 }
             }
         }
         self.roles[i] = r;
-        let msg = format!("{}: {}", self.disks[i].kernel, r.help());
+        let msg = match moved_from {
+            Some(j) => format!("{} is the system disk now; {} is no longer used", self.disks[i].kernel, self.disks[j].kernel),
+            None => format!("{}: {}", self.disks[i].kernel, r.help()),
+        };
         self.say(msg, false);
     }
 
@@ -1276,6 +1288,21 @@ mod tests {
         assert!(validate_key("ssh-ed25519 notbase64!").is_err());
         assert!(same_key(k, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEJwHH00HOg12ICIjLwVzHYpCMs/vtOexwok8DV1D6Co other@github"));
         assert!(key_summary(k).ends_with("(me@laptop)"));
+    }
+
+    /// Walking a second disk to `data` must not take SYSTEM off the first
+    /// on the way past it.
+    #[test]
+    fn the_role_cycle_does_not_steal_the_system_disk() {
+        // Nothing is the system disk yet: the first press offers it.
+        assert_eq!(Role::Unused.next(false), Role::System);
+        assert_eq!(Role::System.next(false), Role::Data);
+        assert_eq!(Role::Data.next(false), Role::Parity);
+        assert_eq!(Role::Parity.next(false), Role::Unused);
+        // Another disk holds it: data comes first, SYSTEM last and deliberate.
+        assert_eq!(Role::Unused.next(true), Role::Data);
+        assert_eq!(Role::Data.next(true), Role::Parity);
+        assert_eq!(Role::Parity.next(true), Role::System);
     }
 
     #[test]

@@ -94,7 +94,7 @@ async function call(action) {
   });
   if (r.status === 403) { askCode(); return; }
   state = await r.json();
-  render();
+  render(!!action);
 }
 
 function askCode() {
@@ -131,7 +131,13 @@ function textField(f, send) {
   return row(f.label, input, f.help);
 }
 
-function render() {
+let lastBody = "", lastStep = "";
+
+/* The page polls so the console and the browser stay in step. Rebuilding the
+   form on every poll would close an open dropdown under the user's hand, so
+   the body is rebuilt only when it has something new in it and no control is
+   in use. The header, status line and buttons are cheap and always current. */
+function render(force) {
   if (!state) return;
   const s = state;
   document.getElementById("title").textContent = s.title;
@@ -151,6 +157,12 @@ function render() {
   go.disabled = s.step === "install" || s.step === "done";
   go.onclick = () => call({ do: "continue" });
 
+  const body = JSON.stringify([s.step, s.kits, s.disks, s.disk_fallback, s.profile, s.ssh, s.domain, s.secrets, s.values, s.modules, s.review, s.install, s.done]);
+  const active = document.activeElement;
+  const busy = active && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName) && s.step === lastStep;
+  if (!force && (body === lastBody || busy)) return;
+  lastBody = body;
+  lastStep = s.step;
   const box = document.getElementById("screen");
   box.replaceChildren(...(screens[s.step] || (() => []))(s));
 }
@@ -182,6 +194,8 @@ const screens = {
     if (!s.disks.length) return [textField(s.disk_fallback, (v) => call({ do: "set_disk_path", value: v }))];
     return s.disks.map((d, i) => {
       const sel = el("select", { onchange: (e) => call({ do: "set_disk", index: i, role: e.target.value }) });
+      sel.addEventListener("focus", () => (typing = true));
+      sel.addEventListener("blur", () => (typing = false));
       for (const [v, t] of [["unused", "not used"], ["system", "SYSTEM — the operating system (erased)"], ["data", "data — storage for your files (erased)"], ["parity", "parity — protects the data disks"]]) {
         sel.append(el("option", { value: v, textContent: t, selected: d.role === v }));
       }
