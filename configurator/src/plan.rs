@@ -478,7 +478,10 @@ mod tests {
             DEFAULT_LIBRARY.starts_with("github:") || DEFAULT_LIBRARY.contains("github.com"),
             "the default library must be the public mirror, got: {DEFAULT_LIBRARY}"
         );
-        for private in ["rosemaryacres", "localhost", "127.0.0.1", "192.168.", "10.", "100.64."] {
+        // Not a list of hosts to avoid naming one here: anything that is not
+        // the public mirror fails the assertion above, and these catch the
+        // shapes an address takes when it is somebody's own machine.
+        for private in ["localhost", "127.0.0.1", "192.168.", "10.0.", "100.64.", ".local", ":8"] {
             assert!(!DEFAULT_LIBRARY.contains(private), "{private} is not reachable from a stranger's machine: {DEFAULT_LIBRARY}");
         }
     }
