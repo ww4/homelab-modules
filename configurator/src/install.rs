@@ -19,7 +19,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 use std::fs;
 use std::io::{self, BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::answers::Answers;
@@ -90,6 +90,32 @@ pub fn run(schema: &Schema, dir: &Path, host: Option<&str>, yes: bool, dry_run: 
     for dev in &erased {
         if !Path::new(dev).exists() {
             bail!("{dev}: no such device on this machine (the answers were written for a different box, or the disk is not attached)");
+        }
+    }
+
+    // ⚠️ LAST CHECK BEFORE ANYTHING IS DESTROYED, AND IT IS NOT A DUPLICATE
+    // OF THE PICKER'S. The picker refuses to offer a disk this system is
+    // running from, and once that refusal missed one: a stick written with
+    // Ventoy holds the ISO as a file behind device-mapper, so none of its
+    // partitions are mounted and it read as free. disko wrote a new partition
+    // table onto the installer's own boot stick before mkfs refused.
+    //
+    // The answers can also be older than the machine they are run on, or
+    // written for another box entirely. So this asks again, here, with
+    // nothing between it and the erase.
+    let live: Vec<crate::disks::Disk> = crate::disks::list();
+    for dev in &erased {
+        let real = std::fs::canonicalize(dev).unwrap_or_else(|_| PathBuf::from(dev));
+        let kernel = real.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if let Some(d) = live.iter().find(|d| d.kernel == kernel || d.id == real || d.id.as_os_str() == dev.as_str()) {
+            if d.in_use {
+                bail!(
+                    "refusing to erase {dev}: this machine is running from it. \
+                     That is the disk the installer itself booted from, and erasing it would \
+                     destroy the installer mid-install. Choose a different disk, or boot from \
+                     other media."
+                );
+            }
         }
     }
 
