@@ -775,8 +775,22 @@ impl Wizard {
     /// the answers, the saved secrets and the pairing code. Never during an
     /// install: the install is a child of this process.
     pub fn apply_update(&mut self) -> Result<String, String> {
+        // ⚠️ NOT WHILE THE MACHINE IS BEING ASKED SOMETHING. Replacing this
+        // process in the window between a browser pressing Install and
+        // somebody pressing Y at the console is a genuine race, not just an
+        // odd click order: the install runs as a child of this process, so an
+        // exec here would leave an erase running with nothing supervising it
+        // and a second installer serving its own browser interface. The
+        // takeover request is not destructive, but there is no reason to let
+        // two administrative transitions overlap either.
         if self.progress.is_some() || self.step == Step::Install {
             return Err("not while the install is running".into());
+        }
+        if self.install_request.is_some() {
+            return Err("not while the machine's own screen is asking whether to install: answer there first".into());
+        }
+        if self.takeover_request.is_some() {
+            return Err("not while the machine's own screen is asking who should hold the form: answer there first".into());
         }
         let answers = self.answers();
         std::fs::write(&self.out_answers, serde_json::to_string_pretty(&answers).map_err(|e| e.to_string())? + "\n").map_err(|e| e.to_string())?;
@@ -1306,7 +1320,17 @@ impl Wizard {
         Ok(format!("skipped — {what}"))
     }
 
-    pub fn set_value(&mut self, name: &str, text: &str) {
+    /// ⚠️ ONLY WHAT THE SCREEN IS ACTUALLY OFFERING. This used to insert any
+    /// name it was handed, so a browser that skipped the page's own
+    /// JavaScript could set options the Modules screen never shows and the
+    /// Review screen does not summarise, including who nginx answers and
+    /// which vhosts sit behind Authelia. The claim elsewhere in this file is
+    /// that every rule lives in the model and the browser can do nothing the
+    /// console could not; this is where that was not yet true.
+    pub fn set_value(&mut self, name: &str, text: &str) -> Result<(), String> {
+        if !self.open_values().iter().any(|(n, _, _)| n == name) {
+            return Err(format!("{name} is not one of the values this screen is asking for"));
+        }
         let text = text.trim().to_string();
         if text.is_empty() {
             self.values.remove(name);
@@ -1314,6 +1338,7 @@ impl Wizard {
             self.values.insert(name.to_string(), text);
         }
         self.refresh_secrets();
+        Ok(())
     }
 
     pub fn toggle_module(&mut self, name: &str) -> Result<(), String> {
@@ -2108,6 +2133,40 @@ error: Cannot build '/nix/store/k48mnl-homelab-configure-0.1.0.drv'.
     /// Third audit, finding 3: the pairing code travels over the same
     /// unencrypted connection as everything else, so it can be read off the
     /// network. It must not also be enough to seize the form.
+    /// Fifth audit, finding 1: replacing this process in the window between a
+    /// browser pressing Install and somebody pressing Y would leave the erase
+    /// running with nothing supervising it.
+    #[test]
+    fn no_self_update_while_the_machine_is_being_asked_something() {
+        let mut w = test_wizard();
+        w.live_usb = true;
+        w.step = Step::Review;
+        assert!(w.advance_from(Origin::Browser).is_ok());
+        let e = w.apply_update().unwrap_err();
+        assert!(e.contains("whether to install"), "got: {e}");
+
+        w.refuse_install();
+        assert!(w.request_takeover("192.168.1.9"), "the first to ask simply gets it");
+        assert!(!w.request_takeover("192.168.1.50"), "a second one has to be allowed at the machine");
+        let e = w.apply_update().unwrap_err();
+        assert!(e.contains("who should hold the form"), "got: {e}");
+    }
+
+    /// Fifth audit, finding 2: the browser must not gain anything by skipping
+    /// its own JavaScript.
+    #[test]
+    fn set_value_refuses_an_option_the_screen_is_not_offering() {
+        let mut w = test_wizard();
+        let e = w.set_value("homelab.nginxAccess.containerBridges", "[]").unwrap_err();
+        assert!(e.contains("not one of the values"), "got: {e}");
+        assert!(!w.values.contains_key("homelab.nginxAccess.containerBridges"), "and nothing was written");
+
+        // Whatever the screen really is offering still works.
+        if let Some((name, _, _)) = w.open_values().first().cloned() {
+            assert!(w.set_value(&name, "something").is_ok(), "{name} is on the screen");
+        }
+    }
+
     #[test]
     fn a_second_browser_cannot_take_the_form_without_the_machine() {
         let mut w = test_wizard();

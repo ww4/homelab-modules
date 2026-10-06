@@ -317,7 +317,11 @@ fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
             Ok(m) => g.say(m, true),
             Err(e) => g.say(e, true),
         },
-        "set_value" => g.set_value(&s("name"), &s("value")),
+        "set_value" => {
+            if let Err(e) = g.set_value(&s("name"), &s("value")) {
+                g.say(e, true);
+            }
+        }
         "toggle_module" => {
             if let Err(e) = g.toggle_module(&s("name")) {
                 g.say(e, false);

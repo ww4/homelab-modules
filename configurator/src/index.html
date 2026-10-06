@@ -315,7 +315,7 @@ function askCode() {
   document.getElementById("screen").replaceChildren(
     el("div", { className: "card" }, [
       el("h3", { textContent: "Enter the code from the machine's screen" }),
-      el("p", { className: "muted", textContent: "The installer shows eight characters next to this address, from an alphabet with no look-alikes. It stops anyone else on your network from filling in your install." }),
+      el("p", { className: "muted", textContent: "The installer shows eight characters next to this address, from an alphabet with no look-alikes. The code lets one browser drive the installer; another browser cannot take it over without somebody approving at the machine." }),
       el("div", { className: "row" }, [input, el("button", { className: "primary", textContent: "Continue", onclick: submit })]),
     ]));
   input.focus();
@@ -393,13 +393,18 @@ function colophon(s) {
     el("a", { key: "guide", href: site, target: "_blank", rel: "noreferrer", textContent: "guide" }),
     el("span", { key: "s4", className: "sep", textContent: "·" }),
     el("a", { key: "gpl", href: "https://www.gnu.org/licenses/gpl-3.0.html", target: "_blank", rel: "noreferrer", textContent: "GPL-3.0" }),
-    el("a", {
+    // ⚠️ No way to the updater while the machine is being asked something.
+    // Replacing this process between a browser pressing Install and somebody
+    // pressing Y at the console would leave an erase running with nothing
+    // supervising it. The model refuses it too; this stops the reader ever
+    // being offered it.
+    ...(s.awaiting_console || s.awaiting_takeover ? [] : [el("a", {
       key: "gear",
       className: "gear" + (s.update && s.update.newer ? " warn" : ""),
       href: "#", title: "Installer updates",
       textContent: s.update && s.update.newer ? "\u2699 update" : "\u2699",
       onclick: (e) => { e.preventDefault(); showingUpdate = !showingUpdate; render(); },
-    }),
+    })]),
   ]);
 }
 

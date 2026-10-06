@@ -451,7 +451,9 @@ impl Ui {
             }
             (Step::Extras, _, Row::Value(i)) => {
                 if let Some((name, _, _)) = w.open_values().get(i).cloned() {
-                    w.set_value(&name, text);
+                    if let Err(e) = w.set_value(&name, text) {
+                        w.say(e, true);
+                    }
                 }
             }
             _ => {}

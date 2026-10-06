@@ -17,17 +17,20 @@
 //! rather than only read it, can serve a page carrying their own public key
 //! and read everything sealed to it.
 //!
-//! The fingerprint does NOT fix that and must not be described as if it did.
-//! It travels over the same unauthenticated connection as the page, so an
-//! attacker who swaps the key can print the old fingerprint beside it. What
-//! the fingerprint is good for is a mismatch: it catches a careless attacker
-//! and it catches the page talking to a different machine than you think.
-//! A match is a consistency check, not proof of anything.
+//! The fingerprint does NOT fix that and must not be described as if it did,
+//! here or anywhere else. One sentence, used everywhere:
+//!
+//!   The fingerprint can detect a mismatch between the browser and the
+//!   console when the traffic has not been modified. It does not
+//!   authenticate the connection against an active attacker.
+//!
+//! Somebody who controls the connection replaces the key, the fingerprint and
+//! the page together, so the browser's copy proves nothing. The console's
+//! copy is the one that did not travel.
 //!
 //! So: this closes passive listening, which is the realistic threat on a home
-//! network. It does not authenticate the connection. What bounds the active
-//! case is elsewhere and is not cryptographic: an install cannot start
-//! without somebody pressing a key on the machine itself.
+//! network. What bounds the active case is not cryptographic at all: an
+//! install cannot start without somebody pressing a key on the machine.
 //!
 //! X25519 with XSalsa20-Poly1305, which is NaCl's `crypto_box`: the browser
 //! side is TweetNaCl, which implements exactly this and nothing else.
@@ -68,6 +71,14 @@ impl Sealer {
     pub fn fingerprint(&self) -> String {
         let hex = self.public_hex();
         hex[..12].as_bytes().chunks(4).map(|c| String::from_utf8_lossy(c).to_string()).collect::<Vec<_>>().join(" ")
+    }
+
+    /// A sealer from a known secret key. Tests only: it is what lets a fixed
+    /// fixture produced by the browser's library be opened by this one.
+    #[cfg(test)]
+    pub fn from_secret_hex(hex: &str) -> Self {
+        let b: [u8; 32] = from_hex(hex).expect("hex").try_into().expect("32 bytes");
+        Sealer { secret: SecretKey::from(b) }
     }
 
     /// Open what the page sealed: its ephemeral public key, the nonce, and
@@ -150,6 +161,26 @@ mod tests {
         // Sealed to somebody else's key: not ours to open.
         let other = Sealer::new();
         assert!(other.open(&epk, &nonce, &ct).is_err());
+    }
+
+    /// ⚠️ THE ONE TEST THAT SPANS BOTH IMPLEMENTATIONS. Everything else here
+    /// proves this code can open what this code sealed, which would still
+    /// pass if the two sides disagreed about hex, nonce length, key order or
+    /// ciphertext layout. These bytes were produced by the browser's own
+    /// vendored TweetNaCl, through the same calls `index.html` makes.
+    #[test]
+    fn it_opens_what_the_browsers_library_actually_produced() {
+        let s = Sealer::from_secret_hex("a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90");
+        // The browser derives this from the public key the page is given.
+        assert_eq!(s.public_hex(), "b90b2e574714a8b6e0763e87e98999ac5f7f45342903923c5ff9951455ed266a");
+        let opened = s
+            .open(
+                "52a5524b0c32e8a47f239ab6ca8e42c3b9316a54cae4854ecdb5889311cc9a7e",
+                "000102030405060708090a0b0c0d0e0f1011121314151617",
+                "8f232e0abad7d7f3de045fd75dbd13c4adc7df783b0df50203ffcb99f88cd70197b964f4ad53",
+            )
+            .expect("the browser's ciphertext opens here");
+        assert_eq!(opened, "cloudflare-token-value");
     }
 
     #[test]
