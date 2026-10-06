@@ -294,6 +294,48 @@
     };
 
     # ── drive-temps exporter ──────────────────────────────────────────────────
+    nginxAccess = {
+      allowedSources = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [
+          "127.0.0.0/8"          # loopback: host-local service fetches
+          "10.0.0.0/8"           # RFC1918
+          "192.168.0.0/16"       # RFC1918, the usual home LAN
+          "100.64.0.0/10"        # Tailscale, IPv4
+          "::1/128"              # loopback, IPv6
+          "fd7a:115c:a1e0::/48"  # Tailscale, IPv6
+          "fc00::/7"             # unique-local, IPv6
+          "fe80::/10"            # link-local, IPv6
+        ];
+        description = ''
+          The networks nginx will answer at all. Everything not listed is
+          denied, which includes every public address and anything arriving
+          from the WAN. This is a network filter and nothing more: a vhost
+          behind Authelia still challenges a request that passes it.
+        '';
+      };
+      containerBridges = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ "172.16.0.0/12" ];
+        description = ''
+          Networks that containers on this machine live on, allowed in
+          addition to `allowedSources`. Kept separate so the decision is
+          visible: a compromised container reaches the vhosts exactly as a
+          device on the LAN does.
+
+          It cannot be made narrower by address, because docker's bridges sit
+          inside RFC1918 and this range is also an ordinary home LAN range.
+          Telling them apart means filtering by interface, which nginx's
+          access module cannot do.
+
+          Set it to `[ ]` if nothing on this machine reaches a vhost from a
+          container. Something probably does: uptime-kuma checking the vhosts
+          it watches, and server-side dashboard widgets, both run in
+          containers and both stop working.
+        '';
+      };
+    };
+
     smartDump = {
       readGroup = lib.mkOption {
         type = lib.types.str;
