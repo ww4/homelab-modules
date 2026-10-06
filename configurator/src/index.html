@@ -82,10 +82,10 @@
 </div></footer>
 
 <script>
-const qs = new URLSearchParams(location.search);
-let code = (qs.get("code") || sessionStorage.getItem("code") || "").toUpperCase();
-if (code) sessionStorage.setItem("code", code);
-let state = null, typing = false;
+/* The code lives in the URL and nowhere else: entering it is a redirect, so
+   this page always starts knowing whether it has one. */
+const code = (new URLSearchParams(location.search).get("code") || "").toUpperCase();
+let state = null, typing = false, needCode = false;
 
 const el = (t, props = {}, kids = []) => {
   const n = Object.assign(document.createElement(t), props);
@@ -104,19 +104,34 @@ async function call(action) {
   render(!!action);
 }
 
+/* Asking for the code is a dead end until it is given: nothing here polls,
+   nothing re-renders, so the box keeps the focus and the keystrokes. */
 function askCode() {
+  if (needCode) return;
+  needCode = true;
+  const input = el("input", { type: "text", placeholder: "ABC123", autocapitalize: "characters", autocomplete: "off", spellcheck: false, size: 10 });
+  const submit = () => {
+    const v = input.value.trim().toUpperCase();
+    if (!v) return input.focus();
+    const u = new URL(location.href);
+    u.searchParams.set("code", v);
+    location.replace(u.toString());   // reload with the code: the form starts at step 1
+  };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  document.getElementById("title").textContent = "Homelab installer";
+  document.getElementById("intro").textContent = "";
+  document.getElementById("colophon").replaceChildren();
+  document.getElementById("back").style.display = "none";
+  document.getElementById("go").style.display = "none";
+  document.getElementById("status").textContent = code ? "that code did not match the one on the machine's screen" : "";
+  document.getElementById("status").className = code ? "bad" : "";
   document.getElementById("screen").replaceChildren(
     el("div", { className: "card" }, [
       el("h3", { textContent: "Enter the code from the machine's screen" }),
-      el("p", { className: "muted", textContent: "The installer shows six characters next to this address. It stops anyone else on your network from driving the install." }),
-      (() => {
-        const i = el("input", { type: "text", id: "codein", placeholder: "ABC123", autocapitalize: "characters" });
-        const b = el("button", { className: "primary", textContent: "Continue", onclick: () => { code = i.value.trim().toUpperCase(); sessionStorage.setItem("code", code); call(null); } });
-        return el("div", { className: "row" }, [i, b]);
-      })(),
+      el("p", { className: "muted", textContent: "The installer shows six characters next to this address. It stops anyone else on your network from filling in your install." }),
+      el("div", { className: "row" }, [input, el("button", { className: "primary", textContent: "Continue", onclick: submit })]),
     ]));
-  document.getElementById("intro").textContent = "";
-  document.getElementById("title").textContent = "Homelab installer";
+  input.focus();
 }
 
 /* one label + control line */
@@ -401,7 +416,7 @@ const screens = {
 };
 
 async function tick() {
-  if (!code) { askCode(); return; }
+  if (!code || needCode) return;   // the code screen is not synced with anything
   if (!typing || (state && state.step === "install")) {
     try { await call(null); } catch (e) { /* the machine may be rebooting */ }
   }
