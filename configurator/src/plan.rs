@@ -9,7 +9,18 @@ use crate::schema::{Schema, SecretMeta, Source};
 use crate::secrets::{self, SecretPlan, Supplied};
 use crate::Rejected;
 
-pub const DEFAULT_LIBRARY: &str = "git+https://git.rosemaryacres.com/ww4/homelab-modules.git"; // leak-scan-ok: the library's own home
+/// Where a generated flake fetches this library from.
+///
+/// ⚠️ THIS MUST BE AN ADDRESS A STRANGER CAN REACH. It is written into every
+/// configuration this installer generates, on somebody else's machine, and
+/// their `nix build` resolves it. It used to be the private forge the library
+/// is developed on, which no reader outside that network can open: the
+/// install got all the way to the last screen, wrote the configuration, and
+/// then failed on `Could not connect to server`. The forge is where the
+/// library lives; the public mirror is where it is fetched from.
+///
+/// A consumer who does have another copy can override it in the answers.
+pub const DEFAULT_LIBRARY: &str = "github:ww4/homelab-modules";
 
 /// Foundation modules — present from the first run, never offered as choices.
 /// `system` and `boot` are added to every plan; they read no values.
@@ -458,6 +469,20 @@ mod tests {
     /// The installer offers to deal with a credential later and says what
     /// stops working. Before this, `generate` refused and the install died
     /// on the last screen with the reader having done nothing wrong.
+    /// ⚠️ A generated configuration is resolved on somebody else's machine.
+    /// This address was the private forge for every install until one got to
+    /// the last screen and died on "Could not connect to server".
+    #[test]
+    fn the_generated_flake_points_somewhere_a_stranger_can_reach() {
+        assert!(
+            DEFAULT_LIBRARY.starts_with("github:") || DEFAULT_LIBRARY.contains("github.com"),
+            "the default library must be the public mirror, got: {DEFAULT_LIBRARY}"
+        );
+        for private in ["rosemaryacres", "localhost", "127.0.0.1", "192.168.", "10.", "100.64."] {
+            assert!(!DEFAULT_LIBRARY.contains(private), "{private} is not reachable from a stranger's machine: {DEFAULT_LIBRARY}");
+        }
+    }
+
     #[test]
     fn a_skipped_credential_generates_a_placeholder_instead_of_refusing() {
         let s = schema();
