@@ -86,12 +86,29 @@ in
         [ -s ${secDir}/oidc-hmac ]       || openssl rand -hex 32 > ${secDir}/oidc-hmac
         [ -s ${secDir}/oidc-issuer.pem ] || openssl genrsa -out ${secDir}/oidc-issuer.pem 4096
         if [ ! -s ${secDir}/users.yml ]; then
-          # Seed the admin user with a RANDOM password (nobody can log in until
-          # the human replaces this file with a real hash). Lets Authelia start
-          # + lets the forward-auth redirect be verified end-to-end.
-          tmp=$(openssl rand -hex 16)
-          hash=$(authelia crypto hash generate argon2 --password "$tmp" 2>/dev/null \
-                   | sed -n 's/^Digest: //p')
+          # ⚠️ THE ADMIN MUST BE ABLE TO LOG IN. This used to mint a random
+          # password, hash it, write the hash and discard the plaintext, which
+          # left Authelia protecting every vhost with no account that could
+          # get past it: the only way in was to replace users.yml by hand.
+          #
+          # Two ways out, in order. If a hash was supplied
+          # (homelab.authelia.adminPasswordHashFile — the configurator writes
+          # it and puts the password in FIRST-LOGIN.md) use it, and no
+          # plaintext ever reaches this machine. Otherwise mint one here and
+          # leave it beside users.yml for root to read once.
+          hash=""
+          ${lib.optionalString (cfg.adminPasswordHashFile != null) ''
+            if [ -r ${lib.escapeShellArg (toString cfg.adminPasswordHashFile)} ]; then
+              hash=$(cat ${lib.escapeShellArg (toString cfg.adminPasswordHashFile)})
+            fi
+          ''}
+          if [ -z "$hash" ]; then
+            tmp=$(openssl rand -base64 18 | tr -d '\n')
+            hash=$(authelia crypto hash generate argon2 --password "$tmp" 2>/dev/null \
+                     | sed -n 's/^Digest: //p')
+            ( umask 077; printf '%s\n' "$tmp" > ${secDir}/initial-password )
+            echo "authelia: first password written to ${secDir}/initial-password — log in, change it, delete the file"
+          fi
           cat > ${secDir}/users.yml <<EOF
         users:
           ${config.homelab.adminUser}:

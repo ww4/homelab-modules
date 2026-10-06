@@ -92,7 +92,20 @@ in
     # Machine secrets (jwt/session/storage keys) are generated on first start;
     # per-app OIDC client secrets are HASHES in homelab.authelia.oidcClients
     # with the plaintext in each app's own secret.
-    secrets = [ ];
+    #
+    # The admin's FIRST password is the one secret the machine cannot mint by
+    # itself and keep usable: Authelia protects every vhost, so a password
+    # generated on the box and not shown to anybody locks the admin out of
+    # the thing that was supposed to let them in. The configurator mints it,
+    # writes only the hash here, and puts the password in FIRST-LOGIN.md.
+    secrets = [
+      {
+        option = "homelab.authelia.adminPasswordHashFile";
+        keys = [ "<argon2 hash of the admin's first password>" ];
+        owner = "root";
+        source = "generate";
+      }
+    ];
   };
 
   # ── storage ────────────────────────────────────────────────────────────────

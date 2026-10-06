@@ -419,6 +419,23 @@
     authelia = {
       enable = lib.mkEnableOption "Authelia forward-auth + OIDC SSO";
 
+      adminPasswordHashFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = ''
+          A file holding the argon2 hash of the admin's first Authelia
+          password. When set, the module seeds `users.yml` from it, and the
+          password itself never touches the machine: the configurator mints
+          one, writes the hash here and puts the password in FIRST-LOGIN.md.
+
+          Left null, the module mints a password at activation and writes it
+          to `initial-password` beside `users.yml`, root-readable. Read it,
+          log in, change the password, delete the file. Before this option
+          existed the module minted a password and threw it away, so nobody
+          could log in at all until they replaced `users.yml` by hand.
+        '';
+      };
+
       displayName = lib.mkOption {
         type = lib.types.str;
         default = "Homelab";

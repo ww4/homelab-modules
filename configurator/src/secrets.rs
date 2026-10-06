@@ -255,6 +255,14 @@ fn generate_content(
     let what = keys.first().map(String::as_str).unwrap_or("value");
     let plain = random_token(32);
     let what_clean = what.trim_start_matches('<').trim_end_matches('>');
+    if what.to_lowercase().contains("argon2") {
+        // The file holds a one-way hash and the password itself is shown
+        // once, so no plaintext login ever lands on the machine. Same rule
+        // as the env-file branch above.
+        let hash = argon2_phc(&plain)?;
+        show_once.push((format!("{module}: {what_clean} — this is the password; the file on the machine holds only its hash"), plain));
+        return Ok(hash + "\n");
+    }
     show_once.push((format!("{module}: {what_clean}"), plain.clone()));
     if what.to_lowercase().contains("oidc") {
         // The provider side wants a one-way digest of the same value.
@@ -351,6 +359,34 @@ pub fn write_private(path: &std::path::Path, content: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Authelia protects every vhost, so a password the machine mints and
+    /// keeps to itself locks the admin out of the thing meant to let them
+    /// in. The file must hold only a hash, and the password must come back
+    /// to be shown once.
+    #[test]
+    fn an_argon2_secret_writes_the_hash_and_shows_the_password() {
+        let mut show = Vec::new();
+        let mut minted = BTreeMap::new();
+        let keys = vec!["<argon2 hash of the admin's first password>".to_string()];
+        let content = generate_content("authelia", &keys, &mut show, &mut minted).expect("minted");
+        assert!(content.starts_with("$argon2"), "the file holds a hash, got: {content}");
+        assert_eq!(show.len(), 1, "the password is shown once");
+        let (label, password) = &show[0];
+        assert!(label.contains("authelia"), "labelled: {label}");
+        assert!(!password.is_empty());
+        assert!(!content.contains(password.as_str()), "the plaintext must not be in the file");
+    }
+
+    #[test]
+    fn a_plain_single_value_secret_still_holds_the_value() {
+        let mut show = Vec::new();
+        let mut minted = BTreeMap::new();
+        let keys = vec!["<passphrase>".to_string()];
+        let content = generate_content("backup", &keys, &mut show, &mut minted).expect("minted");
+        assert_eq!(show.len(), 1);
+        assert_eq!(content.trim(), show[0].1, "restic needs the passphrase itself, not a hash");
+    }
 
     #[test]
     fn secret_names_are_stable_kebab() {
