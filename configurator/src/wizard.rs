@@ -482,12 +482,21 @@ impl Wizard {
                 if let Some(c) = v["pairing"].as_str() {
                     self.pairing = c.to_string();
                 }
+                if let Some(list) = v["skipped"].as_array() {
+                    let skipped: Vec<String> = list.iter().filter_map(|s| s.as_str().map(String::from)).collect();
+                    for r in &mut self.secrets {
+                        if skipped.contains(&r.option) {
+                            r.skipped = true;
+                        }
+                    }
+                }
             }
         }
     }
 
-    fn save_session(&self) {
-        let _ = std::fs::write(self.session_path(), json!({ "pairing": self.pairing }).to_string());
+    pub fn save_session(&self) {
+        let skipped: Vec<&str> = self.secrets.iter().filter(|r| r.skipped).map(|r| r.option.as_str()).collect();
+        let _ = std::fs::write(self.session_path(), json!({ "pairing": self.pairing, "skipped": skipped }).to_string());
     }
 
     /// Ask the mirror what the newest installer is. Cheap: one small request.
@@ -1005,6 +1014,8 @@ impl Wizard {
         row.saved = Some(file.clone());
         row.skipped = false;
         row.verified = verified;
+        self.save_session();
+        let row = &self.secrets[idx];
         match &row.verified {
             Some(Ok(m)) => Ok(m.clone()),
             Some(Err(m)) => Err(format!("saved, but NOT verified: {m}")),
@@ -1019,6 +1030,7 @@ impl Wizard {
         row.skipped = true;
         row.saved = None;
         row.verified = None;
+        self.save_session();
         let what = match option {
             "homelab.acme.credentialsFile" => "no certificates will be issued: every address will warn, or not answer at all, until you set the token on the installed machine (/root/homelab) and rebuild",
             "homelab.arrStack.vpnEnvFile" => "the download client stays off until the VPN account is set",
@@ -1247,13 +1259,15 @@ impl Wizard {
     pub fn state_json(&self) -> serde_json::Value {
         let (address, internet) = self.network();
         let (need, verdict, short) = self.memory();
+        // A password that came back as a hash has no text, but it is set: the
+        // box shows dots rather than looking empty. ONLY that one — a masked
+        // credential box must look empty until its own value is there, or a
+        // skipped Cloudflare token appears to be filled in.
         let kept_password = self.admin_hash.is_some();
         let field = |f: &Field| json!({
             "key": f.key, "label": f.label, "help": f.help,
             "value": if f.masked { String::new() } else { f.value.clone() },
-            // A password that came back as a hash has no text, but it is set:
-            // the box shows dots rather than looking empty.
-            "set": !f.value.is_empty() || (f.masked && kept_password),
+            "set": !f.value.is_empty() || (kept_password && (f.key == "password" || f.key == "password2")),
             "masked": f.masked, "other_ok": f.other_ok,
             "choices": f.choices.iter().map(|(v, l)| json!({ "value": v, "label": l })).collect::<Vec<_>>(),
         });
