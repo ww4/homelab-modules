@@ -383,6 +383,9 @@ pub struct SecretRow {
     pub option_fields: Vec<String>,
     pub title: String,
     pub steps: String,
+    /// A page that walks this through in full, for someone who has never
+    /// seen the other company's web interface.
+    pub walkthrough: Option<String>,
     /// One per variable; empty when the value is a path to a file the user has.
     pub fields: Vec<Field>,
     pub optional: Vec<bool>,
@@ -919,6 +922,7 @@ impl Wizard {
                 option_fields,
                 title: guide.as_ref().map(|g| g.title.to_string()).unwrap_or_else(|| option.clone()),
                 steps: guide.as_ref().map(|g| g.steps.to_string()).unwrap_or_else(|| format!("The file must carry: {}", keys.join(", "))),
+                walkthrough: guide.as_ref().and_then(|g| g.walkthrough).map(String::from),
                 path_only: fields.is_empty(),
                 option,
                 fields,
@@ -1574,7 +1578,7 @@ impl Wizard {
             "ssh": { "github_user": self.github_user.value, "keys": self.keys.iter().map(|k| json!({ "summary": key_summary(k), "full": k })).collect::<Vec<_>>() },
             "domain": self.domain.iter().map(&field).collect::<Vec<_>>(),
             "secrets": self.secrets.iter().map(|r| json!({
-                "option": r.option, "short": r.short(), "title": r.title, "steps": r.steps,
+                "option": r.option, "short": r.short(), "title": r.title, "steps": r.steps, "walkthrough": r.walkthrough,
                 "path_only": r.path_only, "path": r.path,
                 "fields": r.fields.iter().zip(&r.optional).map(|(f, opt)| {
                     let mut v = field(f);

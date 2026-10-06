@@ -860,7 +860,12 @@ impl Ui {
         let w = self.w.lock().unwrap();
         let Some(s) = w.secrets.get(i) else { return };
         let title = s.title.clone();
-        let steps = s.steps.clone();
+        // The console has no clipboard and no browser, so the address is
+        // printed to be typed on the phone in the reader's hand.
+        let steps = match &s.walkthrough {
+            Some(url) => format!("{}\n\nThe full walkthrough, with pictures: {url}", s.steps),
+            None => s.steps.clone(),
+        };
         let path_only = s.path_only;
         let rows: Vec<(String, String)> = if path_only {
             vec![("File on this machine".to_string(), if s.path.is_empty() { "—".into() } else { s.path.clone() })]

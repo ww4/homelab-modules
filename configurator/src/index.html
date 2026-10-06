@@ -396,6 +396,10 @@ const screens = {
       const card = el("div", { className: "card" }, [
         el("h3", { textContent: sec.title }),
         el("p", { className: "muted", style: "white-space:pre-wrap; font-size:.88rem", textContent: sec.steps }),
+        ...(sec.walkthrough ? [el("p", {}, [
+          el("a", { href: sec.walkthrough, target: "_blank", rel: "noreferrer", textContent: "Step-by-step walkthrough with screenshots" }),
+          el("span", { className: "muted", textContent: " (opens the guide site in a new tab)" }),
+        ])] : []),
       ]);
       if (sec.path_only) {
         card.append(row("File on the machine", el("input", {

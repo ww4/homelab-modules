@@ -10,7 +10,16 @@ use std::process::Command;
 pub struct Guide {
     pub title: &'static str,
     pub steps: &'static str,
+    /// A page on the guide site that walks the whole thing through, for
+    /// someone who has never seen the other company's web interface. The
+    /// steps above are the short version for someone who has.
+    pub walkthrough: Option<&'static str>,
 }
+
+// The walkthrough addresses below are published pages on the guide site, so
+// they are part of this installer's interface. A reader at the console types
+// one into a phone; a reader in the browser clicks it. Do not move a page
+// without moving the link, and check it answers before shipping a change.
 
 /// One variable inside a secret file: what to call it on screen, what it is,
 /// and whether to hide it while it is typed. A secret is a FORM, not one
@@ -112,6 +121,7 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
                     The box below takes just the token; it is saved as CLOUDFLARE_DNS_API_TOKEN=… and \
                     checked against your zone right away. ACME uses it for DNS-01 challenges; \
                     `homelab-configure dns` uses it later to create the A records.",
+            walkthrough: Some("https://ww4.github.io/imperfect-homelab/accounts/cloudflare-dns/"),
         }),
         "homelab.arrStack.vpnEnvFile" => {
             let provider = values.get("homelab.arrStack.vpnProvider").map(|s| s.trim().to_lowercase()).unwrap_or_default();
@@ -127,7 +137,7 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
                     (provider: {other})"),
             };
             let steps: &'static str = Box::leak(steps.replace("{other}", &provider).into_boxed_str());
-            Some(Guide { title, steps })
+            Some(Guide { title, steps, walkthrough: Some("https://ww4.github.io/imperfect-homelab/accounts/vpn/") })
         }
         "homelab.backup.remote.environmentFile" => Some(Guide {
             title: "Backblaze B2 credentials for the offsite restic repository",
@@ -135,10 +145,12 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
                     restricted to that bucket, read and write. Set homelab.backup.remote.repository to b2:<bucket-name>.\n\
                     Fill the two boxes below with the keyID and the applicationKey.\n\
                     Any restic backend works instead (S3, SFTP): then the variables are that backend's.",
+            walkthrough: None,
         }),
         "homelab.meshagent.mshFile" => Some(Guide {
             title: "MeshCentral agent identity",
             steps: "On your MeshCentral server: My Devices → Add Agent → Linux → download the .msh file for the device group. Point this at that file.",
+            walkthrough: None,
         }),
         _ => None,
     }
