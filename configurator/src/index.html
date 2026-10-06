@@ -101,6 +101,7 @@ async function call(action) {
   });
   if (r.status === 403) { askCode(); return; }
   state = await r.json();            // 409 answers with the state too, saying who holds it
+  noticeVersion(state);
   render(!!action);
 }
 
@@ -185,7 +186,7 @@ function choiceField(f, send) {
   return row(f.label, wrap, f.help);
 }
 
-let lastBody = "", lastStep = "", showingUpdate = false;
+let lastBody = "", lastStep = "", showingUpdate = false, bootVersion = null, updating = false;
 
 /* Name, address, version, where this came from — and the gear, which is the
    only way to replace the installer with a newer one mid-session. */
@@ -214,6 +215,18 @@ function colophon(s) {
 function renderUpdate(s) {
   const u = s.update;
   const box = document.getElementById("screen");
+  if (updating || (u && u.restarting)) {
+    updating = true;
+    document.getElementById("title").textContent = "Updating the installer";
+    document.getElementById("intro").textContent = "";
+    document.getElementById("back").style.display = "none";
+    box.replaceChildren(el("div", { className: "card" }, [
+      el("h3", { textContent: "Fetching and restarting" }),
+      el("p", { textContent: "The installer is being replaced with the newer one. This page reconnects by itself and comes back at the first screen, with your answers still in it." }),
+      el("p", { className: "muted", textContent: "A minute at most. Leave this page open." }),
+    ]));
+    return;
+  }
   document.getElementById("title").textContent = "Installer updates";
   document.getElementById("intro").textContent = "This installer updates itself from the project's binary cache. Your answers and any credentials you have saved are kept; the installer restarts and comes back at the first screen with everything filled in.";
   document.getElementById("back").style.display = "";
@@ -280,9 +293,13 @@ function render(force) {
   document.getElementById("go").style.display = "";
   if (showingUpdate) { renderUpdate(s); return; }
   const body = JSON.stringify([s.step, s.kits, s.disks, s.disk_fallback, s.profile, s.ssh, s.domain, s.secrets, s.values, s.modules, s.review, s.install, s.done]);
+  // Rebuilding destroys whatever the reader is in the middle of using, so a
+  // focused control holds the screen still — tabbing from one field to the
+  // next sends the first one, and that answer must not yank the second away.
   const active = document.activeElement;
   const busy = active && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName) && s.step === lastStep;
-  if (!force && (body === lastBody || busy)) return;
+  if (busy) return;
+  if (!force && body === lastBody) return;
   lastBody = body;
   lastStep = s.step;
   const box = document.getElementById("screen");
@@ -415,10 +432,25 @@ const screens = {
   done: (s) => [el("pre", { textContent: s.done.report.join("\n") })],
 };
 
+/* The relaunched installer answers on the same port with the same code: when
+   the version changes, the update is done. */
+function noticeVersion(s) {
+  if (!s || !s.version) return;
+  if (bootVersion === null) { bootVersion = s.version; return; }
+  if (s.version !== bootVersion) {
+    bootVersion = s.version;
+    updating = false;
+    showingUpdate = false;
+    lastStep = "";
+    lastBody = "";
+    s.status = { message: "updated to installer " + s.version.slice(0, 7) + " — your answers came with it", error: false };
+  }
+}
+
 async function tick() {
   if (!code || needCode) return;   // the code screen is not synced with anything
-  if (!typing || (state && state.step === "install")) {
-    try { await call(null); } catch (e) { /* the machine may be rebooting */ }
+  if (!typing || (state && state.step === "install") || updating) {
+    try { await call(null); } catch (e) { /* restarting, or the machine is rebooting */ }
   }
   if (state && state.step === "install") {
     const log = document.getElementById("log");

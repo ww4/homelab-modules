@@ -348,10 +348,19 @@ fn run(cli: Cli) -> Result<i32> {
             if let Some(o) = &cli.options { prefix.push("--options".to_string()); prefix.push(o.display().to_string()); }
             let schema: &'static Schema = Box::leak(Box::new(schema));
             let mut wiz = wizard::Wizard::new(schema, &a.answers, &a.out, prefix, a.port);
+            // The same start as `tui`: a profile, or the answers already in
+            // this directory, and the pairing code from a previous run.
             if let Some(p) = &a.profile {
                 let text = std::fs::read_to_string(p)?;
                 wiz.load(&serde_json::from_str(&text)?);
+            } else if a.answers.exists() {
+                if let Ok(text) = std::fs::read_to_string(&a.answers) {
+                    if let Ok(prev) = serde_json::from_str(&text) {
+                        wiz.load(&prev);
+                    }
+                }
             }
+            wiz.restore_session();
             wiz.watch_network();
             let port = wiz.web_port;
             let code = wiz.pairing.clone();

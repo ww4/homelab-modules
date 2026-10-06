@@ -260,9 +260,13 @@ pub fn kits() -> Vec<Kit> {
         Kit { name: "Media box", blurb: "The Starter plus the whole media pipeline: *arr apps behind a VPN, audiobooks, music, a disk pool with parity.", modules: profile(include_str!("../profiles/media-box.json")) },
         Kit { name: "Docs and forge", blurb: "Documents, photos, notes, passwords, a git forge, single sign-on: the office half.", modules: profile(include_str!("../profiles/docs-forge.json")) },
         Kit { name: "Everything", blurb: "Every module in the library. Needs a domain, a VPN account, a Backblaze account and a few disks.", modules: profile(include_str!("../profiles/everything.json")) },
-        Kit { name: "Blank", blurb: "Nothing chosen but the foundation. Pick modules yourself on the Modules screen.", modules: vec![] },
+        Kit { name: "Minimal", blurb: "Just the foundation: a machine that boots and is yours, serving nothing yet.", modules: vec![] },
+        Kit { name: "Custom", blurb: "Whatever you tick on the Modules screen. Picking this changes nothing; it is what the kit says when your list matches none of the above.", modules: vec![CUSTOM.to_string()] },
     ]
 }
+
+/// The marker of the kit that is not a list: "whatever is ticked".
+pub const CUSTOM: &str = "__custom";
 
 pub struct ModuleRow {
     pub name: String,
@@ -590,18 +594,10 @@ impl Wizard {
             self.disk_fallback.value = a.host.disk.clone();
         }
         let chosen: std::collections::BTreeSet<&str> = a.modules.iter().map(|s| s.as_str()).collect();
-        self.kit = self.kits.len() - 1;
-        for (i, k) in self.kits.iter().enumerate() {
-            let set: std::collections::BTreeSet<&str> = k.modules.iter().map(|s| s.as_str()).collect();
-            if !set.is_empty() && set == chosen {
-                self.kit = i;
-            }
-        }
         for m in &mut self.modules {
-            if chosen.contains(m.name.as_str()) {
-                m.chosen = true;
-            }
+            m.chosen = m.locked || chosen.contains(m.name.as_str());
         }
+        self.kit = self.chosen_kit();
         self.refresh_secrets();
     }
 
@@ -609,12 +605,32 @@ impl Wizard {
 
     pub fn apply_kit(&mut self) {
         let wanted = self.kits[self.kit].modules.clone();
+        if wanted.iter().any(|m| m == CUSTOM) {
+            return; // Custom is a description of the list, not a list.
+        }
         for m in &mut self.modules {
             if !m.locked {
                 m.chosen = wanted.contains(&m.name);
             }
         }
         self.refresh_secrets();
+    }
+
+    /// Which kit the ticked modules amount to, ignoring the foundation that
+    /// every install has: the honest answer after a reload, a relaunch, or a
+    /// visit to the Modules screen. Custom when it matches none.
+    pub fn chosen_kit(&self) -> usize {
+        let mine: std::collections::BTreeSet<&str> = self.modules.iter().filter(|m| m.chosen && !m.locked).map(|m| m.name.as_str()).collect();
+        for (i, k) in self.kits.iter().enumerate() {
+            if k.modules.iter().any(|m| m == CUSTOM) {
+                continue;
+            }
+            let theirs: std::collections::BTreeSet<&str> = k.modules.iter().map(|s| s.as_str()).filter(|n| !FOUNDATION_ALWAYS.contains(n)).collect();
+            if theirs == mine {
+                return i;
+            }
+        }
+        self.kits.len() - 1
     }
 
     pub fn set_kit(&mut self, i: usize) {
@@ -1231,10 +1247,14 @@ impl Wizard {
     pub fn state_json(&self) -> serde_json::Value {
         let (address, internet) = self.network();
         let (need, verdict, short) = self.memory();
+        let kept_password = self.admin_hash.is_some();
         let field = |f: &Field| json!({
             "key": f.key, "label": f.label, "help": f.help,
             "value": if f.masked { String::new() } else { f.value.clone() },
-            "set": !f.value.is_empty(), "masked": f.masked, "other_ok": f.other_ok,
+            // A password that came back as a hash has no text, but it is set:
+            // the box shows dots rather than looking empty.
+            "set": !f.value.is_empty() || (f.masked && kept_password),
+            "masked": f.masked, "other_ok": f.other_ok,
             "choices": f.choices.iter().map(|(v, l)| json!({ "value": v, "label": l })).collect::<Vec<_>>(),
         });
         json!({
@@ -1252,10 +1272,19 @@ impl Wizard {
                 "disks": self.disks.len(),
             },
             "memory": { "need_mib": need, "verdict": verdict, "short": short },
+            "kit": self.chosen_kit(),
             "kits": self.kits.iter().enumerate().map(|(i, k)| {
                 let closed = self.schema.close_over_requires(&k.modules).map(|(m, _)| m).unwrap_or_else(|_| k.modules.clone());
                 let n = crate::plan::memory_need(self.schema, &closed);
-                json!({ "name": k.name, "blurb": k.blurb, "need_gb": (n + 511) / 1024, "fits": self.ram_mib == 0 || n <= self.ram_mib, "chosen": i == self.kit, "modules": k.modules })
+                let custom = k.modules.iter().any(|m| m == CUSTOM);
+                let need = if custom { crate::plan::memory_need(self.schema, &self.closed()) } else { n };
+                json!({
+                    "name": k.name, "blurb": k.blurb,
+                    "need_gb": (need + 511) / 1024,
+                    "fits": self.ram_mib == 0 || need <= self.ram_mib,
+                    "chosen": i == self.chosen_kit(),
+                    "modules": if custom { self.closed() } else { k.modules.clone() },
+                })
             }).collect::<Vec<_>>(),
             "disks": self.disks.iter().zip(&self.roles).map(|(d, r)| json!({
                 "id": d.id.display().to_string(), "kernel": d.kernel, "size": d.size_human(),
@@ -1293,7 +1322,7 @@ impl Wizard {
             "done": { "report": self.done_tail(24) },
             "web": { "port": self.web_port, "code": self.pairing, "seen": self.web_seen },
             "version": Self::version(),
-            "update": self.update.as_ref().map(|(sha, newer)| json!({ "newest": sha, "newer": newer })),
+            "update": self.update.as_ref().map(|(sha, newer)| json!({ "newest": sha, "newer": newer, "restarting": self.relaunch.is_some() })),
         })
     }
 }
@@ -1464,6 +1493,27 @@ mod tests {
 
     /// Walking a second disk to `data` must not take SYSTEM off the first
     /// on the way past it.
+    /// The Kit screen must say what the ticked modules amount to, not what
+    /// was clicked once: after a reload or an in-place update the answers
+    /// come back as a module list and nothing else.
+    #[test]
+    fn the_kit_is_derived_from_the_modules() {
+        let ks = kits();
+        let starter: std::collections::BTreeSet<&str> = ks[0].modules.iter().map(|s| s.as_str()).collect();
+        // The foundation is in every install and must not break the match.
+        let mut with_foundation = starter.clone();
+        for f in FOUNDATION_ALWAYS {
+            with_foundation.insert(f);
+        }
+        let without: std::collections::BTreeSet<&str> = with_foundation.iter().copied().filter(|n| !FOUNDATION_ALWAYS.contains(n)).collect();
+        assert_eq!(without, starter);
+        // Custom is last and is not a module list.
+        assert_eq!(ks.last().unwrap().name, "Custom");
+        assert!(ks.last().unwrap().modules.iter().any(|m| m == CUSTOM));
+        assert_eq!(ks[ks.len() - 2].name, "Minimal");
+        assert!(ks[ks.len() - 2].modules.is_empty());
+    }
+
     #[test]
     fn the_role_cycle_does_not_steal_the_system_disk() {
         // Nothing is the system disk yet: the first press offers it.
