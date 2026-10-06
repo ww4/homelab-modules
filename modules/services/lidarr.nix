@@ -30,7 +30,7 @@ in
   virtualisation.oci-containers.containers.lidarr = {
     image = "ghcr.io/linuxserver/lidarr:latest@sha256:2e4cdc7c8d5fa36915f446a29976ee01d3f9cc9722b8530a09121c76fbabef55";
     ports = [ "127.0.0.1:${toString port}:8686" ];
-    environment = { PUID = s.puid; PGID = s.pgid; TZ = config.time.timeZone; };
+    environment = { PUID = s.puid; PGID = s.pgid; TZ = (import ../lib/timezone.nix config); };
     volumes = [
       "/var/lib/lidarr:/config:rw"
       "${s.root}:/data:rw"

@@ -39,7 +39,7 @@
 
 let
   s = config.homelab.arrStack;
-  TZ = config.time.timeZone;
+  TZ = (import ../lib/timezone.nix config);
 
   # The unified /data tree gives Sonarr/Radarr/qBittorrent matching paths
   # for hardlinks.

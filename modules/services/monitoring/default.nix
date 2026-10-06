@@ -145,7 +145,7 @@ in
             name = "nights";
             time_intervals = [{
               times = nightTimes;
-              location = config.time.timeZone;
+              location = (import ../../lib/timezone.nix config);
             }];
           }];
         };
@@ -278,7 +278,7 @@ in
               name = "nights";
               time_intervals = [{
                 times = nightTimes;
-                location = config.time.timeZone;
+                location = (import ../../lib/timezone.nix config);
               }];
             }];
           };

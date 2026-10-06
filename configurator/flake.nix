@@ -91,6 +91,41 @@
       # own (development builds outside nix read this via HOMELAB_OPTIONS_JSON).
       optionsJson = lib.genAttrs systems optionsJson;
 
+      # ── what `nix flake check` actually enforces ──────────────────────
+      #
+      # The repository used to claim that `nix flake check` enforced catalog
+      # completeness. It did not: the integrity test lives in the library's
+      # `catalog` output, and `flake check` printed "unknown flake output
+      # 'catalog'" and passed. A promise nothing executes is not a promise.
+      checks = forAll (system: pkgs: {
+        # Forces the catalog's integrity throw: a module without an entry, an
+        # entry without a module, or an entry without an integer `memory`.
+        catalog = pkgs.writeText "catalog.json" (builtins.toJSON library.catalog);
+
+        # The configurator builds and its unit tests run (buildRustPackage
+        # runs `cargo test` in its check phase).
+        configurator = self.packages.${system}.homelab-configure;
+
+        # The option documentation the configurator is built from evaluates.
+        options = pkgs.writeText "options.json" (optionsJson system);
+
+        # Every module, enabled, with values a real machine would have. This
+        # is the check that catches a module which is only broken once an
+        # option is SET: shellcheck runs when writeShellApplication builds.
+        modules = (lib.nixosSystem {
+          inherit system;
+          modules = builtins.attrValues library.nixosModules
+            ++ [ ../checks/every-module.nix { nixpkgs.hostPlatform = system; } ];
+        }).config.system.build.toplevel;
+
+        # No personal names, hosts, domains or addresses in the public tree.
+        leak-scan = pkgs.runCommand "leak-scan" { nativeBuildInputs = [ pkgs.bash pkgs.ugrep pkgs.gnugrep pkgs.coreutils pkgs.findutils ]; } ''
+          cp -r ${../.} src && chmod -R u+w src && cd src
+          bash tools/leak-scan.sh
+          touch $out
+        '';
+      });
+
       devShells = forAll (system: pkgs: {
         default = pkgs.mkShell {
           packages = [ pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.clippy pkgs.sops pkgs.age pkgs.ssh-to-age pkgs.openssh pkgs.authelia pkgs.mkpasswd ];

@@ -48,7 +48,13 @@ let
         echo "mirror_drift_last_run_seconds $now"
       } > "$tmp"
 
-      for pair in ${lib.escapeShellArgs pairArgs}; do
+      # An ARRAY, not a bare word list. With exactly one pair the expansion
+      # is a single quoted literal, which shellcheck rejects (SC2041) and
+      # writeShellApplication turns into a build failure — so the module
+      # built with two pairs configured and failed with one. The same shape
+      # bit pool-autoremount on a one-member pool.
+      pairs=(${lib.escapeShellArgs pairArgs})
+      for pair in "''${pairs[@]}"; do
         IFS='|' read -r name src mirror branch <<< "$pair"
 
         s=$(timeout 30 git ls-remote "$src" "refs/heads/$branch" 2>/dev/null | awk '{print $1}' || true)

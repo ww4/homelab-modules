@@ -94,7 +94,7 @@ in
   virtualisation.oci-containers.containers.decluttarr = {
     image = "ghcr.io/manimatter/decluttarr:latest@sha256:c06d48426b612b845f2406c2d045f266468a6390faf87aea796d497a2935ec95";
     environment = {
-      TZ = config.time.timeZone;
+      TZ = (import ../lib/timezone.nix config);
       IN_DOCKER = "true";
     };
     environmentFiles = [ config.homelab.decluttarr.envFile ];

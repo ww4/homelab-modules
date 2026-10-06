@@ -44,7 +44,7 @@ in
     image = "golift/unpackerr:latest@sha256:4ec141eeb0cb2f971d7c92f21cc40b0d2d50d7920eb7a0557443cca52270c0b0";
 
     environment = {
-      TZ = config.time.timeZone;
+      TZ = (import ../lib/timezone.nix config);
 
       UN_SONARR_0_URL       = "http://sonarr:8989";
       UN_SONARR_0_PATHS_0   = "/data/downloads";

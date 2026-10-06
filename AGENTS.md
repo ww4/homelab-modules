@@ -14,9 +14,25 @@ is the question set.
 - A module reads site facts only through `homelab.*` options (`modules/options.nix`)
   and never names a host, a path from a particular machine, a person or a
   secret. `tools/leak-scan.sh` must pass before every push.
-- Every module needs an entry in `modules/catalog.nix` (`nix flake check`
-  refuses otherwise): description, enable mechanism, option prefixes,
-  `requires`, vhosts, secrets with their class (generate / supply).
+- Every module needs an entry in `modules/catalog.nix`: description, enable
+  mechanism, option prefixes, `requires`, vhosts, secrets with their class
+  (generate / supply), and an integer `memory`.
+- **`nix flake check ./configurator` is the command that enforces all of
+  this**, not `nix flake check` at the root. The checks live in the sub-flake
+  because the library itself deliberately has no inputs, and a check needs
+  nixpkgs. It asserts: catalog integrity, the configurator builds and its
+  tests pass, the option documentation evaluates, every module evaluates and
+  builds with values a real machine would have (`checks/every-module.nix`),
+  and the leak scan passes. The same command runs on the public mirror after
+  every merge, in `.github/workflows/checks.yml`.
+- ⚠️ **Give the check fixture real values, not defaults.** Several modules
+  interpolate an option into a shell program, and `writeShellApplication`
+  runs shellcheck, so a module can be correct with the default and broken the
+  moment the option is set. Three such bugs were in the tree at once while
+  the old root-level `nix flake check` passed: a repo URL that made an
+  always-false test, a drift watcher that only built with two or more pairs
+  configured, and nine modules that failed to evaluate on a machine with no
+  time zone.
 - Secrets are paths: a `homelab.*File` option, the header says what the file
   must carry, the catalog says who can mint it. Never `config.sops.secrets.<name>`.
 - Prove a change against a real consumer: build the reference machine with

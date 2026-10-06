@@ -1,0 +1,40 @@
+# What a stranger can see being enforced.
+#
+# Pull requests live on a private forge, so this runs after a merge rather
+# than gating one. It is still the thing that makes the repository's promises
+# checkable by somebody who does not trust the author: anyone can read what
+# ran and what it asserted.
+#
+# The checks themselves live in the flake (`configurator/flake.nix`), not
+# here, so the same command a reader runs locally is the one that runs here.
+name: checks
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  flake-check:
+    runs-on: ubuntu-latest
+    steps:
+      # One of the checks builds a whole NixOS system with every module
+      # turned on, which does not fit beside the runner's preinstalled
+      # toolchains.
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "${AGENT_TOOLSDIRECTORY:-}" || true
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Catalog integrity, the configurator and its tests, the option
+      # documentation, every module with real values, and the leak scan.
+      - name: nix flake check
+        run: nix flake check ./configurator --print-build-logs
