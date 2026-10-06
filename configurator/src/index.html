@@ -248,9 +248,11 @@ function renderUpdate(s) {
         el("dt", { textContent: "Commit" }), el("dd", { textContent: u.newest }),
         el("dt", { textContent: "Built as" }), el("dd", { textContent: u.store_path || "unknown" }),
         el("dt", { textContent: "Published" }), el("dd", { textContent: u.published || "unknown" }),
-        el("dt", { textContent: "Accepted only if signed by" }), el("dd", { textContent: u.key }),
+        el("dt", { textContent: "Signed by" }), el("dd", { textContent: u.key_name }),
+        el("dt", { textContent: "This machine trusts" }), el("dd", { textContent: (u.trusted_keys && u.trusted_keys.length) ? u.trusted_keys.join("  ") : "could not be read, so nothing can be said about what will be accepted" }),
       ]),
-      el("p", { className: "muted", textContent: "The build is fetched from the project's binary cache and its signature is checked against that key, which is baked into this installer. A build the key does not sign is refused, whatever the cache serves." }),
+      el("p", { className: "muted", textContent: "That exact revision is built, not whatever the branch points at now, and the result must be the store path above or the update stops. Nix checks the signature against the keys listed here and refuses a build none of them signed." }),
+      ...((u.trusted_keys || []).some(k => k.startsWith(u.key_name + ":")) ? [] : [el("p", { className: "bad", textContent: "This machine does not list the project's key among the ones it trusts, so an update cannot be taken from the cache. It would have to be built here from source, which takes far longer. The installer image carries the key; a machine configured by hand may not." })]),
     ])] : []),
     el("div", { className: "row" }, [
       el("button", { textContent: "Check for updates", onclick: () => call({ do: "check_update" }) }),

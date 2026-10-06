@@ -445,14 +445,48 @@ pub struct Update {
     pub published: Option<String>,
 }
 
-/// The only key this installer accepts a cached build from. Shown before an
-/// update, because "it is signed" means nothing without saying by whom.
-pub const CACHE_KEY: &str = "homelab-installer-1";
+/// The name of the key the project signs installer builds with. This is a
+/// LABEL, not a key and not the verification: Nix does the verifying, against
+/// the `trusted-public-keys` baked into the image, and refuses a substitute
+/// that no trusted key signed. `trusted_keys()` reads what is actually in
+/// force so the screen shows the machine's own setting rather than this
+/// string's good intentions.
+pub const CACHE_KEY_NAME: &str = "homelab-installer-1";
+
+/// The public keys this machine's Nix will accept a substitute from, as it is
+/// configured right now. Empty if it cannot be read, which is itself worth
+/// showing: it means nothing can be said about what will be trusted.
+pub fn trusted_keys() -> Vec<String> {
+    let out = match Command::new("nix").args(["config", "show", "trusted-public-keys"]).output() {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
 
 /// Two revisions, one of which may be abbreviated.
 pub fn same_rev(a: &str, b: &str) -> bool {
     let n = a.len().min(b.len()).min(40);
     n >= 7 && a[..n].eq_ignore_ascii_case(&b[..n])
+}
+
+/// The build must be the one the publisher named. The cache marker carries
+/// the store path it published; the pinned revision must evaluate to exactly
+/// that. If the two ever disagree, the chain between the publisher and this
+/// machine has a link in it that nobody intended, and the right move is to
+/// stop rather than to run it.
+pub fn promised_matches(built: &str, promised: Option<&str>, rev: &str) -> Result<(), String> {
+    match promised {
+        None => Ok(()),
+        Some(p) if p == built => Ok(()),
+        Some(p) => Err(format!(
+            "refusing this update: the cache says {rev} is {p}, and that revision builds {built}. Something between the publisher and this machine does not agree."
+        )),
+    }
 }
 
 /// Why a `nix build --max-jobs 0` failed, in a sentence a reader can act on.
@@ -730,26 +764,44 @@ impl Wizard {
         let answers = self.answers();
         std::fs::write(&self.out_answers, serde_json::to_string_pretty(&answers).map_err(|e| e.to_string())? + "\n").map_err(|e| e.to_string())?;
         self.save_session();
+        // ⚠️ BUILD THE REVISION WE NAMED, NOT WHATEVER `main` IS NOW.
+        //
+        // This used to build `github:ww4/homelab-modules?dir=configurator`,
+        // which resolves to the branch head at the moment the button is
+        // pressed. The check that ran a minute earlier reported a particular
+        // revision, so the screen could say one thing and the machine install
+        // another. Pinning the reference closes that, and makes the cache
+        // marker's `store_path` useful: the pinned reference must evaluate to
+        // exactly the path the publisher said it would.
+        let u = self.update.as_ref().ok_or("check for an update first")?;
+        let rev = u.newest.clone();
+        let promised = u.store_path.clone();
+        if rev.len() < 7 {
+            return Err("the cache marker names no usable revision".into());
+        }
+        let flake = format!("github:ww4/homelab-modules/{rev}?dir=configurator#default");
         let out = Command::new("nix")
-            .args([
-                "build",
-                "--refresh",
-                "--no-write-lock-file",
-                "--max-jobs",
-                "0",
-                "--no-link",
-                "--print-out-paths",
-                "github:ww4/homelab-modules?dir=configurator#default",
-            ])
+            .args(["build", "--no-write-lock-file", "--max-jobs", "0", "--no-link", "--print-out-paths", &flake])
             .output()
             .map_err(|e| format!("could not run nix: {e}"))?;
         if !out.status.success() {
             return Err(fetch_failure(&String::from_utf8_lossy(&out.stderr)));
         }
         let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        promised_matches(&path, promised.as_deref(), &rev)?;
         let exe = format!("{path}/bin/homelab-configure");
         if !Path::new(&exe).exists() {
             return Err(format!("{exe}: not there after the fetch"));
+        }
+        // And ask the program itself, before handing the session to it.
+        match Command::new(&exe).arg("revision").output() {
+            Ok(o) if o.status.success() => {
+                let said = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if !same_rev(&said, &rev) {
+                    return Err(format!("refusing this update: it was fetched as {rev} and reports itself as {said}"));
+                }
+            }
+            _ => return Err("refusing this update: the fetched installer could not say which revision it is".into()),
         }
         Ok(exe)
     }
@@ -1625,7 +1677,8 @@ impl Wizard {
             "pin_tries_left": self.install_pin.as_ref().map(|_| 3 - self.pin_failures),
             "update": self.update.as_ref().map(|u| json!({
                 "newest": u.newest, "newer": u.newer, "pending": u.pending,
-                "store_path": u.store_path, "published": u.published, "key": CACHE_KEY,
+                "store_path": u.store_path, "published": u.published,
+                "key_name": CACHE_KEY_NAME, "trusted_keys": trusted_keys(),
                 "restarting": self.relaunch.is_some(),
             })),
         })
@@ -1883,6 +1936,19 @@ mod tests {
         let mine: std::collections::BTreeSet<&str> = kits[i].modules.iter().map(|s| s.as_str()).collect();
         let auto: std::collections::BTreeSet<&str> = ["mergerfs-pools"].into_iter().collect();
         assert_eq!(kit_for(&mine, &auto, &kits), i);
+    }
+
+    /// The second audit's finding: the updater reported one revision and
+    /// built whatever the branch pointed at. The marker's store path is the
+    /// cheap way to prove the two agree.
+    #[test]
+    fn an_update_that_is_not_what_was_promised_is_refused() {
+        let built = "/nix/store/aaaa-homelab-configure-0.1.0";
+        assert!(promised_matches(built, Some(built), "abc1234").is_ok());
+        assert!(promised_matches(built, None, "abc1234").is_ok(), "an older marker without a path cannot be checked");
+        let e = promised_matches(built, Some("/nix/store/bbbb-homelab-configure-0.1.0"), "abc1234").unwrap_err();
+        assert!(e.contains("refusing this update"), "got: {e}");
+        assert!(e.contains("abc1234") && e.contains("bbbb") && e.contains("aaaa"), "it says all three: {e}");
     }
 
     #[test]

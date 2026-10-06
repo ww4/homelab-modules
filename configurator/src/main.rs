@@ -64,6 +64,12 @@ enum Cmd {
     Dns(DnsArgs),
     /// Install a generated flake onto THIS machine (from a live USB): disko, nixos-install, host key, and the flake carried onto the new system.
     Install(InstallArgs),
+    /// Print the library commit this binary was built from, and nothing else.
+    ///
+    /// The updater runs this on a build it has just fetched, before handing
+    /// the session over to it, so "the installer says it is revision A" is a
+    /// statement about the program that will actually run.
+    Revision,
 }
 
 #[derive(Args)]
@@ -389,6 +395,10 @@ fn run(cli: Cli) -> Result<i32> {
             } else {
                 print!("{}", r.render_text());
             }
+            Ok(0)
+        }
+        Cmd::Revision => {
+            println!("{}", wizard::Wizard::version());
             Ok(0)
         }
         Cmd::Install(a) => {
