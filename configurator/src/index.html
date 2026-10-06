@@ -86,6 +86,7 @@
   <span id="status"></span>
 </div></footer>
 
+<script src="/nacl.js"></script>
 <script>
 /* The code lives in the URL and nowhere else: entering it is a redirect, so
    this page always starts knowing whether it has one. */
@@ -207,6 +208,47 @@ function show(id, kids) {
 const setText = (id, text) => { const n = document.getElementById(id); if (n.textContent !== text) n.textContent = text; };
 const setProp = (node, k, v) => { if (node[k] !== v) node[k] = v; };
 const setDisplay = (node, v) => { if (node.style.display !== v) node.style.display = v; };
+
+/* ── keeping secrets off the wire ──────────────────────────────────────────
+   This page is served over plain HTTP, so a Cloudflare token typed into the
+   form would otherwise be readable by anyone watching the network. A
+   certificate would fix that and cost every reader a browser warning to click
+   through, which is a bad habit to teach somebody installing their first
+   server. So secret values are sealed to a key this installer made when it
+   started, and only the ciphertext is posted.
+
+   The browser will not lend us its own cryptography here: on a plain-HTTP
+   page `crypto.subtle` is undefined, because the page is not a secure
+   context. `crypto.getRandomValues` does work, and TweetNaCl uses it. */
+const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+const unhex = (h) => Uint8Array.from(h.match(/../g) || [], (x) => parseInt(x, 16));
+
+async function sealValue(v) {
+  const pk = state && state.sealing && state.sealing.public_key;
+  if (!pk) throw new Error("this installer offered no key to seal to");
+  if (!window.nacl) throw new Error("the page's cryptography did not load");
+  const eph = nacl.box.keyPair();
+  const nonce = nacl.randomBytes(24);
+  const ct = nacl.box(new TextEncoder().encode(v), nonce, unhex(pk), eph.secretKey);
+  if (!ct) throw new Error("sealing failed");
+  return { epk: hex(eph.publicKey), nonce: hex(nonce), ct: hex(ct) };
+}
+
+/* An action carrying a value. A secret one goes sealed; if sealing is somehow
+   impossible the value is still sent, because an installer that refuses a
+   token is worse than one that warns, and the machine records that it arrived
+   readable and says so on the Review screen. */
+async function withValue(base, v, secret) {
+  if (secret && v) {
+    try {
+      return { ...base, sealed: await sealValue(v) };
+    } catch (e) {
+      setText("status", "could not seal this value, so it crossed the network readable: " + e.message);
+      document.getElementById("status").className = "bad";
+    }
+  }
+  return { ...base, value: v };
+}
 
 async function call(action) {
   const r = await fetch(action ? "/api/action?code=" + code : "/api/state?code=" + code, {
@@ -501,7 +543,7 @@ const screens = {
     });
   },
 
-  profile: (s) => s.profile.map((f) => textField(f, (v) => call({ do: "set_profile", key: f.key, value: v }))),
+  profile: (s) => s.profile.map((f) => textField(f, async (v) => call(await withValue({ do: "set_profile", key: f.key }, v, f.masked)))),
 
   ssh: (s) => {
     // Both boxes are read by id when the button is pressed: the nodes this
@@ -528,7 +570,7 @@ const screens = {
   },
 
   domain: (s) => {
-    const out = s.domain.map((f) => textField(f, (v) => call({ do: "set_domain", key: f.key, value: v })));
+    const out = s.domain.map((f) => textField(f, async (v) => call(await withValue({ do: "set_domain", key: f.key }, v, f.masked))));
     for (const sec of s.secrets) {
       const card = el("div", { key: sec.option, className: "card" }, [
         el("h3", { key: "title", textContent: sec.title }),
@@ -536,6 +578,13 @@ const screens = {
         ...(sec.walkthrough ? [el("p", { key: "walk" }, [
           el("a", { href: sec.walkthrough, target: "_blank", rel: "noreferrer", textContent: "Step-by-step walkthrough with screenshots" }),
           el("span", { className: "muted", textContent: " (opens the guide site in a new tab)" }),
+        ])] : []),
+        // The same fingerprint is on the machine's own screen. Comparing them
+        // is what catches somebody sitting between this page and the machine.
+        ...(s.sealing ? [el("p", { key: "seal", className: "muted" }, [
+          el("span", { textContent: "Sealed to this machine before it leaves your browser. Key " }),
+          el("b", { textContent: s.sealing.fingerprint }),
+          el("span", { textContent: ", which the machine's own screen shows too." }),
         ])] : []),
       ]);
       if (sec.path_only) {
@@ -545,7 +594,7 @@ const screens = {
         }), null, "__path"));
       } else {
         for (const f of sec.fields) {
-          card.append(textField(f, (v) => call({ do: "set_secret", option: sec.option, var: f.key, value: v })));
+          card.append(textField(f, async (v) => call(await withValue({ do: "set_secret", option: sec.option, var: f.key }, v, f.masked))));
         }
       }
       card.append(el("div", { key: "actions", className: "row" }, [
@@ -577,6 +626,8 @@ const screens = {
       el("dt", { textContent: "Kit" }), el("dd", { textContent: `${r.kit} · ${r.modules.length} modules` }),
       el("dt", { textContent: "Memory" }), el("dd", { className: s.memory.short ? "bad" : "ok", textContent: s.memory.verdict }),
       el("dt", { textContent: "SSH keys" }), el("dd", { textContent: r.keys.length ? r.keys.join("; ") : "none (console login only)" }),
+      ...(s.cleartext_secret_seen ? [el("dt", { textContent: "Warning" }),
+        el("dd", { className: "bad", textContent: "a secret reached this machine unsealed, so it crossed the network readable by anyone watching. Change it after the install if the network is not yours." })] : []),
       el("dt", { textContent: "Domain" }), el("dd", { textContent: r.domain || "—" }),
     ]);
     const cards = [el("div", { key: "plan", className: "card" }, [el("h3", { textContent: "What will be installed" }), d,

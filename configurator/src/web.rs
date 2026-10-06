@@ -50,6 +50,9 @@ impl Drop for Live {
 use crate::wizard::{is_local_peer, BadCode, Origin, Role, Step, Wizard};
 
 const INDEX: &str = include_str!("index.html");
+/// The page's cryptography, served separately so `index.html` stays readable.
+/// See the header of that file for why a library is needed at all.
+const NACL: &str = include_str!("tweetnacl.js");
 
 /// Start the server in the background. Failure to bind is not fatal: the
 /// console front end still works, and the Welcome screen simply has no URL
@@ -130,6 +133,7 @@ fn handle(mut stream: TcpStream, w: Arc<Mutex<Wizard>>) -> std::io::Result<()> {
 
     match (method.as_str(), path) {
         ("GET", "/") | ("GET", "/index.html") => reply(&mut stream, 200, "text/html; charset=utf-8", INDEX.as_bytes()),
+        ("GET", "/nacl.js") => reply(&mut stream, 200, "application/javascript; charset=utf-8", NACL.as_bytes()),
         ("GET", "/api/state") | ("POST", "/api/action") => {
             if w.lock().unwrap().is_locked_out(&peer) {
                 return reply(
