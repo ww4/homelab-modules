@@ -439,7 +439,15 @@ pub struct Update {
     pub newest: String,
     pub newer: bool,
     pub pending: Option<String>,
+    /// The store path the cache will serve and when it was published, so the
+    /// reader can see what is about to replace the program they are using.
+    pub store_path: Option<String>,
+    pub published: Option<String>,
 }
+
+/// The only key this installer accepts a cached build from. Shown before an
+/// update, because "it is signed" means nothing without saying by whom.
+pub const CACHE_KEY: &str = "homelab-installer-1";
 
 /// Two revisions, one of which may be abbreviated.
 pub fn same_rev(a: &str, b: &str) -> bool {
@@ -666,6 +674,8 @@ impl Wizard {
         }
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|_| "the installer cache returned something unexpected".to_string())?;
         let published = v["rev"].as_str().unwrap_or("").to_string();
+        let store_path = v["store_path"].as_str().map(String::from);
+        let published_at = v["published"].as_str().map(String::from);
         if published.is_empty() {
             return Err("the installer cache names no revision".into());
         }
@@ -676,12 +686,12 @@ impl Wizard {
 
         let mine = Self::version();
         if mine == "dirty" {
-            self.update = Some(Update { newest: published, newer: false, pending });
+            self.update = Some(Update { newest: published, newer: false, pending, store_path, published: published_at });
             return Ok("this installer was built from a work tree, so there is nothing to compare it with".into());
         }
         let newer = !same_rev(&published, &mine);
         let short = published[..7.min(published.len())].to_string();
-        self.update = Some(Update { newest: published, newer, pending: pending.clone() });
+        self.update = Some(Update { newest: published, newer, pending: pending.clone(), store_path, published: published_at });
         Ok(if newer {
             format!("a newer installer is available ({short})")
         } else if let Some(p) = pending {
@@ -1607,7 +1617,11 @@ impl Wizard {
             "version": Self::version(),
             "awaiting_pin": self.install_pin.is_some(),
             "pin_tries_left": self.install_pin.as_ref().map(|_| 3 - self.pin_failures),
-            "update": self.update.as_ref().map(|u| json!({ "newest": u.newest, "newer": u.newer, "pending": u.pending, "restarting": self.relaunch.is_some() })),
+            "update": self.update.as_ref().map(|u| json!({
+                "newest": u.newest, "newer": u.newer, "pending": u.pending,
+                "store_path": u.store_path, "published": u.published, "key": CACHE_KEY,
+                "restarting": self.relaunch.is_some(),
+            })),
         })
     }
 }

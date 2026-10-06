@@ -240,6 +240,18 @@ function renderUpdate(s) {
       el("dt", { textContent: "Newest" }), el("dd", { textContent: u ? u.newest.slice(0, 7) + (u.newer ? " — newer than this one" : " — the same") : "not checked yet" }),
     ]),
     ...(u && u.pending ? [el("p", { className: "muted", textContent: "A newer change (" + u.pending + ") has landed but is not in the cache yet. It is published a few minutes after it lands; check again shortly." })] : []),
+    // Say what is about to replace this program, before it does. "It is
+    // signed" means nothing without naming the key it is signed by.
+    ...(u && u.newer ? [el("div", { className: "card" }, [
+      el("h3", { textContent: "What this will trust" }),
+      el("dl", {}, [
+        el("dt", { textContent: "Commit" }), el("dd", { textContent: u.newest }),
+        el("dt", { textContent: "Built as" }), el("dd", { textContent: u.store_path || "unknown" }),
+        el("dt", { textContent: "Published" }), el("dd", { textContent: u.published || "unknown" }),
+        el("dt", { textContent: "Accepted only if signed by" }), el("dd", { textContent: u.key }),
+      ]),
+      el("p", { className: "muted", textContent: "The build is fetched from the project's binary cache and its signature is checked against that key, which is baked into this installer. A build the key does not sign is refused, whatever the cache serves." }),
+    ])] : []),
     el("div", { className: "row" }, [
       el("button", { textContent: "Check for updates", onclick: () => call({ do: "check_update" }) }),
       el("button", {

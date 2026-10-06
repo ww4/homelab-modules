@@ -76,7 +76,8 @@ let
             # `--max-jobs 0` cannot build what it cannot fetch. The marker is
             # written only once the closure is up.
             baked=${if rev == "" then "" else rev}
-            latest=$(curl -fsS --max-time 10 https://homelab-installer.nyc3.digitaloceanspaces.com/cache/latest-installer.json 2>/dev/null | jq -r .rev 2>/dev/null || true)
+            marker=$(curl -fsS --max-time 10 https://homelab-installer.nyc3.digitaloceanspaces.com/cache/latest-installer.json 2>/dev/null || true)
+            latest=$(echo "$marker" | jq -r .rev 2>/dev/null || true)
             if [ -z "$latest" ] || [ "$latest" = "null" ]; then
               echo "Could not check for a newer installer; starting the one on this stick."
               homelab-configure tui
@@ -84,7 +85,13 @@ let
               echo "This stick already has the current installer."
               homelab-configure tui
             else
-              echo "A newer installer is available; fetching it (about a minute)... Ctrl-C skips it."
+              # Say what is about to replace this program before replacing it.
+              echo "A newer installer is available."
+              echo "  commit:    $latest"
+              echo "  built as:  $(echo "$marker" | jq -r '.store_path // "unknown"')"
+              echo "  published: $(echo "$marker" | jq -r '.published // "unknown"')"
+              echo "  accepted only if signed by: homelab-installer-1"
+              echo "Fetching it (about a minute)... Ctrl-C skips it and uses the installer on this stick."
               if ! nix run --refresh --no-write-lock-file --max-jobs 0 'github:ww4/homelab-modules?dir=configurator' -- tui; then
                 echo "Could not fetch it; starting the installer on this stick."
                 homelab-configure tui
