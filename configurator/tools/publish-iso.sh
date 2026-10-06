@@ -10,9 +10,21 @@
 #
 # Needs: a GitHub token with Contents (releases) write on the repo, in
 # GH_TOKEN or the env file named by GH_TOKEN_FILE (default
-# ~/.config/ww4-bot/github-ww4-pat.env, variable GITHUB_BOT_TOKEN). The tag is
-# installer-<date>-<rev>, on the commit the ISO was built from, which the
-# mirror must already carry (it does within a minute of a merge).
+# ~/.config/ww4-bot/github-ww4-pat.env, variable GITHUB_BOT_TOKEN), and the
+# forge token for the mirror nudge.
+#
+# ⚠️ THE TAG MUST EXIST ON THE FORGE, NOT ONLY ON GITHUB. This is how both
+# earlier releases died. `gh release create --target <sha>` creates the tag on
+# GitHub. The public repository is a PUSH MIRROR of the forge, and a mirror
+# push PRUNES refs the forge does not have, so the next sync deleted the tag.
+# GitHub demotes a release whose tag has gone to a DRAFT, and a draft 404s for
+# everyone without write access, which is everyone the ISO is for. The two
+# releases published on 2026-10-05 were found in exactly that state, assets
+# intact and unreachable, with the site's download link dead the whole time.
+#
+# So the order is: tag on the forge, push it, make the mirror carry it, wait
+# until the public side really has it, and only then create the release
+# against a tag that already exists.
 set -euo pipefail
 repo=${GH_REPO:-ww4/homelab-modules}
 build=1
@@ -42,6 +54,29 @@ if [ "$build" = 0 ]; then
 fi
 
 tag="installer-$(date +%Y%m%d)-${rev}"
+
+# ── the tag, on the forge first ────────────────────────────────────────────
+if [ -z "${FORGEJO_BOT_TOKEN:-}" ] && [ -r "$HOME/.config/ww4-bot/forgejo-token.env" ]; then
+  FORGEJO_BOT_TOKEN=$(sed -n 's/^FORGEJO_BOT_TOKEN=//p' "$HOME/.config/ww4-bot/forgejo-token.env")
+fi
+git -C "$here" rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1 \
+  || git -C "$here" tag -a "$tag" -m "Installer $(date +%Y-%m-%d) ($rev)" "$full_rev"
+git -C "$here" push -q origin "refs/tags/$tag"
+# The forge's API base, derived from the remote so no host name lives here.
+origin_url=$(git -C "$here" remote get-url origin); origin_url=${origin_url%.git}
+forge_api=$(printf '%s\n' "$origin_url" | sed -E 's#^(https?://[^/]+)/([^/]+)/([^/]+)$#\1/api/v1/repos/\2/\3#')
+# Nudge the mirror rather than waiting out its interval.
+curl -fsS -X POST -H "Authorization: token ${FORGEJO_BOT_TOKEN:-}" "$forge_api/push_mirrors-sync" >/dev/null 2>&1 \
+  || echo "could not nudge the mirror; waiting for its own schedule" >&2
+echo "waiting for $tag to reach the public mirror..."
+for _ in $(seq 1 30); do
+  curl -fsS -o /dev/null "https://api.github.com/repos/$repo/git/ref/tags/$tag" && break
+  sleep 10
+done
+curl -fsS -o /dev/null "https://api.github.com/repos/$repo/git/ref/tags/$tag" || {
+  echo "the tag $tag has not reached the public mirror. A release made now would be pruned back to a draft, so stopping." >&2
+  exit 1
+}
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 # Constant asset names, so the /releases/latest/download/ redirect resolves.
 cp "$iso" "$work/homelab-installer.iso"
@@ -53,7 +88,9 @@ if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
   echo "release $tag exists; replacing its assets"
   gh release upload "$tag" --repo "$repo" --clobber "$work/homelab-installer.iso" "$work/homelab-installer.iso.sha256"
 else
-  gh release create "$tag" --repo "$repo" --target "$full_rev" --latest --title "Installer $(date +%Y-%m-%d) ($rev)" --notes "$notes" \
+  # --verify-tag, not --target: the tag is already on both sides, and this
+  # refuses to invent one if something above went wrong.
+  gh release create "$tag" --repo "$repo" --verify-tag --latest --title "Installer $(date +%Y-%m-%d) ($rev)" --notes "$notes" \
     "$work/homelab-installer.iso" "$work/homelab-installer.iso.sha256"
 fi
 # gh has left a release as a draft here (2026-10-05): a draft 404s for
@@ -62,6 +99,9 @@ fi
 gh release edit "$tag" --repo "$repo" --draft=false --latest >/dev/null
 code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.github.com/repos/$repo/releases/latest" -H 'Authorization:')
 [ "$code" = 200 ] || { echo "the release is not public (anonymous GET /releases/latest gave $code)" >&2; exit 1; }
+# And the thing a reader actually clicks, followed to the end, as a stranger.
+dl=$(curl -sS -o /dev/null -w '%{http_code}' -L "https://github.com/$repo/releases/latest/download/homelab-installer.iso" -H 'Authorization:')
+[ "$dl" = 200 ] || { echo "the download link is not public (anonymous GET gave $dl)" >&2; exit 1; }
 echo "published:"
 echo "  https://github.com/$repo/releases/tag/$tag"
 echo "  https://github.com/$repo/releases/latest/download/homelab-installer.iso   (redirects to the newest)"
