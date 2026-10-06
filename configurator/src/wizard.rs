@@ -265,6 +265,80 @@ pub fn kits() -> Vec<Kit> {
     ]
 }
 
+/// Letters and digits that cannot be confused with each other when read off
+/// a screen and typed on another machine: no O/0, no I/1/l, no S/5, no B/8,
+/// no Z/2. 8 characters of this is about 37 bits.
+const CODE_ALPHABET: &[u8] = b"ACDEFGHJKMNPQRTUVWXY34679";
+pub const CODE_LEN: usize = 8;
+
+/// A fresh pairing code. Rejecting a wrong one is cheap, so the length is
+/// what keeps a guesser out; the alphabet is what keeps a reader in.
+pub fn new_pairing_code() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..CODE_LEN).map(|_| CODE_ALPHABET[rng.gen_range(0..CODE_ALPHABET.len())] as char).collect()
+}
+
+/// The number the console shows when a browser asks to install.
+pub fn new_install_pin() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..6).map(|_| char::from(b'0' + rng.gen_range(0..10u8))).collect()
+}
+
+/// How the wizard was driven for one action. The browser is configuration
+/// authority; erasing disks additionally needs someone at the machine.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Origin {
+    Console,
+    Browser,
+}
+
+/// What to do about a wrong pairing code from this address.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BadCode {
+    /// Counted; carry on.
+    Counted,
+    /// Enough wrong answers that each further one is answered slowly.
+    SlowDown,
+    /// Out of tries. Only someone at the machine can clear it.
+    Locked,
+}
+
+/// After this many wrong codes every further attempt is answered slowly.
+pub const CODE_SLOW_AFTER: u32 = 3;
+/// After this many the address is refused until the console clears it.
+pub const CODE_LOCK_AFTER: u32 = 10;
+
+/// Whether an address is on a network this installer is willing to talk to.
+///
+/// The installer is a thing you run on a machine in front of you, on your own
+/// network, for an hour. Nothing outside that network has any business
+/// driving it, so the server refuses the packet rather than relying on a
+/// household router to have been configured correctly. Tailscale's range is
+/// included because the project treats a tailnet as the way in from
+/// elsewhere, and the installed system's reconfigure mode is reached that way.
+pub fn is_local_peer(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || (o[0] == 100 && (64..128).contains(&o[1])) // 100.64/10, the tailnet
+        }
+        std::net::IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_local_peer(&std::net::IpAddr::V4(v4));
+            }
+            let o = v6.octets();
+            v6.is_loopback()
+                || (o[0] & 0xfe) == 0xfc // fc00::/7, unique local
+                || (o[0] == 0xfe && (o[1] & 0xc0) == 0x80) // fe80::/10, link local
+        }
+    }
+}
+
 /// What the installer's binary cache says it can serve. Written by
 /// `tools/publish-cache.sh` after the closure is up and public, so anything
 /// named here is fetchable.
@@ -433,6 +507,16 @@ pub struct Wizard {
     pub auto_modules: std::collections::BTreeSet<String>,
     /// What a check for a newer installer found.
     pub update: Option<Update>,
+    /// The number the console is showing because a browser asked to install.
+    /// Never leaves this machine's screen: that is the whole point of it.
+    pub install_pin: Option<String>,
+    /// Wrong numbers typed into the browser for the current request.
+    pub pin_failures: u32,
+    /// Wrong pairing codes, per source address, and the addresses that have
+    /// run out of tries. Shared with the console so a person at the machine
+    /// can see an attempt and clear it.
+    pub code_failures: std::collections::BTreeMap<String, u32>,
+    pub locked_out: std::collections::BTreeSet<String>,
     /// Set when a newer installer has been fetched: the front end restores
     /// the terminal and hands the process over to it.
     pub relaunch: Option<String>,
@@ -493,17 +577,19 @@ impl Wizard {
             progress: None,
             install_report: Vec::new(),
             warned: false,
-            pairing: crate::secrets::random_token(16).to_uppercase().chars().filter(|c| c.is_ascii_alphanumeric()).take(6).collect(),
+            pairing: new_pairing_code(),
             web_port,
             web_seen: None,
             controller: None,
             auto_modules: Default::default(),
             update: None,
+            install_pin: None,
+            pin_failures: 0,
+            code_failures: Default::default(),
+            locked_out: Default::default(),
             relaunch: None,
         };
-        if w.pairing.len() < 6 {
-            w.pairing = format!("{:0>6}", w.pairing);
-        }
+
         w.apply_kit();
         w
     }
@@ -1164,6 +1250,14 @@ impl Wizard {
 
     /// The screen's checks. `Err(soft)` is a warning the next call accepts.
     pub fn advance(&mut self) -> Result<(), Blocked> {
+        self.advance_from(Origin::Console)
+    }
+
+    /// Continue, knowing which front end pressed it. Everything is the same
+    /// for both except the last screen: pressing Install in a browser asks
+    /// the console for a number first, so a browser alone can never erase a
+    /// disk. Someone at the console is already standing at the machine.
+    pub fn advance_from(&mut self, origin: Origin) -> Result<(), Blocked> {
         let soft = |w: &mut Wizard, msg: &str| -> Result<(), Blocked> {
             if w.warned {
                 w.warned = false;
@@ -1245,6 +1339,13 @@ impl Wizard {
                 }
             }
             Step::Review => {
+                if origin == Origin::Browser && self.live_usb {
+                    let pin = new_install_pin();
+                    self.pin_failures = 0;
+                    self.install_pin = Some(pin);
+                    self.say("the machine's own screen is showing a six-digit number: type it below to erase the disks and install", false);
+                    return Ok(());
+                }
                 self.start_install().map_err(|e| hard(&e))?;
                 return Ok(());
             }
@@ -1256,6 +1357,69 @@ impl Wizard {
         self.warned = false;
         self.status = None;
         Ok(())
+    }
+
+    /// A number typed into the browser. Right: the install starts. Wrong:
+    /// counted, and after three the request is thrown away so a guesser has
+    /// to get someone at the machine to press Install again.
+    pub fn confirm_install(&mut self, typed: &str) -> Result<(), String> {
+        let want = self.install_pin.clone().ok_or("nothing is waiting to be confirmed")?;
+        let typed: String = typed.chars().filter(|c| c.is_ascii_digit()).collect();
+        if typed == want {
+            self.install_pin = None;
+            self.pin_failures = 0;
+            return self.start_install();
+        }
+        self.pin_failures += 1;
+        if self.pin_failures >= 3 {
+            self.install_pin = None;
+            self.pin_failures = 0;
+            return Err("three wrong numbers: the request was cancelled. Press Install again to get a new one.".into());
+        }
+        Err(format!("that is not the number on the machine's screen ({} left)", 3 - self.pin_failures))
+    }
+
+    /// Someone at the machine refusing a browser's request to install.
+    pub fn refuse_install(&mut self) {
+        if self.install_pin.take().is_some() {
+            self.pin_failures = 0;
+            self.say("the request to install was refused at the machine", true);
+        }
+    }
+
+    /// A wrong pairing code from this address.
+    pub fn note_bad_code(&mut self, peer: &str) -> BadCode {
+        let n = self.code_failures.entry(peer.to_string()).or_insert(0);
+        *n += 1;
+        let n = *n;
+        if n >= CODE_LOCK_AFTER {
+            self.locked_out.insert(peer.to_string());
+            self.say(format!("{peer} has typed {n} wrong codes and is now refused; clear it here to let it try again"), true);
+            BadCode::Locked
+        } else if n >= CODE_SLOW_AFTER {
+            BadCode::SlowDown
+        } else {
+            BadCode::Counted
+        }
+    }
+
+    /// A right code: that address starts again from nothing.
+    pub fn note_good_code(&mut self, peer: &str) {
+        self.code_failures.remove(peer);
+    }
+
+    pub fn is_locked_out(&self, peer: &str) -> bool {
+        self.locked_out.contains(peer)
+    }
+
+    /// Someone at the machine letting a locked-out address try again.
+    pub fn clear_lockouts(&mut self) {
+        if self.locked_out.is_empty() {
+            return;
+        }
+        self.locked_out.clear();
+        self.code_failures.clear();
+        self.say("every refused address may try the code again", false);
     }
 
     pub fn back(&mut self) {
@@ -1437,6 +1601,8 @@ impl Wizard {
             "done": { "report": self.done_tail(24) },
             "web": { "port": self.web_port, "code": self.pairing, "seen": self.web_seen },
             "version": Self::version(),
+            "awaiting_pin": self.install_pin.is_some(),
+            "pin_tries_left": self.install_pin.as_ref().map(|_| 3 - self.pin_failures),
             "update": self.update.as_ref().map(|u| json!({ "newest": u.newest, "newer": u.newer, "pending": u.pending, "restarting": self.relaunch.is_some() })),
         })
     }
@@ -1724,6 +1890,95 @@ error: Cannot build '/nix/store/k48mnl-homelab-configure-0.1.0.drv'.
     fn another_failure_keeps_its_error_line() {
         let msg = fetch_failure("warning: something\nerror: unable to download: HTTP error 403\nsome trailing noise");
         assert!(msg.contains("HTTP error 403"), "got: {msg}");
+    }
+
+    #[test]
+    fn only_the_networks_this_thing_lives_on_may_speak_to_it() {
+        let yes = ["127.0.0.1", "10.0.0.5", "172.16.3.4", "172.31.255.254", "192.168.1.50", "169.254.7.1", "100.100.1.2", "::1", "fd00::1", "fe80::1", "::ffff:192.168.1.50"];
+        let no = ["8.8.8.8", "1.1.1.1", "172.32.0.1", "172.15.0.1", "203.0.113.9", "100.128.0.1", "100.63.255.255", "2606:4700::1", "::ffff:8.8.8.8"];
+        for a in yes {
+            assert!(is_local_peer(&a.parse().unwrap()), "{a} should be allowed");
+        }
+        for a in no {
+            assert!(!is_local_peer(&a.parse().unwrap()), "{a} should be refused");
+        }
+    }
+
+    #[test]
+    fn the_pairing_code_cannot_be_misread() {
+        let c = new_pairing_code();
+        assert_eq!(c.len(), CODE_LEN);
+        for ch in c.chars() {
+            assert!(CODE_ALPHABET.contains(&(ch as u8)), "{ch} is not in the alphabet");
+            assert!(!"O0I1LS5B8Z2".contains(ch), "{ch} is easy to misread");
+        }
+        // Two in a row being equal would mean it is not random at all.
+        assert_ne!(new_pairing_code(), new_pairing_code());
+    }
+
+    #[test]
+    fn wrong_codes_slow_down_and_then_stop() {
+        let mut w = test_wizard();
+        for i in 1..CODE_SLOW_AFTER {
+            assert_eq!(w.note_bad_code("192.168.1.9"), BadCode::Counted, "attempt {i}");
+        }
+        assert_eq!(w.note_bad_code("192.168.1.9"), BadCode::SlowDown);
+        for _ in CODE_SLOW_AFTER + 1..CODE_LOCK_AFTER {
+            assert_eq!(w.note_bad_code("192.168.1.9"), BadCode::SlowDown);
+        }
+        assert_eq!(w.note_bad_code("192.168.1.9"), BadCode::Locked);
+        assert!(w.is_locked_out("192.168.1.9"));
+        // One address's guessing does not shut anyone else out.
+        assert!(!w.is_locked_out("192.168.1.10"));
+        assert_eq!(w.note_bad_code("192.168.1.10"), BadCode::Counted);
+        // Only someone at the machine can undo it.
+        w.clear_lockouts();
+        assert!(!w.is_locked_out("192.168.1.9"));
+    }
+
+    #[test]
+    fn a_right_code_forgets_the_wrong_ones() {
+        let mut w = test_wizard();
+        w.note_bad_code("192.168.1.9");
+        w.note_bad_code("192.168.1.9");
+        w.note_good_code("192.168.1.9");
+        assert_eq!(w.note_bad_code("192.168.1.9"), BadCode::Counted);
+    }
+
+    /// The browser is configuration authority, not destructive authority:
+    /// pressing Install there asks the console for a number instead of
+    /// erasing anything.
+    #[test]
+    fn a_browser_alone_cannot_erase_a_disk() {
+        let mut w = test_wizard();
+        w.live_usb = true;
+        w.step = Step::Review;
+        assert!(w.advance_from(Origin::Browser).is_ok());
+        assert_eq!(w.step, Step::Review, "nothing started");
+        let pin = w.install_pin.clone().expect("the console is showing a number");
+        assert_eq!(pin.len(), 6);
+        assert!(pin.chars().all(|c| c.is_ascii_digit()));
+
+        assert!(w.confirm_install("000000").is_err() || pin == "000000");
+        assert!(w.confirm_install("111111").is_err() || pin == "111111");
+        // Three wrong numbers throw the request away rather than letting a
+        // guesser keep trying against a six-digit secret.
+        let _ = w.confirm_install("222222");
+        if !["000000", "111111", "222222"].contains(&pin.as_str()) {
+            assert!(w.install_pin.is_none(), "the request was cancelled");
+        }
+    }
+
+    #[test]
+    fn the_console_can_refuse_a_request_it_did_not_make() {
+        let mut w = test_wizard();
+        w.live_usb = true;
+        w.step = Step::Review;
+        assert!(w.advance_from(Origin::Browser).is_ok());
+        assert!(w.install_pin.is_some());
+        w.refuse_install();
+        assert!(w.install_pin.is_none());
+        assert!(w.confirm_install("123456").is_err(), "nothing is waiting any more");
     }
 
     #[test]

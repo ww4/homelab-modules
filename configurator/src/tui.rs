@@ -251,7 +251,21 @@ impl Ui {
             self.quit = true;
             return;
         }
+        // While a browser's request is on the screen, the only answers are
+        // "no" and walking away; everything else would move the form under
+        // the person who is about to confirm it.
+        if self.w.lock().unwrap().install_pin.is_some() {
+            if key.code == KeyCode::Esc {
+                self.w.lock().unwrap().refuse_install();
+                self.sync_rows();
+            }
+            return;
+        }
         if self.w.lock().unwrap().step == Step::Install {
+            return;
+        }
+        if matches!(key.code, KeyCode::Char('l') | KeyCode::Char('L')) && self.editing.is_none() && !self.w.lock().unwrap().locked_out.is_empty() {
+            self.w.lock().unwrap().clear_lockouts();
             return;
         }
         match key.code {
@@ -465,6 +479,21 @@ impl Ui {
         f.render_widget(Paragraph::new(title), outer[0]);
 
         let body = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(3), Constraint::Length(3)]).split(outer[1]);
+        // A browser asking to erase the disks: the number is the only thing
+        // on this screen until someone here answers it one way or the other.
+        let waiting = self.w.lock().unwrap().install_pin.clone();
+        if let Some(pin) = waiting {
+            self.draw_install_request(f, body[0], &pin);
+            let hint = Paragraph::new(Line::from(Span::styled(
+                " Esc refuses it. The number is on this screen only; it is never sent to the browser. ",
+                Style::default().add_modifier(Modifier::REVERSED),
+            )));
+            f.render_widget(hint, body[1]);
+            if let Some((msg, err)) = status {
+                f.render_widget(Paragraph::new(Line::from(Span::styled(msg, Style::default().fg(if err { Color::Red } else { Color::Green })))), outer[2]);
+            }
+            return;
+        }
         if self.open_secret.is_some() && step == Step::Domain {
             self.draw_secret_form(f, body[0]);
         } else {
@@ -560,6 +589,31 @@ impl Ui {
 
     fn help(&self, f: &mut Frame, area: Rect, title: &str, text: &str) {
         f.render_widget(Paragraph::new(text.to_string()).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::ALL).title(format!(" {title} "))), area);
+    }
+
+    /// A browser has pressed Install. It cannot erase anything on its own:
+    /// this number has to be read here and typed there, which means someone
+    /// is standing at the machine at the moment the disks are erased.
+    fn draw_install_request(&self, f: &mut Frame, area: Rect, pin: &str) {
+        let w = self.w.lock().unwrap();
+        let who = w.controller.clone().unwrap_or_else(|| "a browser".into());
+        let erased = w.erased();
+        drop(w);
+        let mut lines = vec![
+            Line::from(Span::styled(format!("The browser at {who} wants to install."), Style::default().add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("Type this number in that browser to go ahead:"),
+            Line::from(""),
+            Line::from(Span::styled(format!("   {}   ", spaced(pin)), Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED))),
+            Line::from(""),
+            Line::from(Span::styled("These disks are erased:", Style::default().fg(Color::Red))),
+        ];
+        for d in &erased {
+            lines.push(Line::from(Span::styled(format!("   {d}"), Style::default().fg(Color::Red))));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from("If you did not press Install in a browser, press Esc."));
+        f.render_widget(Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Confirm at the machine ")), area);
     }
 
     fn draw_buttons(&self, f: &mut Frame, area: Rect, step: Step) {
@@ -936,4 +990,11 @@ impl Ui {
         lines.extend(tail.into_iter().map(Line::from));
         f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).block(Block::default().borders(Borders::ALL).title(" what happened ")), area);
     }
+}
+
+/// `123456` as `123 456`: six digits run together are easy to misread off a
+/// VGA console, and this is typed on another machine.
+fn spaced(pin: &str) -> String {
+    let (a, b) = pin.split_at(pin.len() / 2);
+    format!("{a} {b}")
 }

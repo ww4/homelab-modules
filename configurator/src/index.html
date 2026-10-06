@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Homelab installer</title>
 <style>
+.pin { font-size: 1.6rem; letter-spacing: .25em; width: 7ch; text-align: center; }
   :root {
     --bg: #fbfaf7; --fg: #1d1d1b; --muted: #5f5e58; --line: #ded9cd;
     --accent: #2a5d8f; --ok: #1d6b3f; --bad: #a32020; --card: #fff;
@@ -293,6 +294,27 @@ function render(force) {
   }
   document.getElementById("go").style.display = "";
   if (showingUpdate) { renderUpdate(s); return; }
+  // Install was pressed here, and the machine's own screen is showing a
+  // number. Nothing is erased until it is typed in, so a browser alone can
+  // never do this.
+  if (s.awaiting_pin) {
+    document.getElementById("go").style.display = "none";
+    document.getElementById("back").style.display = "none";
+    if (lastStep !== "__pin") {
+      lastStep = "__pin";
+      const field = el("input", { type: "text", inputMode: "numeric", autocomplete: "off", maxLength: 7, className: "pin", placeholder: "000 000" });
+      const send = () => { const v = field.value; field.value = ""; call({ do: "confirm_install", pin: v }); };
+      field.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } };
+      document.getElementById("screen").replaceChildren(el("div", { className: "card" }, [
+        el("h3", { textContent: "Go and look at the machine" }),
+        el("p", { textContent: "Its own screen is showing a six-digit number. Type it here to erase the disks and install. The number is never sent to this page, so being able to read it means being in the room." }),
+        el("div", { className: "row" }, [field, el("button", { className: "danger", textContent: "Erase and install", onclick: send })]),
+        el("p", { className: "muted", textContent: "Pressing Esc at the machine refuses the request." }),
+      ]));
+      field.focus();
+    }
+    return;
+  }
   const body = JSON.stringify([s.step, s.kits, s.disks, s.disk_fallback, s.profile, s.ssh, s.domain, s.secrets, s.values, s.modules, s.review, s.install, s.done]);
   // Rebuilding destroys whatever the reader is in the middle of using, so a
   // focused control holds the screen still — tabbing from one field to the

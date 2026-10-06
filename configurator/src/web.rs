@@ -14,7 +14,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
-use crate::wizard::{Role, Step, Wizard};
+use crate::wizard::{is_local_peer, BadCode, Origin, Role, Step, Wizard};
 
 const INDEX: &str = include_str!("index.html");
 
@@ -36,6 +36,14 @@ pub fn serve(w: Arc<Mutex<Wizard>>) -> Result<u16, String> {
 }
 
 fn handle(mut stream: TcpStream, w: Arc<Mutex<Wizard>>) -> std::io::Result<()> {
+    // Before anything is read: this installer is for the network it is
+    // standing on. A packet from anywhere else is answered with nothing and
+    // the connection closed, whatever a household router may be forwarding.
+    if let Ok(addr) = stream.peer_addr() {
+        if !is_local_peer(&addr.ip()) {
+            return Ok(());
+        }
+    }
     let peer = stream.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default();
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request = String::new();
@@ -71,10 +79,30 @@ fn handle(mut stream: TcpStream, w: Arc<Mutex<Wizard>>) -> std::io::Result<()> {
     match (method.as_str(), path) {
         ("GET", "/") | ("GET", "/index.html") => reply(&mut stream, 200, "text/html; charset=utf-8", INDEX.as_bytes()),
         ("GET", "/api/state") | ("POST", "/api/action") => {
+            if w.lock().unwrap().is_locked_out(&peer) {
+                return reply(
+                    &mut stream,
+                    403,
+                    "application/json",
+                    br#"{"error":"too many wrong codes from this computer. Clear it at the machine's own screen to try again."}"#,
+                );
+            }
             let expected = w.lock().unwrap().pairing.clone();
             if code.to_uppercase() != expected {
-                return reply(&mut stream, 403, "application/json", br#"{"error":"the code on the machine's screen does not match"}"#);
+                // Guessing is the only attack on a code, so make each guess
+                // cost time once a few have been wrong, and stop entirely
+                // after ten. Only someone at the machine can undo that.
+                let verdict = w.lock().unwrap().note_bad_code(&peer);
+                if verdict != BadCode::Counted {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+                let body: &[u8] = match verdict {
+                    BadCode::Locked => br#"{"error":"too many wrong codes from this computer. Clear it at the machine's own screen to try again."}"#,
+                    _ => br#"{"error":"the code on the machine's screen does not match"}"#,
+                };
+                return reply(&mut stream, 403, "application/json", body);
             }
+            w.lock().unwrap().note_good_code(&peer);
             {
                 let mut g = w.lock().unwrap();
                 if g.web_seen.as_deref() != Some(peer.as_str()) {
@@ -210,10 +238,14 @@ fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
         },
         "back" => g.back(),
         "continue" => {
-            if let Err(b) = g.advance() {
+            if let Err(b) = g.advance_from(Origin::Browser) {
                 g.say(b.message, true);
             }
         }
+        "confirm_install" => match g.confirm_install(&s("pin")) {
+            Ok(()) => {}
+            Err(e) => g.say(e, true),
+        },
         _ => {}
     }
     g.state_json()

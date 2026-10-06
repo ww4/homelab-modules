@@ -21,7 +21,21 @@ let
         environment.systemPackages = [ homelab-configure pkgs.git pkgs.curl pkgs.jq pkgs.qrencode ];
         # The browser installer: the same wizard, served to any computer on the
         # network so a long token can be pasted instead of typed.
-        networking.firewall.allowedTCPPorts = [ 8099 ];
+        # The browser installer answers computers on this network and nobody
+        # else. The server refuses a foreign peer itself, before it reads a
+        # byte; this is the same rule one layer down, so a household router
+        # forwarding a port cannot put the form on the internet even for the
+        # moment it takes the server to hang up. The ranges are the private
+        # ones, link-local, and the tailnet, which this project treats as a
+        # way in from elsewhere.
+        networking.firewall.extraCommands = ''
+          for net in 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10; do
+            iptables -I nixos-fw -p tcp --dport 8099 -s "$net" -j nixos-fw-accept
+          done
+          for net in ::1/128 fc00::/7 fe80::/10; do
+            ip6tables -I nixos-fw -p tcp --dport 8099 -s "$net" -j nixos-fw-accept
+          done
+        '';
         networking.hostName = lib.mkForce "homelab-installer";
         services.avahi = { enable = true; publish.enable = true; publish.addresses = true; nssmdns4 = true; };
         nix.settings.experimental-features = [ "nix-command" "flakes" ];
