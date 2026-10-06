@@ -146,6 +146,11 @@ struct GenerateArgs {
     /// A supplied secret: `<homelab.option>=@/path/to/file` or `<homelab.option>=env:VAR`. Repeatable.
     #[arg(long = "secret", value_name = "OPTION=SOURCE")]
     secrets: Vec<String>,
+
+    /// A secret to deal with later: write a CHANGEME placeholder and a line in
+    /// the first-login notes instead of refusing. Repeatable.
+    #[arg(long = "skip-secret", value_name = "OPTION")]
+    skip_secrets: Vec<String>,
     /// Flake reference for the library input (overrides answers.library).
     #[arg(long, value_name = "FLAKEREF")]
     library: Option<String>,
@@ -288,7 +293,8 @@ fn run(cli: Cli) -> Result<i32> {
             }
             let supplied = secrets::parse_supplied(&a.secrets)?;
             let existing_secrets = existing_secret_names(&a.out)?;
-            let plan = plan::Plan::build(&schema, &answers, &supplied, previous.as_ref(), &existing_secrets)
+            let deferred: std::collections::BTreeSet<String> = a.skip_secrets.iter().cloned().collect();
+            let plan = plan::Plan::build(&schema, &answers, &supplied, previous.as_ref(), &existing_secrets, &deferred)
                 .map_err(anyhow::Error::from)?;
 
             let reconfigure = previous.is_some();

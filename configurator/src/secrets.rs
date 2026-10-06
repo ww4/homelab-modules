@@ -34,6 +34,10 @@ impl Supplied {
         self.used.borrow_mut().push(option.to_string());
         Some(v)
     }
+    /// Is a value on hand, without marking it used?
+    pub fn has(&self, option: &str) -> bool {
+        self.by_option.contains_key(option)
+    }
     pub fn unused(&self, _plans: &[SecretPlan]) -> Vec<String> {
         let used = self.used.borrow();
         self.by_option
@@ -80,6 +84,26 @@ pub struct SecretPlan {
     /// The encrypted file already exists in the output (a reconfigure): it is
     /// declared but neither minted nor written again.
     pub kept: bool,
+}
+
+/// A secret the reader chose to deal with later. The installer offers that
+/// choice and tells them what stops working, so the generator must be able
+/// to produce a configuration without the value: a placeholder file, and a
+/// line in the first-login notes saying what to put in it. Refusing to
+/// generate at all made the offer a lie, and an install that reached the
+/// last screen then died.
+pub fn deferred_secret(module: &str, meta: &SecretMeta, values: &BTreeMap<String, serde_json::Value>, schema: &Schema) -> SecretPlan {
+    SecretPlan {
+        module: module.to_string(),
+        option: meta.option.clone(),
+        name: secret_name(&meta.option),
+        owner: crate::plan::resolve_placeholder(schema, values, &meta.owner),
+        source: Source::FirstBoot,
+        keys: meta.keys.clone(),
+        content: placeholder_content(&meta.keys),
+        show_once: Vec::new(),
+        kept: false,
+    }
 }
 
 /// A secret whose file is already in the output directory: keep it.

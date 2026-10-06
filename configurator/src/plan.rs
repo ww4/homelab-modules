@@ -70,6 +70,7 @@ impl<'a> Plan<'a> {
         supplied: &Supplied,
         previous: Option<&Answers>,
         existing_secrets: &BTreeSet<String>,
+        deferred: &BTreeSet<String>,
     ) -> Result<Plan<'a>, Rejected> {
         let mut problems = Vec::new();
         let mut warnings = Vec::new();
@@ -235,6 +236,20 @@ impl<'a> Plan<'a> {
                     continue;
                 }
                 secret_options.insert(s.option.clone());
+                // The installer lets a reader put a credential off until
+                // later and says what stops working meanwhile. Honour that
+                // here with a placeholder file instead of refusing to
+                // generate, which turned the offer into a dead end.
+                if deferred.contains(&s.option) && !supplied.has(&s.option) {
+                    let p = secrets::deferred_secret(m, s, &values, schema);
+                    phase2.push(format!(
+                        "{m}: skipped during the install — `sops secrets/{}.yaml`, replace the CHANGEME values ({}), then rebuild",
+                        p.name,
+                        s.keys.join(", ")
+                    ));
+                    secret_plans.push(p);
+                    continue;
+                }
                 if existing_secrets.contains(&secrets::secret_name(&s.option)) && supplied.take(&s.option).is_none() {
                     // A reconfigure keeps what is already encrypted; a value
                     // passed with --secret replaces it on purpose.
@@ -440,15 +455,41 @@ mod tests {
         s
     }
 
+    /// The installer offers to deal with a credential later and says what
+    /// stops working. Before this, `generate` refused and the install died
+    /// on the last screen with the reader having done nothing wrong.
+    #[test]
+    fn a_skipped_credential_generates_a_placeholder_instead_of_refusing() {
+        let s = schema();
+        let a = answers(&["jellyfin", "backup"]);
+        let mut deferred = BTreeSet::new();
+        deferred.insert("homelab.acme.credentialsFile".to_string());
+        // Nothing supplied: this is the reader who pressed "skip for now".
+        let nothing = Supplied::default();
+        let p = Plan::build(&s, &a, &nothing, None, &BTreeSet::new(), &deferred).expect("it generates");
+        let plan = p
+            .secrets
+            .iter()
+            .find(|x| x.option == "homelab.acme.credentialsFile")
+            .expect("the secret is still planned, with a placeholder");
+        assert!(plan.content.contains("CHANGEME"), "got: {}", plan.content);
+        assert!(plan.show_once.is_empty(), "nothing to show: it was not minted");
+        assert!(
+            p.phase2.iter().any(|l| l.contains("skipped during the install")),
+            "the first-login notes say what to do: {:?}",
+            p.phase2
+        );
+    }
+
     #[test]
     fn foundation_is_added_and_backup_is_demanded() {
         let s = schema();
         let a = answers(&["jellyfin"]);
-        let err = Plan::build(&s, &a, &supplied(), None, &BTreeSet::new()).err().unwrap();
+        let err = Plan::build(&s, &a, &supplied(), None, &BTreeSet::new(), &BTreeSet::new()).err().unwrap();
         assert!(err.0.iter().any(|p| p.contains("`backup` is a foundation module")), "{:?}", err.0);
 
         let a = answers(&["jellyfin", "backup"]);
-        let p = Plan::build(&s, &a, &supplied(), None, &BTreeSet::new()).unwrap();
+        let p = Plan::build(&s, &a, &supplied(), None, &BTreeSet::new(), &BTreeSet::new()).unwrap();
         assert!(p.modules.contains(&"system".to_string()) && p.modules.contains(&"boot".to_string()));
         assert!(p.added_modules.contains(&"system".to_string()));
         assert!(p.removed_modules.is_empty());
@@ -465,13 +506,13 @@ mod tests {
         // acme is pulled in by requires either way; simulate an explicit removal of backup.
         let mut no_backup = a.clone();
         no_backup.modules.retain(|m| m != "backup");
-        let err = Plan::build(&s, &no_backup, &supplied(), Some(&prev), &BTreeSet::new()).err().unwrap();
+        let err = Plan::build(&s, &no_backup, &supplied(), Some(&prev), &BTreeSet::new(), &BTreeSet::new()).err().unwrap();
         assert!(err.0.iter().any(|p| p.contains("--remove backup: refused")), "{:?}", err.0);
 
         // Removing jellyfin: allowed, with the state warning; acme stays (nothing else needs it, but it was requested by nothing — it is dropped too).
         let mut no_jf = a.clone();
         no_jf.modules.retain(|m| m != "jellyfin");
-        let p = Plan::build(&s, &no_jf, &supplied(), Some(&prev), &BTreeSet::new()).unwrap();
+        let p = Plan::build(&s, &no_jf, &supplied(), Some(&prev), &BTreeSet::new(), &BTreeSet::new()).unwrap();
         assert!(p.removed_modules.contains(&"jellyfin".to_string()));
         assert!(p.warnings.iter().any(|w| w.contains("removed jellyfin")));
     }
@@ -482,7 +523,7 @@ mod tests {
         let a = answers(&["jellyfin", "backup"]);
         let mut existing = BTreeSet::new();
         existing.insert("backup-password".to_string());
-        let p = Plan::build(&s, &a, &supplied(), Some(&a), &existing).unwrap();
+        let p = Plan::build(&s, &a, &supplied(), Some(&a), &existing, &BTreeSet::new()).unwrap();
         let bk = p.secrets.iter().find(|x| x.option == "homelab.backup.passwordFile").unwrap();
         assert!(bk.kept);
         assert!(bk.show_once.is_empty());

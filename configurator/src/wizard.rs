@@ -1459,6 +1459,12 @@ impl Wizard {
             if let Some(f) = &r.saved {
                 gen.push("--secret".into());
                 gen.push(format!("{}=@{}", r.option, f.display()));
+            } else if r.skipped {
+                // Skipping is an offer this screen makes; the generator has
+                // to be told, or it refuses and the install dies on the last
+                // screen with the reader having done nothing wrong.
+                gen.push("--skip-secret".into());
+                gen.push(r.option.clone());
             }
         }
         let install: Option<Vec<String>> = if self.live_usb {
