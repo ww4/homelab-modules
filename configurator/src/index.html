@@ -15,6 +15,10 @@
   }
   * { box-sizing: border-box }
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif }
+  /* The browser's own link blue is near-unreadable against the dark card, so a
+     link takes the colour of the text around it and announces itself with an
+     underline instead. Links that want their own colour say so after this. */
+  a { color:inherit; text-decoration:underline }
   header { border-bottom:1px solid var(--line); background:var(--card) }
   .wrap { max-width:760px; margin:0 auto; padding:1rem 1.1rem }
   h1 { font-size:1.25rem; margin:.1rem 0 .3rem }
@@ -86,13 +90,109 @@
 /* The code lives in the URL and nowhere else: entering it is a redirect, so
    this page always starts knowing whether it has one. */
 const code = (new URLSearchParams(location.search).get("code") || "").toUpperCase();
-let state = null, typing = false, needCode = false;
+let state = null, needCode = false;
 
+/* Building a screen and merging a screen are the same operation here: `el`
+   makes a detached node and `apply` writes the properties, and on the next
+   poll `apply` runs again against the live node with the props it was given
+   last time. Writing a value that is already there is not free — it collapses
+   a text selection and can move a caret — so nothing is written unless it
+   differs from what this code last asked for.
+   `key` is identity for the patcher rather than a DOM property: it is what
+   lets one row be removed from a list without every row below it being
+   rewritten. */
 const el = (t, props = {}, kids = []) => {
-  const n = Object.assign(document.createElement(t), props);
+  const n = document.createElement(t);
+  apply(n, props);
   for (const k of [].concat(kids)) n.append(k);
   return n;
 };
+
+function apply(node, props) {
+  const was = node.__props || {};
+  const held = document.activeElement;
+  for (const k in props) {
+    const v = props[k];
+    if (k === "key") continue;
+    // Handlers are replaced every time: a closure kept from an earlier render
+    // answers out of the state that render was looking at.
+    if (typeof v === "function") { node[k] = v; continue; }
+    if (was[k] === v) continue;
+    // What the reader is holding is theirs: never overwrite the contents of
+    // the control they are typing in, or of a dropdown they have open.
+    if ((k === "value" || k === "checked" || k === "selected") && (node === held || node.parentNode === held)) continue;
+    node[k] = v;
+  }
+  // A property that was set last time and is not set now has to be undone, or
+  // a row that stops being disabled stays disabled forever.
+  for (const k in was) {
+    if (k in props) continue;
+    node[k] = typeof was[k] === "function" ? null : typeof was[k] === "boolean" ? false : "";
+  }
+  node.__props = props;
+  node.__key = props.key;
+}
+
+/* Merge a freshly built child list into a live parent. Matching is by key
+   where there is one and by position otherwise; a matched node is patched in
+   place and never replaced, so the selection, the caret and the scroll
+   position inside it all survive. */
+function patchChildren(parent, kids) {
+  const want = [].concat(kids).map((k) => (typeof k === "string" ? document.createTextNode(k) : k));
+  const live = Array.from(parent.childNodes);
+  const keyed = new Map();
+  for (const n of live) if (n.__key != null) keyed.set(n.__key, n);
+  const used = new Set();
+  const order = [];
+  let at = 0;
+  for (const w of want) {
+    let hit = null;
+    if (w.__key != null) {
+      hit = keyed.get(w.__key) || null;
+      if (hit && used.has(hit)) hit = null;
+    } else {
+      // Unkeyed siblings are a fixed structure, so they line up one for one;
+      // keyed neighbours are skipped because they belong to the lookup above.
+      while (at < live.length) {
+        const c = live[at++];
+        if (c.__key != null || used.has(c)) continue;
+        if (c.nodeName === w.nodeName) hit = c;
+        break;
+      }
+    }
+    if (hit && hit.nodeName === w.nodeName) { patchNode(hit, w); used.add(hit); order.push(hit); }
+    else order.push(w);
+  }
+  // Walk the wanted order against the live order, moving only what is out of
+  // place; everything left over the end was removed.
+  let ref = parent.firstChild;
+  for (const n of order) {
+    if (ref === n) { ref = ref.nextSibling; continue; }
+    parent.insertBefore(n, ref);
+  }
+  while (ref) { const next = ref.nextSibling; parent.removeChild(ref); ref = next; }
+}
+
+function patchNode(live, want) {
+  if (live.nodeType === 3) { if (live.nodeValue !== want.nodeValue) live.nodeValue = want.nodeValue; return; }
+  apply(live, want.__props || {});
+  patchChildren(live, Array.from(want.childNodes));   // snapshot: the merge empties want as it goes
+}
+
+/* The box holds one screen at a time. Moving to another screen is a real
+   change of subject and builds fresh; staying on the same screen patches it.
+   Returns true when it built, which is the only moment focus may be taken. */
+let shown = "";
+function show(id, kids) {
+  const box = document.getElementById("screen");
+  const fresh = shown !== id;
+  if (fresh) { shown = id; box.replaceChildren(); }
+  patchChildren(box, kids);
+  return fresh;
+}
+
+const setText = (id, text) => { const n = document.getElementById(id); if (n.textContent !== text) n.textContent = text; };
+const setProp = (node, k, v) => { if (node[k] !== v) node[k] = v; };
 
 async function call(action) {
   const r = await fetch(action ? "/api/action?code=" + code : "/api/state?code=" + code, {

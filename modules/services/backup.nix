@@ -97,9 +97,32 @@ in
       })
     ];
 
-    # Never write into a bare mountpoint because the pool failed to mount.
-    systemd.services."restic-backups-${cfg.local.name}".unitConfig.RequiresMountsFor =
-      lib.mkIf (cfg.local.enable && cfg.local.requiresMountsFor != [ ]) cfg.local.requiresMountsFor;
+    # ⚠️ ORDERING ALONE DOES NOT COVER A BACKUP STARTED BY HAND.
+    #
+    # restic-repo-perms declares itself `before` each backup, which settles
+    # the boot transaction: when both are starting, permissions go first. It
+    # says nothing about `systemctl start restic-backups-…`, which is how a
+    # person tests a backup, and that start does not pull the permissions
+    # unit in at all. A file written then keeps the wrong group and the SFTP
+    # push cannot read it.
+    #
+    # `wants`, not `requires`: a backup that runs with imperfect group
+    # permissions beats a backup that does not run, and the permissions unit
+    # is RemainAfterExit, so this costs nothing after the first start.
+    #
+    # One definition per job, because Nix refuses a dynamic attribute name
+    # twice even on different sub-paths.
+    systemd.services."restic-backups-${cfg.local.name}" = {
+      # Never write into a bare mountpoint because the pool failed to mount.
+      unitConfig.RequiresMountsFor =
+        lib.mkIf (cfg.local.enable && cfg.local.requiresMountsFor != [ ]) cfg.local.requiresMountsFor;
+      after = lib.mkIf (cfg.sftpPush.enable && cfg.local.enable) [ "restic-repo-perms.service" ];
+      wants = lib.mkIf (cfg.sftpPush.enable && cfg.local.enable) [ "restic-repo-perms.service" ];
+    };
+    systemd.services."restic-backups-${cfg.remote.name}" = {
+      after = lib.mkIf (cfg.sftpPush.enable && cfg.remote.enable) [ "restic-repo-perms.service" ];
+      wants = lib.mkIf (cfg.sftpPush.enable && cfg.remote.enable) [ "restic-repo-perms.service" ];
+    };
 
     # ── the SFTP push target ───────────────────────────────────────────────
     users.groups = lib.mkIf cfg.sftpPush.enable { restic = { }; };
