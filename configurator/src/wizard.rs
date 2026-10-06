@@ -1544,10 +1544,9 @@ mod tests {
         assert_ne!(kit_for(&mine, &auto, &kits), starter);
     }
 
-    /// The whole path a reader walks: pick Starter, mark a system disk and a
-    /// data disk, Continue. Step 2 must still read Starter.
-    #[test]
-    fn starter_survives_the_storage_step() {
+    /// A wizard over a small catalogue holding the Starter modules plus the
+    /// two the storage step adds.
+    fn test_wizard() -> Wizard {
         let catalog: String = {
             let mut m = serde_json::Map::new();
             for name in ["acme", "nginx-access", "jellyfin", "tandoor", "backup", "monitoring", "ntfy", "alertmanager-ntfy", "mergerfs-pools", "snapraid"] {
@@ -1560,16 +1559,29 @@ mod tests {
         };
         let schema = Box::leak(Box::new(Schema::parse(&catalog, "[]").expect("a schema")));
         let dir = std::env::temp_dir().join(format!("hl-kit-test-{}", std::process::id()));
-        let mut w = Wizard::new(schema, &dir.join("answers.json"), &dir, vec![], 0);
-        let starter = w.kits.iter().position(|k| k.name == "Starter").expect("a Starter kit");
-        w.set_kit(starter);
-        assert_eq!(w.chosen_kit(), starter, "picking it reads back");
+        Wizard::new(schema, &dir.join("answers.json"), &dir, vec![], 0)
+    }
 
+    /// Two disks the roles can be set on, so the storage step has something
+    /// to act on without a real /dev/disk/by-id.
+    fn give_it_disks(w: &mut Wizard) {
         w.disks = vec![
             crate::disks::Disk { id: "/dev/disk/by-id/a".into(), kernel: "sda".into(), size_bytes: 1 << 40, model: "a".into(), transport: "sata".into(), in_use: false },
             crate::disks::Disk { id: "/dev/disk/by-id/b".into(), kernel: "sdb".into(), size_bytes: 1 << 40, model: "b".into(), transport: "sata".into(), in_use: false },
         ];
         w.roles = vec![Role::Unused, Role::Unused];
+    }
+
+    /// The whole path a reader walks: pick Starter, mark a system disk and a
+    /// data disk, Continue. Step 2 must still read Starter.
+    #[test]
+    fn starter_survives_the_storage_step() {
+        let mut w = test_wizard();
+        let starter = w.kits.iter().position(|k| k.name == "Starter").expect("a Starter kit");
+        w.set_kit(starter);
+        assert_eq!(w.chosen_kit(), starter, "picking it reads back");
+
+        give_it_disks(&mut w);
         w.set_disk_role(0, Role::System);
         w.set_disk_role(1, Role::Data);
         w.step = Step::Storage;
@@ -1577,6 +1589,29 @@ mod tests {
 
         assert!(w.modules.iter().any(|m| m.name == "mergerfs-pools" && m.chosen), "the data disk brought the pool in");
         assert_eq!(w.chosen_kit(), starter, "and the kit still reads Starter, not Custom");
+    }
+
+    /// The in-place updater relaunches the installer and reads the answers
+    /// back. The answers record the modules and the disks but not why a
+    /// module is on, so the kit has to be inferred from the disks again.
+    #[test]
+    fn starter_survives_a_relaunch() {
+        let mut first = test_wizard();
+        let starter = first.kits.iter().position(|k| k.name == "Starter").expect("a Starter kit");
+        first.set_kit(starter);
+        give_it_disks(&mut first);
+        first.set_disk_role(0, Role::System);
+        first.set_disk_role(1, Role::Data);
+        first.step = Step::Storage;
+        assert!(first.advance().is_ok(), "the storage step accepts it");
+        let saved = first.answers();
+        assert!(saved.modules.iter().any(|m| m == "mergerfs-pools"), "the answers carry the pool");
+
+        let mut again = test_wizard();
+        give_it_disks(&mut again);
+        again.load(&saved);
+        assert_eq!(again.chosen_kit(), starter, "the relaunched installer still reads Starter");
+        assert_eq!(again.kit, starter, "and step 2 shows it");
     }
 
     /// And a kit that names those modules itself must still match when the
