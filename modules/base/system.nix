@@ -43,7 +43,7 @@
     };
     gc = {
       automatic = true;
-      # DAILY, not weekly. On gromit 2026-10-06 the root filesystem reached 96%
+      # DAILY, not weekly. On the reference box the root filesystem reached 96%
       # with 21 GB free, and a GC run freed 23.3 GiB in one pass — all of it
       # accumulated since the previous weekly run the day before. Agent build
       # activity (`nixos-rebuild build` while validating a PR) churns the store
@@ -60,7 +60,7 @@
   };
 
   # Cap the journal. There was no explicit limit, so systemd's default applies:
-  # 10% of the filesystem, which on gromit's 449 GB root is ~44 GB it is
+  # 10% of the filesystem, which on a 450 GB root is ~44 GB it is
   # entitled to grow into. It was sitting at 3.9 GB. 1 GB is still weeks of
   # history on these hosts and bounds a store that nothing else bounds.
   #
