@@ -1,5 +1,12 @@
-# smart-dump — dump the FULL SMART table for every drive to world-readable
-# files, so an unprivileged operator (human or agent) can read them.
+# smart-dump — dump the FULL SMART table for every drive to files an
+# unprivileged operator (human or agent) can read.
+#
+# ⚠️ WHO CAN READ THEM. A dump carries the model and SERIAL NUMBER of every
+# drive in the machine, which identifies the hardware and is what a warranty
+# or an RMA is keyed to. The files are therefore readable by one group
+# (`homelab.smartDump.readGroup`, `users` by default — the group a normal
+# NixOS login account is in) and not by the world. Narrow it if the machine
+# has accounts that should not see the hardware inventory.
 #
 # ⚠️ WHY THIS EXISTS. A temperature/health exporter typically surfaces only a
 # handful of SMART values (overall health, reallocated, pending,
@@ -31,6 +38,7 @@
 { config, lib, pkgs, ... }:
 
 let
+  cfg = config.homelab.smartDump;
   outDir = "/var/tmp/agent-smart";
 
   smart-dump = pkgs.writeShellApplication {
@@ -48,7 +56,8 @@ let
       fi
 
       mkdir -p "$OUT"
-      chmod 755 "$OUT"
+      chgrp ${lib.escapeShellArg cfg.readGroup} "$OUT" || true
+      chmod 0750 "$OUT"
       # Clear stale dumps so a reader can never mistake last week's table for
       # today's. Anchored to *.txt inside our own directory.
       find "$OUT" -maxdepth 1 -type f -name '*.txt' -delete 2>/dev/null || true
@@ -130,7 +139,8 @@ let
           echo "### --- self-test log (explicit, in case -x truncated it) ---"
           timeout 30 smartctl "''${dargs[@]}" -l selftest "$dev" 2>&1 || true
         } > "$f"
-        chmod 644 "$f"
+        chgrp ${lib.escapeShellArg cfg.readGroup} "$f" || true
+        chmod 0640 "$f"
 
         # ⚠️ Classify from the PROBE's data-quality, not by grepping the -x text.
         # "The bridge refused" and "the drive answered and is healthy" are
@@ -175,5 +185,5 @@ in
 
   # Keep the dump directory out of systemd-tmpfiles' default /var/tmp sweep so a
   # dump taken during a long investigation is still there a month later.
-  systemd.tmpfiles.rules = [ "d ${outDir} 0755 root root -" ];
+  systemd.tmpfiles.rules = [ "d ${outDir} 0750 root ${cfg.readGroup} -" ];
 }

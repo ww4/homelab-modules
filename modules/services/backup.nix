@@ -125,6 +125,12 @@ in
       wantedBy = [ "multi-user.target" ];
       after = mountUnits;
       requires = mountUnits;
+      # Ownership and the default ACL must be in place before anything can
+      # create a file in the repository, or an entry written first keeps the
+      # wrong group and the SFTP push cannot read it. Ordering only, so a
+      # backup is not blocked if this unit is absent.
+      before = lib.optional cfg.local.enable "restic-backups-${cfg.local.name}.service"
+        ++ lib.optional cfg.remote.enable "restic-backups-${cfg.remote.name}.service";
       unitConfig.RequiresMountsFor = lib.mkIf (cfg.local.requiresMountsFor != [ ]) cfg.local.requiresMountsFor;
       serviceConfig = {
         Type = "oneshot";

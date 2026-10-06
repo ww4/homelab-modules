@@ -294,6 +294,21 @@
     };
 
     # ── drive-temps exporter ──────────────────────────────────────────────────
+    smartDump = {
+      readGroup = lib.mkOption {
+        type = lib.types.str;
+        default = "users";
+        description = ''
+          The group allowed to read the SMART dumps. A dump carries the model
+          and serial number of every drive in the machine, so the files are
+          0640 root:<this group> and the directory 0750. The default is the
+          group a normal NixOS login account is in, which is what makes the
+          dumps readable by an operator without root. Narrow it if the machine
+          has accounts that should not see the hardware inventory.
+        '';
+      };
+    };
+
     driveTemps = {
       metricPrefix = lib.mkOption {
         type = lib.types.str;
