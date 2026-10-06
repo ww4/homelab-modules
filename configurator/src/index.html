@@ -233,20 +233,49 @@ async function sealValue(v) {
   return { epk: hex(eph.publicKey), nonce: hex(nonce), ct: hex(ct) };
 }
 
-/* An action carrying a value. A secret one goes sealed; if sealing is somehow
-   impossible the value is still sent, because an installer that refuses a
-   token is worse than one that warns, and the machine records that it arrived
-   readable and says so on the Review screen. */
-async function withValue(base, v, secret) {
+/* Send a value, sealing it when the field is a secret.
+
+   ⚠️ FAILS CLOSED. If sealing does not work the value is NOT sent. An earlier
+   version sent it anyway and warned afterwards, reasoning that an installer
+   which refuses a token is worse than one that warns. That is wrong, and for
+   a reason worth writing down: breaking the sealing is easier than breaking
+   the seal. Someone able to interfere with this page's traffic could simply
+   stop the cryptography from loading and collect the plaintext that followed,
+   which costs them nothing and defeats the whole arrangement. A warning after
+   the value has gone is a warning about something already lost.
+
+   The way out is not the network. The machine's own screen takes the same
+   value, so a reader whose browser cannot seal is told to type it there. */
+async function sendValue(base, v, secret) {
   if (secret && v) {
+    let sealed;
     try {
-      return { ...base, sealed: await sealValue(v) };
+      sealed = await sealValue(v);
     } catch (e) {
-      setText("status", "could not seal this value, so it crossed the network readable: " + e.message);
-      document.getElementById("status").className = "bad";
+      sealingBroke(e.message);
+      return;
     }
+    sealFailure = null;
+    return call({ ...base, sealed });
   }
-  return { ...base, value: v };
+  return call({ ...base, value: v });
+}
+
+/* Held, not written once: the next poll rewrites the status line, and a
+   warning the reader never saw is the same as no warning. Cleared when a
+   value does go out sealed. */
+let sealFailure = null;
+function sealingBroke(why) {
+  sealFailure = "Not sent. This value could not be encrypted (" + why +
+    "), and sending it unencrypted would put it on your network in the clear. " +
+    "Type it on the machine's own screen instead, or reload this page and try again.";
+  showSealFailure();
+}
+function showSealFailure() {
+  if (!sealFailure) return;
+  const box = document.getElementById("status");
+  if (box.textContent !== sealFailure) box.textContent = sealFailure;
+  if (box.className !== "bad") box.className = "bad";
 }
 
 async function call(action) {
@@ -445,6 +474,7 @@ function render() {
   setText("intro", s.intro);
   setText("status", s.status ? s.status.message : "");
   setProp(document.getElementById("status"), "className", s.status && s.status.error ? "bad" : "ok");
+  showSealFailure();   // outlives a poll: see sealingBroke
 
   const back = document.getElementById("back"), go = document.getElementById("go");
   setDisplay(back, ["welcome", "install", "done"].includes(s.step) ? "none" : "");
@@ -463,8 +493,10 @@ function render() {
     show("__locked", [el("div", { className: "card" }, [
       el("h3", { textContent: "Someone else is filling this in" }),
       el("p", { textContent: `A browser at ${s.web.controller} is using this installer. Two people editing the same answers would overwrite each other, so only one drives at a time.` }),
-      el("p", { className: "muted", textContent: "You can watch from here, or take over — the other browser will be told it lost the form." }),
-      el("div", { className: "row" }, [el("button", { className: "danger", textContent: "Take over", onclick: () => call({ do: "take_over" }) })]),
+      el("p", { className: "muted", textContent: "You can watch from here, or ask for the form. Somebody at the machine has to agree, which is what stops a code read off the network from taking it." }),
+      ...(s.awaiting_takeover
+        ? [el("p", { className: "ok", textContent: "Asked. The machine's own screen is waiting for somebody to hand the form over: press Y there." })]
+        : [el("div", { className: "row" }, [el("button", { className: "danger", textContent: "Ask for the form", onclick: () => call({ do: "take_over" }) })])]),
     ])]);
     return;
   }
@@ -530,7 +562,7 @@ const screens = {
     });
   },
 
-  profile: (s) => s.profile.map((f) => textField(f, async (v) => call(await withValue({ do: "set_profile", key: f.key }, v, f.masked)))),
+  profile: (s) => s.profile.map((f) => textField(f, (v) => sendValue({ do: "set_profile", key: f.key }, v, f.masked))),
 
   ssh: (s) => {
     // Both boxes are read by id when the button is pressed: the nodes this
@@ -557,7 +589,7 @@ const screens = {
   },
 
   domain: (s) => {
-    const out = s.domain.map((f) => textField(f, async (v) => call(await withValue({ do: "set_domain", key: f.key }, v, f.masked))));
+    const out = s.domain.map((f) => textField(f, (v) => sendValue({ do: "set_domain", key: f.key }, v, f.masked)));
     for (const sec of s.secrets) {
       const card = el("div", { key: sec.option, className: "card" }, [
         el("h3", { key: "title", textContent: sec.title }),
@@ -566,12 +598,15 @@ const screens = {
           el("a", { href: sec.walkthrough, target: "_blank", rel: "noreferrer", textContent: "Step-by-step walkthrough with screenshots" }),
           el("span", { className: "muted", textContent: " (opens the guide site in a new tab)" }),
         ])] : []),
-        // The same fingerprint is on the machine's own screen. Comparing them
-        // is what catches somebody sitting between this page and the machine.
+        // ⚠️ The fingerprint is a consistency check, not proof. It is served
+        // over the same connection as everything else, so somebody who can
+        // rewrite that traffic can show you whatever they like here. It
+        // catches a mismatch, which is worth catching; it does not
+        // authenticate the connection.
         ...(s.sealing ? [el("p", { key: "seal", className: "muted" }, [
-          el("span", { textContent: "Sealed to this machine before it leaves your browser. Key " }),
+          el("span", { textContent: "Encrypted in this page before it is sent. Key " }),
           el("b", { textContent: s.sealing.fingerprint }),
-          el("span", { textContent: ", which the machine's own screen shows too." }),
+          el("span", { textContent: ", and the machine's own screen shows the same. A difference means something is wrong; a match is not proof, because this page arrived over the same unencrypted connection." }),
         ])] : []),
       ]);
       if (sec.path_only) {
@@ -581,7 +616,7 @@ const screens = {
         }), null, "__path"));
       } else {
         for (const f of sec.fields) {
-          card.append(textField(f, async (v) => call(await withValue({ do: "set_secret", option: sec.option, var: f.key }, v, f.masked))));
+          card.append(textField(f, (v) => sendValue({ do: "set_secret", option: sec.option, var: f.key }, v, f.masked)));
         }
       }
       card.append(el("div", { key: "actions", className: "row" }, [

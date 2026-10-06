@@ -13,13 +13,21 @@
 //! secret values to a key this process makes when it starts, and posts
 //! ciphertext. A listener sees ciphertext.
 //!
-//! ⚠️ WHAT THIS DOES NOT DO. Someone who can rewrite traffic, rather than
-//! only read it, can hand the browser their own public key and read
-//! everything. The console prints a fingerprint of the real key so that
-//! anyone who cares can compare, and the install still cannot be completed
-//! without a number from that same console. This closes passive listening,
-//! which is the realistic threat on a home network, and makes the active
-//! case detectable rather than silent.
+//! ⚠️ WHAT THIS DOES NOT DO, STATED PLAINLY. Someone who can rewrite traffic,
+//! rather than only read it, can serve a page carrying their own public key
+//! and read everything sealed to it.
+//!
+//! The fingerprint does NOT fix that and must not be described as if it did.
+//! It travels over the same unauthenticated connection as the page, so an
+//! attacker who swaps the key can print the old fingerprint beside it. What
+//! the fingerprint is good for is a mismatch: it catches a careless attacker
+//! and it catches the page talking to a different machine than you think.
+//! A match is a consistency check, not proof of anything.
+//!
+//! So: this closes passive listening, which is the realistic threat on a home
+//! network. It does not authenticate the connection. What bounds the active
+//! case is elsewhere and is not cryptographic: an install cannot start
+//! without somebody pressing a key on the machine itself.
 //!
 //! X25519 with XSalsa20-Poly1305, which is NaCl's `crypto_box`: the browser
 //! side is TweetNaCl, which implements exactly this and nothing else.
@@ -52,10 +60,11 @@ impl Sealer {
         to_hex(self.secret.public_key().as_bytes())
     }
 
-    /// A short, readable form of the public key, shown on the console so a
-    /// reader can check that the page is talking to this machine and not to
-    /// somebody sitting in the middle. Groups of four because it is read off
-    /// one screen and compared with another.
+    /// A short, readable form of the public key, shown on both screens so a
+    /// reader can see whether they match. ⚠️ A mismatch means something is
+    /// wrong; a match proves nothing, because the browser's copy came over
+    /// the same connection an attacker would be rewriting. Groups of four
+    /// because it is read off one screen and compared with another.
     pub fn fingerprint(&self) -> String {
         let hex = self.public_hex();
         hex[..12].as_bytes().chunks(4).map(|c| String::from_utf8_lossy(c).to_string()).collect::<Vec<_>>().join(" ")

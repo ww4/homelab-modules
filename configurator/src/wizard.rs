@@ -555,6 +555,16 @@ pub struct Wizard {
     /// three wrong guesses. The approval is a keypress here now, so there is
     /// no secret to intercept and nothing to guess.
     pub install_request: Option<String>,
+    /// A second browser asking for the form, waiting for someone at the
+    /// machine to allow it.
+    ///
+    /// ⚠️ WHY THIS NEEDS ASKING. The pairing code travels in the address of
+    /// the page, over the same unencrypted connection as everything else, so
+    /// anybody who can watch the network can learn it. Without this, that
+    /// code alone would let them take the form away from whoever is using it
+    /// and keep it for the rest of the session. With it, the code gets them
+    /// a look and nothing else unless somebody at the machine agrees.
+    pub takeover_request: Option<String>,
     /// Wrong pairing codes, per source address, and the addresses that have
     /// run out of tries. Shared with the console so a person at the machine
     /// can see an attempt and clear it.
@@ -634,6 +644,7 @@ impl Wizard {
             auto_modules: Default::default(),
             update: None,
             install_request: None,
+            takeover_request: None,
             code_failures: Default::default(),
             locked_out: Default::default(),
             sealer: crate::sealed::Sealer::new(),
@@ -1429,6 +1440,43 @@ impl Wizard {
         Ok(())
     }
 
+    /// A browser asking for the form. The first one to ask gets it, because
+    /// there is nothing to take; after that it is somebody at the machine
+    /// who decides.
+    pub fn request_takeover(&mut self, peer: &str) -> bool {
+        match &self.controller {
+            None => {
+                self.controller = Some(peer.to_string());
+                self.say(format!("the browser at {peer} is filling this in"), false);
+                true
+            }
+            Some(c) if c == peer => true,
+            Some(c) => {
+                let c = c.clone();
+                self.takeover_request = Some(peer.to_string());
+                self.say(format!("the browser at {peer} wants the form from {c}: the machine's own screen is asking"), false);
+                false
+            }
+        }
+    }
+
+    /// Somebody at the machine allowing that.
+    pub fn approve_takeover(&mut self) {
+        if let Some(peer) = self.takeover_request.take() {
+            let old = self.controller.replace(peer.clone());
+            match old {
+                Some(o) => self.say(format!("the browser at {peer} took over from {o}"), false),
+                None => self.say(format!("the browser at {peer} is filling this in"), false),
+            }
+        }
+    }
+
+    pub fn refuse_takeover(&mut self) {
+        if let Some(peer) = self.takeover_request.take() {
+            self.say(format!("the machine refused the form to {peer}"), true);
+        }
+    }
+
     /// Somebody at the machine approving a browser's request. There is no
     /// value to check, because nothing was sent: being able to press this key
     /// is the proof, and it cannot be done from the network.
@@ -1670,6 +1718,7 @@ impl Wizard {
             "sealing": { "public_key": self.sealer.public_hex(), "fingerprint": self.sealer.fingerprint() },
             "cleartext_secret_seen": self.saw_cleartext_secret,
             "awaiting_console": self.install_request.is_some(),
+            "awaiting_takeover": self.takeover_request.is_some(),
             "update": self.update.as_ref().map(|u| json!({
                 "newest": u.newest, "newer": u.newer, "pending": u.pending,
                 "store_path": u.store_path, "published": u.published,
@@ -2054,6 +2103,29 @@ error: Cannot build '/nix/store/k48mnl-homelab-configure-0.1.0.drv'.
             !json.to_string().contains("192.168.1.9") || json["web"]["controller"] == serde_json::json!("192.168.1.9"),
             "the only place the address appears is where it already did"
         );
+    }
+
+    /// Third audit, finding 3: the pairing code travels over the same
+    /// unencrypted connection as everything else, so it can be read off the
+    /// network. It must not also be enough to seize the form.
+    #[test]
+    fn a_second_browser_cannot_take_the_form_without_the_machine() {
+        let mut w = test_wizard();
+        assert!(w.request_takeover("192.168.1.9"), "the first to ask gets it: there is nothing to take");
+        assert_eq!(w.controller.as_deref(), Some("192.168.1.9"));
+        assert!(w.request_takeover("192.168.1.9"), "asking again when you already hold it is free");
+
+        assert!(!w.request_takeover("192.168.1.50"), "somebody else has it: ask the machine");
+        assert_eq!(w.controller.as_deref(), Some("192.168.1.9"), "and nothing moved");
+        assert_eq!(w.takeover_request.as_deref(), Some("192.168.1.50"));
+
+        w.refuse_takeover();
+        assert_eq!(w.controller.as_deref(), Some("192.168.1.9"), "refused: still theirs");
+        assert!(w.takeover_request.is_none());
+
+        assert!(!w.request_takeover("192.168.1.50"));
+        w.approve_takeover();
+        assert_eq!(w.controller.as_deref(), Some("192.168.1.50"), "approved at the machine");
     }
 
     #[test]

@@ -118,6 +118,26 @@
             ++ [ ./checks/every-module.nix { nixpkgs.hostPlatform = system; } ];
         }).config.system.build.toplevel;
 
+        # ⚠️ The page's cryptography must be the published library and nothing
+        # else. The file carries a provenance header saying which release it
+        # came from and that release's hash; this is what makes that claim
+        # mechanical rather than a comment nobody checks. Strip the header,
+        # which is ours, and hash what is left, which is not.
+        tweetnacl = pkgs.runCommand "tweetnacl-is-upstream" { nativeBuildInputs = [ pkgs.coreutils ]; } ''
+          want=2555523ab79e980c7aec94aaf6c80e3c120fba04e9c4a95ab9faa7878602380e
+          # Only the LEADING header is ours: the library has its own comments
+          # further down and they are part of what was reviewed.
+          got=$(${pkgs.gawk}/bin/awk 'started || ($0 !~ /^(\/\/.*)?$/) { started=1; print }' ${./src/tweetnacl.js} | sha256sum | cut -d' ' -f1)
+          if [ "$got" != "$want" ]; then
+            echo "configurator/src/tweetnacl.js is not the reviewed TweetNaCl 1.0.3." >&2
+            echo "  expected $want" >&2
+            echo "  got      $got" >&2
+            echo "Replace the whole file from a published tarball, or update the hash in its header and here." >&2
+            exit 1
+          fi
+          touch $out
+        '';
+
         # No personal names, hosts, domains or addresses in the public tree.
         leak-scan = pkgs.runCommand "leak-scan" { nativeBuildInputs = [ pkgs.bash pkgs.ugrep pkgs.gnugrep pkgs.coreutils pkgs.findutils ]; } ''
           cp -r ${../.} src && chmod -R u+w src && cd src

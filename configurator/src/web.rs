@@ -175,13 +175,10 @@ fn handle(mut stream: TcpStream, w: Arc<Mutex<Wizard>>) -> std::io::Result<()> {
             {
                 let mut g = w.lock().unwrap();
                 match (&g.controller, method.as_str(), taking) {
+                    // Asking is all a browser can do: taking the form away
+                    // from somebody is answered at the machine.
                     (_, _, true) => {
-                        let old = g.controller.clone();
-                        g.controller = Some(peer.clone());
-                        match old {
-                            Some(o) if o != peer => g.say(format!("the browser at {peer} took over from {o}"), false),
-                            _ => g.say(format!("the browser at {peer} is filling this in"), false),
-                        }
+                        g.request_takeover(&peer);
                     }
                     (None, "POST", _) => g.controller = Some(peer.clone()),
                     (Some(c), "POST", _) if c != &peer => {
@@ -234,14 +231,17 @@ fn reply(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -
     stream.flush()
 }
 
-/// A value from the page, which may have arrived sealed.
+/// A value from the page, which must arrive sealed when it is a secret.
 ///
-/// ⚠️ The page seals anything secret, because this server speaks plain HTTP
-/// and a token typed into the form would otherwise be readable by anyone on
-/// the network segment. A plain value is still accepted: the console front
-/// end sends one, and so would an older page. When a value that should have
-/// been sealed arrives in the clear we remember it and say so on the Review
-/// screen, because by then it has already crossed the network readable.
+/// ⚠️ REFUSES A SECRET IN THE CLEAR. This server speaks plain HTTP, so a
+/// token sent as a bare string is readable by anything watching the segment.
+/// An earlier version accepted one and noted it afterwards; that made
+/// stopping the page's cryptography a cheaper attack than breaking it, since
+/// the plaintext followed either way. Refusing here means the only way to
+/// get a secret into this installer over the network is sealed, and the
+/// other way in is the machine's own keyboard.
+///
+/// An empty value is not a secret: clearing a field is allowed to be plain.
 fn value_from(g: &mut Wizard, a: &Value, field: &str, secret: bool) -> Result<String, String> {
     match a.get("sealed") {
         Some(v) => g.sealer.open(
@@ -250,10 +250,12 @@ fn value_from(g: &mut Wizard, a: &Value, field: &str, secret: bool) -> Result<St
             v["ct"].as_str().unwrap_or(""),
         ),
         None => {
-            if secret {
+            let plain = a[field].as_str().unwrap_or("").to_string();
+            if secret && !plain.is_empty() {
                 g.saw_cleartext_secret = true;
+                return Err("refused: a secret must be encrypted before it is sent. Type it on the machine's own screen, or reload the page so its cryptography loads.".into());
             }
-            Ok(a[field].as_str().unwrap_or("").to_string())
+            Ok(plain)
         }
     }
 }
@@ -264,6 +266,15 @@ fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
     let s = |k: &str| a[k].as_str().unwrap_or("").to_string();
     let n = |k: &str| a[k].as_u64().unwrap_or(0) as usize;
     let mut g = w.lock().unwrap();
+    // ⚠️ FROZEN WHILE THE MACHINE IS ASKING. Somebody at the console is
+    // reading the disks this is about to erase. If the answers could still
+    // change underneath them they would be approving one thing and getting
+    // another, which is the whole value of asking. Escape at the machine
+    // unfreezes it.
+    if g.install_request.is_some() {
+        g.say("the machine's own screen is asking whether to install: answer there. Nothing can change until it is answered.", true);
+        return g.state_json();
+    }
     match a["do"].as_str().unwrap_or("") {
         "set_kit" => g.set_kit(n("index")),
         "set_disk" => g.set_disk_role(n("index"), Role::from_id(&s("role"))),

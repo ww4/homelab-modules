@@ -254,6 +254,21 @@ impl Ui {
         // While a browser's request is on the screen, the only answers are
         // "no" and walking away; everything else would move the form under
         // the person who is about to confirm it.
+        // A second browser asking for the form: same answer, same keys.
+        if self.w.lock().unwrap().install_request.is_none() && self.w.lock().unwrap().takeover_request.is_some() {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.w.lock().unwrap().approve_takeover();
+                    self.sync_rows();
+                }
+                KeyCode::Esc => {
+                    self.w.lock().unwrap().refuse_takeover();
+                    self.sync_rows();
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.w.lock().unwrap().install_request.is_some() {
             match key.code {
                 // Y and not Enter: Enter is the key a person leans on, and
@@ -492,6 +507,34 @@ impl Ui {
         let body = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(3), Constraint::Length(3)]).split(outer[1]);
         // A browser asking to erase the disks: the number is the only thing
         // on this screen until someone here answers it one way or the other.
+        let asking = {
+            let g = self.w.lock().unwrap();
+            if g.install_request.is_none() { g.takeover_request.clone().map(|p| (p, g.controller.clone())) } else { None }
+        };
+        if let Some((peer, holder)) = asking {
+            let lines = vec![
+                Line::from(Span::styled(format!("The browser at {peer} wants to fill this in."), Style::default().add_modifier(Modifier::BOLD))),
+                Line::from(""),
+                Line::from(format!("{} is using it now.", holder.unwrap_or_else(|| "Another browser".into()))),
+                Line::from(""),
+                Line::from(Span::styled("   Press Y here to hand the form over.   ", Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED))),
+                Line::from(""),
+                Line::from("Knowing the code is not enough to take the form; this answer is. If you did not ask for this, press Esc."),
+            ];
+            f.render_widget(
+                Paragraph::new(lines).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::ALL).title(" Another browser is asking ")),
+                body[0],
+            );
+            let hint = Paragraph::new(Line::from(Span::styled(
+                " Y hands the form over.  Esc refuses.  ",
+                Style::default().add_modifier(Modifier::REVERSED),
+            )));
+            f.render_widget(hint, body[1]);
+            if let Some((msg, err)) = status {
+                f.render_widget(Paragraph::new(Line::from(Span::styled(msg, Style::default().fg(if err { Color::Red } else { Color::Green })))), outer[2]);
+            }
+            return;
+        }
         let waiting = self.w.lock().unwrap().install_request.clone();
         if let Some(who) = waiting {
             self.draw_install_request(f, body[0], &who);
@@ -875,10 +918,14 @@ impl Ui {
             Some(url) => format!("{}\n\nThe full walkthrough, with pictures: {url}", s.steps),
             None => s.steps.clone(),
         };
-        // The browser seals what it sends to this machine's key. Printing the
-        // fingerprint here is what makes that checkable: the page shows the
-        // same one, and a mismatch means something is sitting in between.
-        let steps = format!("{steps}\n\nTyped in a browser, this value is sealed to this machine before it leaves. Key {}", w.sealer.fingerprint());
+        // This screen's copy of the fingerprint is the trustworthy one: it
+        // did not travel. A browser showing a different one is talking to
+        // something else. A browser showing the same one has only told you
+        // what it was given.
+        let steps = format!(
+            "{steps}\n\nTyped in a browser, this value is encrypted before it is sent. This machine's key is {}; the browser shows the same, and a difference means something is wrong. Typed here, it goes nowhere near the network.",
+            w.sealer.fingerprint()
+        );
         let path_only = s.path_only;
         let rows: Vec<(String, String)> = if path_only {
             vec![("File on this machine".to_string(), if s.path.is_empty() { "—".into() } else { s.path.clone() })]
