@@ -15,7 +15,37 @@
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+/// ⚠️ WHAT BOUNDS THIS SERVER.
+///
+/// A thread per connection with no limits is a free denial of service: open
+/// sockets, send nothing, and every thread sits in `read_line` forever. The
+/// installer is short-lived and on a home network, so this is an annoyance
+/// rather than a breach, but an installer that stops answering during an
+/// install is a bad hour for somebody.
+///
+/// Three limits, all deliberately generous for the handful of browsers that
+/// will ever talk to this, and all fatal to a client that is not really
+/// speaking HTTP.
+const MAX_CONNECTIONS: usize = 64;
+const IO_TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_HEADERS: usize = 100;
+const MAX_HEADER_BYTES: usize = 16 * 1024;
+const MAX_BODY_BYTES: usize = 64 * 1024;
+
+/// Connections being served right now.
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+
+/// Decrements the live count however the thread leaves.
+struct Live;
+impl Drop for Live {
+    fn drop(&mut self) {
+        LIVE.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 use crate::wizard::{is_local_peer, BadCode, Origin, Role, Step, Wizard};
 
@@ -29,8 +59,18 @@ pub fn serve(w: Arc<Mutex<Wizard>>) -> Result<u16, String> {
     let listener = TcpListener::bind(("0.0.0.0", port)).map_err(|e| format!("the browser installer could not listen on port {port}: {e}"))?;
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
+            // Over the cap, hang up at once rather than spawning. A browser
+            // retries; a client holding sockets open gets nothing.
+            if LIVE.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+                LIVE.fetch_sub(1, Ordering::SeqCst);
+                drop(stream);
+                continue;
+            }
             let w = w.clone();
             std::thread::spawn(move || {
+                let _live = Live;
+                let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
+                let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
                 let _ = handle(stream, w);
             });
         }
@@ -57,16 +97,25 @@ fn handle(mut stream: TcpStream, w: Arc<Mutex<Wizard>>) -> std::io::Result<()> {
     let method = parts.next().unwrap_or("").to_string();
     let target = parts.next().unwrap_or("/").to_string();
     let mut length = 0usize;
-    loop {
+    let mut header_bytes = 0usize;
+    for n in 0..=MAX_HEADERS {
+        if n == MAX_HEADERS {
+            return reply(&mut stream, 431, "text/plain", b"too many headers");
+        }
         let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 || line.trim().is_empty() {
+        let read = reader.read_line(&mut line)?;
+        if read == 0 || line.trim().is_empty() {
             break;
+        }
+        header_bytes += read;
+        if header_bytes > MAX_HEADER_BYTES {
+            return reply(&mut stream, 431, "text/plain", b"headers too large");
         }
         if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
             length = v.trim().parse().unwrap_or(0);
         }
     }
-    let mut body = vec![0u8; length.min(64 * 1024)];
+    let mut body = vec![0u8; length.min(MAX_BODY_BYTES)];
     if !body.is_empty() {
         reader.read_exact(&mut body)?;
     }
@@ -169,6 +218,7 @@ fn reply(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -
         403 => "Forbidden",
         409 => "Conflict",
         404 => "Not Found",
+        431 => "Request Header Fields Too Large",
         _ => "OK",
     };
     let head = format!(
