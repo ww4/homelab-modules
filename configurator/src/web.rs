@@ -329,10 +329,10 @@ fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
                 g.say(b.message, true);
             }
         }
-        "confirm_install" => match g.confirm_install(&s("pin")) {
-            Ok(()) => {}
-            Err(e) => g.say(e, true),
-        },
+        // ⚠️ No action here starts an install. Approval is a keypress on the
+        // machine's own screen, so nothing about it crosses the network and
+        // there is nothing for a listener to catch or a guesser to try.
+        "confirm_install" => g.say("the machine's own screen is asking: press Y there to go ahead", true),
         _ => {}
     }
     g.state_json()

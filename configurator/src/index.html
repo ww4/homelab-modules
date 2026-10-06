@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Homelab installer</title>
 <style>
-.pin { font-size: 1.6rem; letter-spacing: .25em; width: 7ch; text-align: center; }
   :root {
     --bg: #fbfaf7; --fg: #1d1d1b; --muted: #5f5e58; --line: #ded9cd;
     --accent: #2a5d8f; --ok: #1d6b3f; --bad: #a32020; --card: #fff;
@@ -267,7 +266,7 @@ async function call(action) {
 function askCode() {
   if (needCode) return;
   needCode = true;
-  const input = el("input", { type: "text", placeholder: "ABC123", autocapitalize: "characters", autocomplete: "off", spellcheck: false, size: 10 });
+  const input = el("input", { type: "text", placeholder: "ACDEFGHJ", autocapitalize: "characters", autocomplete: "off", spellcheck: false, size: 12, maxLength: 8 });
   const submit = () => {
     const v = input.value.trim().toUpperCase();
     if (!v) return input.focus();
@@ -287,7 +286,7 @@ function askCode() {
   document.getElementById("screen").replaceChildren(
     el("div", { className: "card" }, [
       el("h3", { textContent: "Enter the code from the machine's screen" }),
-      el("p", { className: "muted", textContent: "The installer shows six characters next to this address. It stops anyone else on your network from filling in your install." }),
+      el("p", { className: "muted", textContent: "The installer shows eight characters next to this address, from an alphabet with no look-alikes. It stops anyone else on your network from filling in your install." }),
       el("div", { className: "row" }, [input, el("button", { className: "primary", textContent: "Continue", onclick: submit })]),
     ]));
   input.focus();
@@ -471,35 +470,23 @@ function render() {
   }
   setDisplay(go, "");
   if (showingUpdate) { renderUpdate(s); return; }
-  // Install was pressed here, and the machine's own screen is showing a
-  // number. Nothing is erased until it is typed in, so a browser alone can
-  // never do this.
-  if (s.awaiting_pin) {
+  // Install was pressed here, and the machine's own screen is asking whether
+  // to go ahead. Nothing is erased until somebody presses a key there.
+  //
+  // ⚠️ THE ANSWER NEVER TRAVELS. An earlier version had the machine show a
+  // six-digit number to type in here, which sent it straight back over the
+  // same plain HTTP the number existed to protect, and a wrong guess only
+  // cost another request. A keypress on the machine cannot be intercepted,
+  // replayed or guessed from the network at all.
+  if (s.awaiting_console) {
     setDisplay(go, "none");
     setDisplay(back, "none");
-    // The field carries no value of its own, so a poll has nothing to write
-    // into it and the digits already typed stay where they are. Both handlers
-    // read the live field by id: the one built here is merged away.
-    const send = () => {
-      const f = document.getElementById("pin");
-      const v = f.value;
-      f.value = "";
-      call({ do: "confirm_install", pin: v });
-    };
-    const fresh = show("__pin", [el("div", { className: "card" }, [
-      el("h3", { textContent: "Go and look at the machine" }),
-      el("p", { textContent: "Its own screen is showing a six-digit number. Type it here to erase the disks and install. The number is never sent to this page, so being able to read it means being in the room." }),
-      el("div", { className: "row" }, [
-        el("input", {
-          key: "pin", id: "pin", type: "text", inputMode: "numeric", autocomplete: "off", maxLength: 7,
-          className: "pin", placeholder: "000 000",
-          onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } },
-        }),
-        el("button", { key: "go", className: "danger", textContent: "Erase and install", onclick: send }),
-      ]),
-      el("p", { className: "muted", textContent: "Pressing Esc at the machine refuses the request." }),
+    show("__console", [el("div", { className: "card" }, [
+      el("h3", { textContent: "Go to the machine and say yes" }),
+      el("p", { textContent: "Its own screen is listing the disks it is about to erase and waiting for an answer. Press Y there to install, or Escape to refuse." }),
+      el("p", { className: "muted", textContent: "There is nothing to type here. The answer is a keypress on the machine, so nothing about it crosses the network and nobody can approve an install without standing in front of it." }),
+      el("p", { className: "muted", textContent: "This page comes back by itself once the install starts." }),
     ])]);
-    if (fresh) document.getElementById("pin").focus();   // only when the screen is new: never steal focus from a later poll
     return;
   }
   show(s.step, (screens[s.step] || (() => []))(s));

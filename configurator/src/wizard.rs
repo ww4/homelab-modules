@@ -279,13 +279,6 @@ pub fn new_pairing_code() -> String {
     (0..CODE_LEN).map(|_| CODE_ALPHABET[rng.gen_range(0..CODE_ALPHABET.len())] as char).collect()
 }
 
-/// The number the console shows when a browser asks to install.
-pub fn new_install_pin() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    (0..6).map(|_| char::from(b'0' + rng.gen_range(0..10u8))).collect()
-}
-
 /// How the wizard was driven for one action. The browser is configuration
 /// authority; erasing disks additionally needs someone at the machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -552,11 +545,16 @@ pub struct Wizard {
     pub auto_modules: std::collections::BTreeSet<String>,
     /// What a check for a newer installer found.
     pub update: Option<Update>,
-    /// The number the console is showing because a browser asked to install.
-    /// Never leaves this machine's screen: that is the whole point of it.
-    pub install_pin: Option<String>,
-    /// Wrong numbers typed into the browser for the current request.
-    pub pin_failures: u32,
+    /// A browser has asked to install, and the machine's own screen is
+    /// waiting for somebody to approve it. Holds the address that asked.
+    ///
+    /// ⚠️ NOTHING CROSSES THE NETWORK FOR THIS. An earlier version showed a
+    /// six-digit number on the console and had the reader type it into the
+    /// browser, which sent it straight back over the same plain HTTP the
+    /// number was meant to protect, and which could be asked for again after
+    /// three wrong guesses. The approval is a keypress here now, so there is
+    /// no secret to intercept and nothing to guess.
+    pub install_request: Option<String>,
     /// Wrong pairing codes, per source address, and the addresses that have
     /// run out of tries. Shared with the console so a person at the machine
     /// can see an attempt and clear it.
@@ -635,8 +633,7 @@ impl Wizard {
             controller: None,
             auto_modules: Default::default(),
             update: None,
-            install_pin: None,
-            pin_failures: 0,
+            install_request: None,
             code_failures: Default::default(),
             locked_out: Default::default(),
             sealer: crate::sealed::Sealer::new(),
@@ -1415,10 +1412,8 @@ impl Wizard {
             }
             Step::Review => {
                 if origin == Origin::Browser && self.live_usb {
-                    let pin = new_install_pin();
-                    self.pin_failures = 0;
-                    self.install_pin = Some(pin);
-                    self.say("the machine's own screen is showing a six-digit number: type it below to erase the disks and install", false);
+                    self.install_request = Some(self.controller.clone().unwrap_or_else(|| "a browser".into()));
+                    self.say("go to the machine: its own screen is asking whether to erase the disks and install", false);
                     return Ok(());
                 }
                 self.start_install().map_err(|e| hard(&e))?;
@@ -1434,31 +1429,18 @@ impl Wizard {
         Ok(())
     }
 
-    /// A number typed into the browser. Right: the install starts. Wrong:
-    /// counted, and after three the request is thrown away so a guesser has
-    /// to get someone at the machine to press Install again.
-    pub fn confirm_install(&mut self, typed: &str) -> Result<(), String> {
-        let want = self.install_pin.clone().ok_or("nothing is waiting to be confirmed")?;
-        let typed: String = typed.chars().filter(|c| c.is_ascii_digit()).collect();
-        if typed == want {
-            self.install_pin = None;
-            self.pin_failures = 0;
-            return self.start_install();
-        }
-        self.pin_failures += 1;
-        if self.pin_failures >= 3 {
-            self.install_pin = None;
-            self.pin_failures = 0;
-            return Err("three wrong numbers: the request was cancelled. Press Install again to get a new one.".into());
-        }
-        Err(format!("that is not the number on the machine's screen ({} left)", 3 - self.pin_failures))
+    /// Somebody at the machine approving a browser's request. There is no
+    /// value to check, because nothing was sent: being able to press this key
+    /// is the proof, and it cannot be done from the network.
+    pub fn approve_install(&mut self) -> Result<(), String> {
+        self.install_request.take().ok_or("nothing is waiting to be approved")?;
+        self.start_install()
     }
 
-    /// Someone at the machine refusing a browser's request to install.
+    /// Somebody at the machine refusing a request they did not make.
     pub fn refuse_install(&mut self) {
-        if self.install_pin.take().is_some() {
-            self.pin_failures = 0;
-            self.say("the request to install was refused at the machine", true);
+        if let Some(who) = self.install_request.take() {
+            self.say(format!("the request from {who} was refused at the machine"), true);
         }
     }
 
@@ -1687,8 +1669,7 @@ impl Wizard {
             // machine; it is never used as a secret.
             "sealing": { "public_key": self.sealer.public_hex(), "fingerprint": self.sealer.fingerprint() },
             "cleartext_secret_seen": self.saw_cleartext_secret,
-            "awaiting_pin": self.install_pin.is_some(),
-            "pin_tries_left": self.install_pin.as_ref().map(|_| 3 - self.pin_failures),
+            "awaiting_console": self.install_request.is_some(),
             "update": self.update.as_ref().map(|u| json!({
                 "newest": u.newest, "newer": u.newer, "pending": u.pending,
                 "store_path": u.store_path, "published": u.published,
@@ -2050,39 +2031,54 @@ error: Cannot build '/nix/store/k48mnl-homelab-configure-0.1.0.drv'.
     }
 
     /// The browser is configuration authority, not destructive authority:
-    /// pressing Install there asks the console for a number instead of
+    /// pressing Install there asks the machine's own screen instead of
     /// erasing anything.
     #[test]
     fn a_browser_alone_cannot_erase_a_disk() {
         let mut w = test_wizard();
         w.live_usb = true;
+        w.controller = Some("192.168.1.9".into());
         w.step = Step::Review;
         assert!(w.advance_from(Origin::Browser).is_ok());
         assert_eq!(w.step, Step::Review, "nothing started");
-        let pin = w.install_pin.clone().expect("the console is showing a number");
-        assert_eq!(pin.len(), 6);
-        assert!(pin.chars().all(|c| c.is_ascii_digit()));
+        assert_eq!(w.install_request.as_deref(), Some("192.168.1.9"), "the machine is asking about that browser");
 
-        assert!(w.confirm_install("000000").is_err() || pin == "000000");
-        assert!(w.confirm_install("111111").is_err() || pin == "111111");
-        // Three wrong numbers throw the request away rather than letting a
-        // guesser keep trying against a six-digit secret.
-        let _ = w.confirm_install("222222");
-        if !["000000", "111111", "222222"].contains(&pin.as_str()) {
-            assert!(w.install_pin.is_none(), "the request was cancelled");
-        }
+        // ⚠️ There is nothing for the network to carry, guess or replay. The
+        // earlier design put a six-digit number on the console and had it
+        // typed back over the same plain HTTP, and would mint another after
+        // three wrong guesses.
+        let json = w.state_json();
+        assert_eq!(json["awaiting_console"], serde_json::json!(true));
+        assert!(json.get("awaiting_pin").is_none(), "no number is involved any more");
+        assert!(
+            !json.to_string().contains("192.168.1.9") || json["web"]["controller"] == serde_json::json!("192.168.1.9"),
+            "the only place the address appears is where it already did"
+        );
     }
 
     #[test]
-    fn the_console_can_refuse_a_request_it_did_not_make() {
+    fn only_someone_at_the_machine_can_approve_or_refuse() {
         let mut w = test_wizard();
         w.live_usb = true;
         w.step = Step::Review;
+        assert!(w.approve_install().is_err(), "nothing is waiting yet");
+
         assert!(w.advance_from(Origin::Browser).is_ok());
-        assert!(w.install_pin.is_some());
+        assert!(w.install_request.is_some());
         w.refuse_install();
-        assert!(w.install_pin.is_none());
-        assert!(w.confirm_install("123456").is_err(), "nothing is waiting any more");
+        assert!(w.install_request.is_none());
+        assert!(w.approve_install().is_err(), "a refused request cannot be approved after the fact");
+    }
+
+    /// An install started at the console needs no second approval: that
+    /// person is already standing at the machine.
+    #[test]
+    fn the_console_needs_no_approval_of_its_own() {
+        let mut w = test_wizard();
+        w.live_usb = true;
+        w.step = Step::Review;
+        let _ = w.advance_from(Origin::Console);
+        assert!(w.install_request.is_none(), "the console does not ask itself");
     }
 
     #[test]

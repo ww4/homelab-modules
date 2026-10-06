@@ -254,10 +254,21 @@ impl Ui {
         // While a browser's request is on the screen, the only answers are
         // "no" and walking away; everything else would move the form under
         // the person who is about to confirm it.
-        if self.w.lock().unwrap().install_pin.is_some() {
-            if key.code == KeyCode::Esc {
-                self.w.lock().unwrap().refuse_install();
-                self.sync_rows();
+        if self.w.lock().unwrap().install_request.is_some() {
+            match key.code {
+                // Y and not Enter: Enter is the key a person leans on, and
+                // this one erases disks.
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    if let Err(e) = self.w.lock().unwrap().approve_install() {
+                        self.w.lock().unwrap().say(e, true);
+                    }
+                    self.sync_rows();
+                }
+                KeyCode::Esc => {
+                    self.w.lock().unwrap().refuse_install();
+                    self.sync_rows();
+                }
+                _ => {}
             }
             return;
         }
@@ -481,11 +492,11 @@ impl Ui {
         let body = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(3), Constraint::Length(3)]).split(outer[1]);
         // A browser asking to erase the disks: the number is the only thing
         // on this screen until someone here answers it one way or the other.
-        let waiting = self.w.lock().unwrap().install_pin.clone();
-        if let Some(pin) = waiting {
-            self.draw_install_request(f, body[0], &pin);
+        let waiting = self.w.lock().unwrap().install_request.clone();
+        if let Some(who) = waiting {
+            self.draw_install_request(f, body[0], &who);
             let hint = Paragraph::new(Line::from(Span::styled(
-                " Esc refuses it. The number is on this screen only; it is never sent to the browser. ",
+                " Y erases the disks and installs.  Esc refuses.  Nothing about this answer crosses the network. ",
                 Style::default().add_modifier(Modifier::REVERSED),
             )));
             f.render_widget(hint, body[1]);
@@ -592,19 +603,17 @@ impl Ui {
     }
 
     /// A browser has pressed Install. It cannot erase anything on its own:
-    /// this number has to be read here and typed there, which means someone
-    /// is standing at the machine at the moment the disks are erased.
-    fn draw_install_request(&self, f: &mut Frame, area: Rect, pin: &str) {
+    /// the answer is a keypress here, so the only way to approve an install
+    /// is to be standing at the machine when the disks are erased. Nothing
+    /// about the answer travels, so there is nothing to intercept or guess.
+    fn draw_install_request(&self, f: &mut Frame, area: Rect, who: &str) {
         let w = self.w.lock().unwrap();
-        let who = w.controller.clone().unwrap_or_else(|| "a browser".into());
         let erased = w.erased();
         drop(w);
         let mut lines = vec![
             Line::from(Span::styled(format!("The browser at {who} wants to install."), Style::default().add_modifier(Modifier::BOLD))),
             Line::from(""),
-            Line::from("Type this number in that browser to go ahead:"),
-            Line::from(""),
-            Line::from(Span::styled(format!("   {}   ", spaced(pin)), Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED))),
+            Line::from(Span::styled("   Press Y here to erase these disks and install.   ", Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED))),
             Line::from(""),
             Line::from(Span::styled("These disks are erased:", Style::default().fg(Color::Red))),
         ];
@@ -999,11 +1008,4 @@ impl Ui {
         lines.extend(tail.into_iter().map(Line::from));
         f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).block(Block::default().borders(Borders::ALL).title(" what happened ")), area);
     }
-}
-
-/// `123456` as `123 456`: six digits run together are easy to misread off a
-/// VGA console, and this is typed on another machine.
-fn spaced(pin: &str) -> String {
-    let (a, b) = pin.split_at(pin.len() / 2);
-    format!("{a} {b}")
 }
