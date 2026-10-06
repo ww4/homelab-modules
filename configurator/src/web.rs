@@ -5,9 +5,12 @@
 //! this way; this is the small version of it.
 //!
 //! No framework and no dependency: a thread per connection, HTTP/1.1 with
-//! Content-Length, three routes. A six-character code shown on the console
-//! gates every API call, so a neighbour on the same network cannot drive an
-//! install (the page itself is harmless and needs no code).
+//! Content-Length, three routes. An eight-character code shown on the
+//! console gates every API call, wrong codes are counted and then refused
+//! per source address, and a peer that is not on a local network is hung up
+//! on before anything is read. Erasing a disk needs one more thing: a number
+//! shown only on the machine's own screen. The page itself is harmless and
+//! needs no code.
 
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};

@@ -259,7 +259,7 @@ pub fn kits() -> Vec<Kit> {
         },
         Kit { name: "Media box", blurb: "The Starter plus the whole media pipeline: *arr apps behind a VPN, audiobooks, music, a disk pool with parity.", modules: profile(include_str!("../profiles/media-box.json")) },
         Kit { name: "Docs and forge", blurb: "Documents, photos, notes, passwords, a git forge, single sign-on: the office half.", modules: profile(include_str!("../profiles/docs-forge.json")) },
-        Kit { name: "Everything", blurb: "Every module in the library. Needs a domain, a VPN account, a Backblaze account and a few disks.", modules: profile(include_str!("../profiles/everything.json")) },
+        Kit { name: "Everything", blurb: "Everything that runs on its own: 40 of the library's 42 modules. Needs a domain, a VPN account, a Backblaze account and a few disks. The two left out need a server you already run elsewhere (MeshCentral) or a config file you write yourself (recyclarr); add them on the Modules screen.", modules: profile(include_str!("../profiles/everything.json")) },
         Kit { name: "Minimal", blurb: "Just the foundation: a machine that boots and is yours, serving nothing yet.", modules: vec![] },
         Kit { name: "Custom", blurb: "Whatever you tick on the Modules screen. Picking this changes nothing; it is what the kit says when your list matches none of the above.", modules: vec![CUSTOM.to_string()] },
     ]
