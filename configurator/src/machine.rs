@@ -221,3 +221,102 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 }
+
+// ── the card list ────────────────────────────────────────────────────────
+//
+// ⚠️ FETCHED, NOT BAKED IN. What a card can run changes as models change, and
+// new cards appear between installers. The list lives in the public
+// repository and is pulled when it is needed, which is only on a machine that
+// actually has a graphics card: a server with none never asks for it.
+//
+// It is advisory. Nothing here decides what gets installed, only what the
+// screen offers and what it says a card can do, so a stale or unreachable
+// list costs a reader a suggestion and nothing else.
+
+/// Where the list lives. Served from the public mirror, like everything else
+/// a stranger's machine has to reach.
+pub const CARD_LIST: &str = "https://raw.githubusercontent.com/ww4/homelab-modules/main/data/gpus.json";
+
+/// What the list says about the card in this machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Card {
+    pub name: String,
+    pub vendor: String,
+    pub vram_gb: u64,
+    pub note: Option<String>,
+    /// The tier's short name, and what it says the card can run.
+    pub tier: String,
+    pub runs: String,
+}
+
+/// Look an id up in a list that has already been fetched. Pure, so the
+/// matching and the tiering can be tested without a network.
+pub fn card_from_list(list: &serde_json::Value, id: &str) -> Option<Card> {
+    let c = list.get("cards")?.get(id)?;
+    let vram = c.get("vram_gb")?.as_u64()?;
+    let tiers = list.get("tiers")?.as_array()?;
+    // The list is ordered from most memory down; the first one this card
+    // reaches is its tier.
+    let t = tiers.iter().find(|t| vram >= t.get("min_vram_gb").and_then(|v| v.as_u64()).unwrap_or(0))?;
+    Some(Card {
+        name: c.get("name")?.as_str()?.to_string(),
+        vendor: c.get("vendor").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        vram_gb: vram,
+        note: c.get("note").and_then(|v| v.as_str()).map(String::from),
+        tier: t.get("name")?.as_str()?.to_string(),
+        runs: t.get("runs")?.as_str()?.to_string(),
+    })
+}
+
+/// Fetch the list. Failure is not an error worth stopping for: the kit that
+/// wants a card simply is not offered, and the screen says why.
+pub fn fetch_card_list() -> Option<serde_json::Value> {
+    let out = std::process::Command::new("curl")
+        .args(["-fsS", "--max-time", "15", CARD_LIST])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    serde_json::from_slice(&out.stdout).ok()
+}
+
+#[cfg(test)]
+mod list_tests {
+    use super::*;
+
+    fn list() -> serde_json::Value {
+        serde_json::json!({
+            "tiers": [
+                {"min_vram_gb": 24, "name": "large", "runs": "big things"},
+                {"min_vram_gb": 16, "name": "good",  "runs": "middling things"},
+                {"min_vram_gb": 6,  "name": "small", "runs": "small things"},
+                {"min_vram_gb": 0,  "name": "none",  "runs": "nothing worth running"}
+            ],
+            "cards": {
+                "10de:2684": {"name": "AD102 [GeForce RTX 4090]", "vendor": "NVIDIA", "vram_gb": 24},
+                "8086:56a0": {"name": "DG2 [Arc A770]", "vendor": "Intel", "vram_gb": 8, "note": "a 16 GB version also exists"},
+                "1002:1111": {"name": "something tiny", "vendor": "AMD", "vram_gb": 2}
+            }
+        })
+    }
+
+    #[test]
+    fn a_card_lands_in_the_tier_its_memory_earns() {
+        let l = list();
+        let big = card_from_list(&l, "10de:2684").unwrap();
+        assert_eq!((big.tier.as_str(), big.vram_gb), ("large", 24));
+        let mid = card_from_list(&l, "8086:56a0").unwrap();
+        assert_eq!(mid.tier, "small");
+        assert_eq!(mid.note.as_deref(), Some("a 16 GB version also exists"));
+        let tiny = card_from_list(&l, "1002:1111").unwrap();
+        assert_eq!(tiny.tier, "none", "2 GB is not a card to run models on");
+    }
+
+    #[test]
+    fn a_card_nobody_listed_is_simply_unknown() {
+        // The integrated part in an old desktop, which is not in the list and
+        // must not be guessed at.
+        assert!(card_from_list(&list(), "8086:0412").is_none());
+    }
+}

@@ -511,6 +511,11 @@ pub struct Wizard {
     /// What kind of machine this is: chassis, processor, graphics. Read once
     /// at startup, because none of it changes under us.
     pub machine: crate::machine::Machine,
+    /// What the published card list says about the graphics in this machine.
+    /// Looked up once, after the network is known to work, and only when
+    /// there is a card to look up.
+    pub card: Option<crate::machine::Card>,
+    card_list_tried: bool,
     pub network: Arc<Mutex<(String, Option<bool>)>>,
     pub live_usb: bool,
     pub kits: Vec<Kit>,
@@ -610,6 +615,8 @@ impl Wizard {
             status: None,
             ram_mib: crate::plan::machine_ram_mib(),
             machine: crate::machine::Machine::read(),
+            card: None,
+            card_list_tried: false,
             network: Arc::new(Mutex::new((String::new(), None))),
             live_usb,
             kits: kits(),
@@ -1390,8 +1397,11 @@ impl Wizard {
                 if internet == Some(false) {
                     soft(self, "the internet is not reachable from here, and the install downloads a few gigabytes")?;
                 }
+                // The network is up by here, which is what this needs.
+                self.ensure_card_known();
             }
             Step::Kit => {}
+            // (the card lookup happens on the way out of Welcome, below)
             Step::Storage => {
                 if self.system_disk().is_none() {
                     return Err(hard("choose the disk the system goes on"));
@@ -1556,6 +1566,23 @@ impl Wizard {
         self.say("every refused address may try the code again", false);
     }
 
+    /// Ask the published list what the card in this machine is.
+    ///
+    /// ⚠️ Only when there is one. A server with no graphics card never
+    /// fetches this, which is the point of keeping the list out of the
+    /// binary. Called after the Welcome screen, because that is where the
+    /// network is established, and tried once.
+    pub fn ensure_card_known(&mut self) {
+        if self.card_list_tried || self.machine.best_gpu().is_none() {
+            return;
+        }
+        self.card_list_tried = true;
+        let Some(id) = self.machine.best_gpu().map(|g| g.id.clone()) else { return };
+        if let Some(list) = crate::machine::fetch_card_list() {
+            self.card = crate::machine::card_from_list(&list, &id);
+        }
+    }
+
     pub fn back(&mut self) {
         if matches!(self.step, Step::Welcome | Step::Install | Step::Done) {
             return;
@@ -1697,7 +1724,17 @@ impl Wizard {
                 "gpus": self.machine.gpus.iter().map(|g| json!({
                     "id": g.id, "vendor": g.vendor, "primary": g.primary, "usable": g.usable,
                 })).collect::<Vec<_>>(),
-                "gpu": self.machine.best_gpu().map(|g| json!({ "id": g.id, "vendor": g.vendor })),
+                "gpu": self.machine.best_gpu().map(|g| json!({
+                    "id": g.id,
+                    "vendor": g.vendor,
+                    // Filled in from the published list once there is a
+                    // network. Absent means "not looked up yet, or the card
+                    // is not one the list knows".
+                    "card": self.card.as_ref().map(|c| json!({
+                        "name": c.name, "vram_gb": c.vram_gb, "tier": c.tier,
+                        "runs": c.runs, "note": c.note,
+                    })),
+                })),
             },
             "memory": { "need_mib": need, "verdict": verdict, "short": short },
             "kit": self.chosen_kit(),

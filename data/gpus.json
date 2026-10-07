@@ -1,0 +1,1453 @@
+{
+ "schema": 1,
+ "updated": "2026-10-06",
+ "names_from": "hwdata pci.ids, sha256 78cd456402b0407c",
+ "memory_from": "data/gpu-memory.tsv in this repository; corrections are a pull request",
+ "tiers": [
+  {
+   "min_vram_gb": 24,
+   "name": "large",
+   "runs": "30B-class models at 4-bit, or a 70B at low quality"
+  },
+  {
+   "min_vram_gb": 16,
+   "name": "good",
+   "runs": "14B-class models comfortably, 30B at 4-bit"
+  },
+  {
+   "min_vram_gb": 10,
+   "name": "fair",
+   "runs": "7B and 8B models comfortably, 14B at 4-bit"
+  },
+  {
+   "min_vram_gb": 6,
+   "name": "small",
+   "runs": "7B and 8B models at 4-bit"
+  },
+  {
+   "min_vram_gb": 0,
+   "name": "none",
+   "runs": "nothing worth running on the card; models would fall back to the processor"
+  }
+ ],
+ "cards": {
+  "1002:66a1": {
+   "name": "Vega 20 [Radeon Pro VII/Radeon Instinct MI50]",
+   "vendor": "AMD",
+   "vram_gb": 16
+  },
+  "1002:66af": {
+   "name": "Vega 20 [Radeon VII]",
+   "vendor": "AMD",
+   "vram_gb": 16
+  },
+  "1002:687f": {
+   "name": "Vega 10 XL/XT [Radeon RX Vega 56/64]",
+   "vendor": "AMD",
+   "vram_gb": 8
+  },
+  "1002:731f": {
+   "name": "Navi 10 [Radeon RX 5600 OEM/5600 XT / 5700/5700 XT]",
+   "vendor": "AMD",
+   "vram_gb": 6
+  },
+  "1002:73a5": {
+   "name": "Navi 21 [Radeon RX 6950 XT]",
+   "vendor": "AMD",
+   "vram_gb": 16
+  },
+  "1002:73af": {
+   "name": "Navi 21 [Radeon RX 6900 XT]",
+   "vendor": "AMD",
+   "vram_gb": 16
+  },
+  "1002:73bf": {
+   "name": "Navi 21 [Radeon RX 6800/6800 XT / 6900 XT]",
+   "vendor": "AMD",
+   "vram_gb": 16
+  },
+  "1002:73df": {
+   "name": "Navi 22 [Radeon RX 6700/6700 XT/6750 XT / 6800M/6850M XT]",
+   "vendor": "AMD",
+   "vram_gb": 10,
+   "note": "a 12 GB version also exists"
+  },
+  "1002:73ef": {
+   "name": "Navi 23 [Radeon RX 6650 XT / 6700S / 6800S]",
+   "vendor": "AMD",
+   "vram_gb": 8
+  },
+  "1002:73f0": {
+   "name": "Navi 33 [Radeon RX 7600M XT]",
+   "vendor": "AMD",
+   "vram_gb": 8
+  },
+  "1002:73ff": {
+   "name": "Navi 23 [Radeon RX 6600/6600 XT/6600M]",
+   "vendor": "AMD",
+   "vram_gb": 8
+  },
+  "1002:744c": {
+   "name": "Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M]",
+   "vendor": "AMD",
+   "vram_gb": 20,
+   "note": "the XTX variant has 24 GB"
+  },
+  "1002:747e": {
+   "name": "Navi 32 [Radeon RX 7700 XT / 7800 XT]",
+   "vendor": "AMD",
+   "vram_gb": 12
+  },
+  "1002:7480": {
+   "name": "Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600]",
+   "vendor": "AMD",
+   "vram_gb": 8
+  },
+  "1002:7483": {
+   "name": "Navi 33 [Radeon RX 7600M/7600M XT]",
+   "vendor": "AMD",
+   "vram_gb": 8
+  },
+  "1002:ab20": {
+   "name": "Vega 20 HDMI Audio [Radeon VII]",
+   "vendor": "AMD",
+   "vram_gb": 16
+  },
+  "10de:15f7": {
+   "name": "GP100GL [Tesla P100 PCIe 12GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:15f8": {
+   "name": "GP100GL [Tesla P100 PCIe 16GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:15f9": {
+   "name": "GP100GL [Tesla P100 SXM2 16GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:15fc": {
+   "name": "GP100GL [Tesla P100-DGXS-16GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:1af1": {
+   "name": "GA100 [A100 NVSwitch]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:1b01": {
+   "name": "GP102 [GeForce GTX 1080 Ti 10GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 11
+  },
+  "10de:1b06": {
+   "name": "GP102 [GeForce GTX 1080 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 11
+  },
+  "10de:1b38": {
+   "name": "GP102GL [Tesla P40]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:1b80": {
+   "name": "GP104 [GeForce GTX 1080]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1b81": {
+   "name": "GP104 [GeForce GTX 1070]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1b82": {
+   "name": "GP104 [GeForce GTX 1070 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1b83": {
+   "name": "GP104 [GeForce GTX 1060 6GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1b84": {
+   "name": "GP104 [GeForce GTX 1060 3GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1ba0": {
+   "name": "GP104M [GeForce GTX 1080 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1ba1": {
+   "name": "GP104M [GeForce GTX 1070 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1ba2": {
+   "name": "GP104M [GeForce GTX 1070 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1bad": {
+   "name": "GP104 [GeForce GTX 1070 Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1be0": {
+   "name": "GP104BM [GeForce GTX 1080 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1be1": {
+   "name": "GP104BM [GeForce GTX 1070 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1c02": {
+   "name": "GP106 [GeForce GTX 1060 3GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1c03": {
+   "name": "GP106 [GeForce GTX 1060 6GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1c04": {
+   "name": "GP106 [GeForce GTX 1060 5GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1c06": {
+   "name": "GP106 [GeForce GTX 1060 6GB Rev. 2]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1c20": {
+   "name": "GP106M [GeForce GTX 1060 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1c23": {
+   "name": "GP106M [GeForce GTX 1060 Mobile Rev. 2]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1c60": {
+   "name": "GP106BM [GeForce GTX 1060 Mobile 6GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 3 GB version also exists"
+  },
+  "10de:1e03": {
+   "name": "TU102 [GeForce RTX 2080 Ti 12GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 11
+  },
+  "10de:1e04": {
+   "name": "TU102 [GeForce RTX 2080 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 11
+  },
+  "10de:1e07": {
+   "name": "TU102 [GeForce RTX 2080 Ti Rev. A]",
+   "vendor": "NVIDIA",
+   "vram_gb": 11
+  },
+  "10de:1e2d": {
+   "name": "TU102 [GeForce RTX 2080 Ti Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 11
+  },
+  "10de:1e2e": {
+   "name": "TU102 [GeForce RTX 2080 Ti 12GB Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 11
+  },
+  "10de:1e38": {
+   "name": "TU102GL [Tesla T40 24GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:1e81": {
+   "name": "TU104 [GeForce RTX 2080 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1e82": {
+   "name": "TU104 [GeForce RTX 2080]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1e84": {
+   "name": "TU104 [GeForce RTX 2070 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1e87": {
+   "name": "TU104 [GeForce RTX 2080 Rev. A]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1e89": {
+   "name": "TU104 [GeForce RTX 2060]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1e90": {
+   "name": "TU104M [GeForce RTX 2080 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1e91": {
+   "name": "TU104M [GeForce RTX 2070 SUPER Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1e93": {
+   "name": "TU104M [GeForce RTX 2080 SUPER Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1eb8": {
+   "name": "TU104GL [Tesla T4]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:1ec2": {
+   "name": "TU104 [GeForce RTX 2070 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1ec7": {
+   "name": "TU104 [GeForce RTX 2070 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1ed0": {
+   "name": "TU104BM [GeForce RTX 2080 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1ed1": {
+   "name": "TU104BM [GeForce RTX 2070 SUPER Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1ed3": {
+   "name": "TU104BM [GeForce RTX 2080 SUPER Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1f02": {
+   "name": "TU106 [GeForce RTX 2070]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1f03": {
+   "name": "TU106 [GeForce RTX 2060 12GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f06": {
+   "name": "TU106 [GeForce RTX 2060 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f07": {
+   "name": "TU106 [GeForce RTX 2070 Rev. A]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1f08": {
+   "name": "TU106 [GeForce RTX 2060 Rev. A]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f09": {
+   "name": "TU106 [GeForce GTX 1660 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6
+  },
+  "10de:1f0a": {
+   "name": "TU106 [GeForce GTX 1650]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1f10": {
+   "name": "TU106M [GeForce RTX 2070 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1f11": {
+   "name": "TU106M [GeForce RTX 2060 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f12": {
+   "name": "TU106M [GeForce RTX 2060 Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f14": {
+   "name": "TU106M [GeForce RTX 2070 Mobile / Max-Q Refresh]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1f15": {
+   "name": "TU106M [GeForce RTX 2060 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f42": {
+   "name": "TU106 [GeForce RTX 2060 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f47": {
+   "name": "TU106 [GeForce RTX 2060 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f50": {
+   "name": "TU106BM [GeForce RTX 2070 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1f51": {
+   "name": "TU106BM [GeForce RTX 2060 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f54": {
+   "name": "TU106BM [GeForce RTX 2070 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:1f55": {
+   "name": "TU106BM [GeForce RTX 2060 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:1f82": {
+   "name": "TU117 [GeForce GTX 1650]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1f91": {
+   "name": "TU117M [GeForce GTX 1650 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1f92": {
+   "name": "TU117M [GeForce GTX 1650 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1f94": {
+   "name": "TU117M [GeForce GTX 1650 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1f95": {
+   "name": "TU117M [GeForce GTX 1650 Ti Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1f96": {
+   "name": "TU117M [GeForce GTX 1650 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1f99": {
+   "name": "TU117M [GeForce GTX 1650 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1f9d": {
+   "name": "TU117M [GeForce GTX 1650 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1fd9": {
+   "name": "TU117BM [GeForce GTX 1650 Mobile Refresh]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:1fdd": {
+   "name": "TU117BM [GeForce GTX 1650 Mobile Refresh]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:2080": {
+   "name": "GA100",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:2081": {
+   "name": "GA100",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:2082": {
+   "name": "GA100 [CMP 170HX]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b0": {
+   "name": "GA100 [A100 SXM4 40GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b1": {
+   "name": "GA100 [A100 PCIe 40GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b2": {
+   "name": "GA100 [A100 SXM4 80GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b3": {
+   "name": "GA100 [A100-SXM-64GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b4": {
+   "name": "GA100",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b5": {
+   "name": "GA100 [A100 PCIe 80GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b6": {
+   "name": "GA100GL [PG506-232]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b7": {
+   "name": "GA100GL [A30 PCIe]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b8": {
+   "name": "GA100 [A100X]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20b9": {
+   "name": "GA100 [A30X]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20bb": {
+   "name": "GA100 [DRIVE A100 PROD]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20bd": {
+   "name": "GA100 [A800 SXM4 40GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20be": {
+   "name": "GA100 [GRID A100A]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20bf": {
+   "name": "GA100 [GRID A100B]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20c0": {
+   "name": "GA100 [Initial DevID]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20c2": {
+   "name": "GA100 [CMP 170HX]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20f0": {
+   "name": "GA100 [A100-PG506-207]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20f1": {
+   "name": "GA100 [A100 PCIe 40GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20f2": {
+   "name": "GA100 [A100-PG506-217]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20f3": {
+   "name": "GA100 [A800-SXM4-80GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20f5": {
+   "name": "GA100 [A800 80GB PCIe]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20f6": {
+   "name": "GA100 [A800 40GB PCIe]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20fd": {
+   "name": "GA100 [AX800 Converged Accelerator]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20fe": {
+   "name": "GA100 [INT SKU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:20ff": {
+   "name": "GA100",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:2182": {
+   "name": "TU116 [GeForce GTX 1660 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6
+  },
+  "10de:2184": {
+   "name": "TU116 [GeForce GTX 1660]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6
+  },
+  "10de:2187": {
+   "name": "TU116 [GeForce GTX 1650 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:2188": {
+   "name": "TU116 [GeForce GTX 1650]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:2191": {
+   "name": "TU116M [GeForce GTX 1660 Ti Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6
+  },
+  "10de:2192": {
+   "name": "TU116M [GeForce GTX 1650 Ti Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 4
+  },
+  "10de:21c4": {
+   "name": "TU116 [GeForce GTX 1660 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6
+  },
+  "10de:21d1": {
+   "name": "TU116BM [GeForce GTX 1660 Ti Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6
+  },
+  "10de:2203": {
+   "name": "GA102 [GeForce RTX 3090 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:2204": {
+   "name": "GA102 [GeForce RTX 3090]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:2205": {
+   "name": "GA102 [GeForce RTX 3080 Ti 20GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2206": {
+   "name": "GA102 [GeForce RTX 3080]",
+   "vendor": "NVIDIA",
+   "vram_gb": 10,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2207": {
+   "name": "GA102 [GeForce RTX 3070 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:2208": {
+   "name": "GA102 [GeForce RTX 3080 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:220a": {
+   "name": "GA102 [GeForce RTX 3080 12GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 10,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2216": {
+   "name": "GA102 [GeForce RTX 3080 Lite Hash Rate]",
+   "vendor": "NVIDIA",
+   "vram_gb": 10,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:222b": {
+   "name": "GA102 [GeForce RTX 3090 Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:222f": {
+   "name": "GA102 [GeForce RTX 3080 11GB / 12GB Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 10,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2230": {
+   "name": "GA102GL [RTX A6000]",
+   "vendor": "NVIDIA",
+   "vram_gb": 48
+  },
+  "10de:2231": {
+   "name": "GA102GL [RTX A5000]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:22a3": {
+   "name": "GH100 [H100 NVSwitch]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2302": {
+   "name": "GH100",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:230c": {
+   "name": "GH100 [H20 NVL16]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:230e": {
+   "name": "GH100 [H20 NVL16]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2313": {
+   "name": "GH100 [H100 CNX]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2321": {
+   "name": "GH100 [H100L 94GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2322": {
+   "name": "GH100 [H800 PCIe]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2324": {
+   "name": "GH100 [H800]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2328": {
+   "name": "GH100 [H20B]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2329": {
+   "name": "GH100 [H20]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:232c": {
+   "name": "GH100 [H20 HBM3e]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2330": {
+   "name": "GH100 [H100 SXM5 80GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2331": {
+   "name": "GH100 [H100 PCIe]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2335": {
+   "name": "GH100 [H200 SXM 141GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2336": {
+   "name": "GH100 [H100]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2337": {
+   "name": "GH100 [H100 SXM5 64GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2338": {
+   "name": "GH100 [H100 SXM5 96GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2339": {
+   "name": "GH100 [H100 SXM5 94GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:233a": {
+   "name": "GH100 [H800L 94GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:233b": {
+   "name": "GH100 [H200 NVL]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:233d": {
+   "name": "GH100 [H100 96GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2342": {
+   "name": "GH100 [GH200 120GB / 480GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2343": {
+   "name": "GH100",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2345": {
+   "name": "GH100 [GH100-88K-A1]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2348": {
+   "name": "GH100 [GH200 144G HBM3e]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:237e": {
+   "name": "GH100 [H100 GH3]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:237f": {
+   "name": "GH100 [Skinny Joe]",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:23b0": {
+   "name": "GH100",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:23f0": {
+   "name": "GH100",
+   "vendor": "NVIDIA",
+   "vram_gb": 80
+  },
+  "10de:2414": {
+   "name": "GA103 [GeForce RTX 3060 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:2420": {
+   "name": "GA103M [GeForce RTX 3080 Ti Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2460": {
+   "name": "GA103M [GeForce RTX 3080 Ti Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2482": {
+   "name": "GA104 [GeForce RTX 3070 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:2484": {
+   "name": "GA104 [GeForce RTX 3070]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:2486": {
+   "name": "GA104 [GeForce RTX 3060 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:2487": {
+   "name": "GA104 [GeForce RTX 3060]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2488": {
+   "name": "GA104 [GeForce RTX 3070 Lite Hash Rate]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:2489": {
+   "name": "GA104 [GeForce RTX 3060 Ti Lite Hash Rate]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:248c": {
+   "name": "GA104 [GeForce RTX 3070 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:248d": {
+   "name": "GA104 [GeForce RTX 3070]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:248e": {
+   "name": "GA104 [GeForce RTX 3060 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:249c": {
+   "name": "GA104M [GeForce RTX 3080 Mobile / Max-Q 8GB/16GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 10,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:249d": {
+   "name": "GA104M [GeForce RTX 3070 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:24ad": {
+   "name": "GA104 [GeForce RTX 3060 Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:24af": {
+   "name": "GA104 [GeForce RTX 3070 Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:24b0": {
+   "name": "GA104GL [RTX A4000]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:24b1": {
+   "name": "GA104GL [RTX A4000H]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:24b6": {
+   "name": "GA104GLM [RTX A5000 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:24b7": {
+   "name": "GA104GLM [RTX A4000 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:24bf": {
+   "name": "GA104 [GeForce RTX 3070 Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:24c7": {
+   "name": "GA104 [GeForce RTX 3060 8GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:24c8": {
+   "name": "GA104 [GeForce RTX 3070 GDDR6X]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:24c9": {
+   "name": "GA104 [GeForce RTX 3060 Ti GDDR6X]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:24dc": {
+   "name": "GA104M [GeForce RTX 3080 Mobile / Max-Q 8GB/16GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 10,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:24dd": {
+   "name": "GA104M [GeForce RTX 3070 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:2501": {
+   "name": "GA106 [GeForce RTX 3060]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2503": {
+   "name": "GA106 [GeForce RTX 3060]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2504": {
+   "name": "GA106 [GeForce RTX 3060 Lite Hash Rate]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2508": {
+   "name": "GA106 [GeForce RTX 3050 OEM]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:2509": {
+   "name": "GA106 [GeForce RTX 3060 12GB Rev. 2]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2520": {
+   "name": "GA106M [GeForce RTX 3060 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2521": {
+   "name": "GA106M [GeForce RTX 3060 Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2523": {
+   "name": "GA106M [GeForce RTX 3050 Ti Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:252f": {
+   "name": "GA106 [GeForce RTX 3060 Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2544": {
+   "name": "GA106 [GeForce RTX 3060]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2560": {
+   "name": "GA106M [GeForce RTX 3060 Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2561": {
+   "name": "GA106M [GeForce RTX 3060 Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 12 GB version also exists"
+  },
+  "10de:2563": {
+   "name": "GA106M [GeForce RTX 3050 Ti Mobile / Max-Q]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:2582": {
+   "name": "GA107 [GeForce RTX 3050 8GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:2583": {
+   "name": "GA107 [GeForce RTX 3050 4GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:2584": {
+   "name": "GA107 [GeForce RTX 3050 6GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25a0": {
+   "name": "GA107M [GeForce RTX 3050 Ti Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25a2": {
+   "name": "GA107M [GeForce RTX 3050 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25a5": {
+   "name": "GA107M [GeForce RTX 3050 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25ab": {
+   "name": "GA107M [GeForce RTX 3050 4GB Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25ac": {
+   "name": "GA107BM / GN20-P0-R-K2 [GeForce RTX 3050 6GB Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25af": {
+   "name": "GA107 [GeForce RTX 3050 Engineering Sample]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25b0": {
+   "name": "GA107GL [RTX A1000]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:25b9": {
+   "name": "GA107GLM [RTX A1000 Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:25bc": {
+   "name": "GA107GLM [RTX A1000 6GB Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:25e0": {
+   "name": "GA107BM [GeForce RTX 3050 Ti Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25e2": {
+   "name": "GA107BM [GeForce RTX 3050 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25e5": {
+   "name": "GA107BM [GeForce RTX 3050 Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25ec": {
+   "name": "GA107BM / GN20-P0-R-K2 [GeForce RTX 3050 6GB Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:25f9": {
+   "name": "GA107 [RTX A1000 Embedded GPU ]",
+   "vendor": "NVIDIA",
+   "vram_gb": 40,
+   "note": "an 80 GB version also exists"
+  },
+  "10de:2684": {
+   "name": "AD102 [GeForce RTX 4090]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:2685": {
+   "name": "AD102 [GeForce RTX 4090 D]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:2689": {
+   "name": "AD102 [GeForce RTX 4070 Ti SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:26b5": {
+   "name": "AD102GL [L40]",
+   "vendor": "NVIDIA",
+   "vram_gb": 48
+  },
+  "10de:26b8": {
+   "name": "AD102GL [L40G]",
+   "vendor": "NVIDIA",
+   "vram_gb": 48
+  },
+  "10de:26b9": {
+   "name": "AD102GL [L40S]",
+   "vendor": "NVIDIA",
+   "vram_gb": 48
+  },
+  "10de:26f5": {
+   "name": "AD102GL [L40 CNX]",
+   "vendor": "NVIDIA",
+   "vram_gb": 48
+  },
+  "10de:2702": {
+   "name": "AD103 [GeForce RTX 4080 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:2703": {
+   "name": "AD103 [GeForce RTX 4080 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:2704": {
+   "name": "AD103 [GeForce RTX 4080]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:2705": {
+   "name": "AD103 [GeForce RTX 4070 Ti SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:2709": {
+   "name": "AD103 [GeForce RTX 4070]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2717": {
+   "name": "AD103M / GN21-X11 [GeForce RTX 4090 Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:2757": {
+   "name": "AD103M / GN21-X11 [GeForce RTX 4090 Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 24
+  },
+  "10de:2782": {
+   "name": "AD104 [GeForce RTX 4070 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2783": {
+   "name": "AD104 [GeForce RTX 4070 SUPER]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2786": {
+   "name": "AD104 [GeForce RTX 4070]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2788": {
+   "name": "AD104 [GeForce RTX 4060 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 16 GB version also exists"
+  },
+  "10de:27a0": {
+   "name": "AD104M [GeForce RTX 4080 Max-Q / Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:27e0": {
+   "name": "AD104M [GeForce RTX 4080 Max-Q / Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 16
+  },
+  "10de:2803": {
+   "name": "AD106 [GeForce RTX 4060 Ti]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 16 GB version also exists"
+  },
+  "10de:2805": {
+   "name": "AD106 [GeForce RTX 4060 Ti 16GB]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8,
+   "note": "a 16 GB version also exists"
+  },
+  "10de:2808": {
+   "name": "AD106 [GeForce RTX 4060]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:2820": {
+   "name": "AD106M [GeForce RTX 4070 Max-Q / Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2822": {
+   "name": "AD106M [GeForce RTX 3050 A Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:2860": {
+   "name": "AD106M [GeForce RTX 4070 Max-Q / Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 12
+  },
+  "10de:2882": {
+   "name": "AD107 [GeForce RTX 4060]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:28a0": {
+   "name": "AD107M [GeForce RTX 4060 Max-Q / Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:28a1": {
+   "name": "AD107M [GeForce RTX 4050 Max-Q / Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6
+  },
+  "10de:28a3": {
+   "name": "AD107M [GeForce RTX 3050 A Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "10de:28e0": {
+   "name": "AD107M [GeForce RTX 4060 Max-Q / Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 8
+  },
+  "10de:28e1": {
+   "name": "AD107M [GeForce RTX 4050 Max-Q / Mobile]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6
+  },
+  "10de:28e3": {
+   "name": "AD107M [GeForce RTX 3050 A Laptop GPU]",
+   "vendor": "NVIDIA",
+   "vram_gb": 6,
+   "note": "an 8 GB version also exists"
+  },
+  "8086:5690": {
+   "name": "DG2 [Arc A770M]",
+   "vendor": "Intel",
+   "vram_gb": 8,
+   "note": "a 16 GB version also exists"
+  },
+  "8086:56a0": {
+   "name": "DG2 [Arc A770]",
+   "vendor": "Intel",
+   "vram_gb": 8,
+   "note": "a 16 GB version also exists"
+  },
+  "8086:56a1": {
+   "name": "DG2 [Arc A750]",
+   "vendor": "Intel",
+   "vram_gb": 8
+  },
+  "8086:56a2": {
+   "name": "DG2 [Arc A580]",
+   "vendor": "Intel",
+   "vram_gb": 8
+  },
+  "8086:56be": {
+   "name": "DG2 [Arc A750E]",
+   "vendor": "Intel",
+   "vram_gb": 8
+  },
+  "8086:56bf": {
+   "name": "DG2 [Arc A580E]",
+   "vendor": "Intel",
+   "vram_gb": 8
+  },
+  "8086:e20b": {
+   "name": "Battlemage G21 [Arc B580]",
+   "vendor": "Intel",
+   "vram_gb": 12
+  },
+  "8086:e20c": {
+   "name": "Battlemage G21 [Arc B570]",
+   "vendor": "Intel",
+   "vram_gb": 10
+  }
+ }
+}

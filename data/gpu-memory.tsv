@@ -1,0 +1,88 @@
+# Video memory by card family, for the installer's AI kit.
+#
+# ⚠️ WHAT IS SOURCED AND WHAT IS ASSERTED. The PCI ids and the card names in
+# the generated list come from hwdata's pci.ids, which is authoritative and
+# versioned. This file supplies only the memory, by family, because that is
+# the one thing pci.ids does not carry and the installer cannot read.
+#
+# Order matters: the first pattern that matches a card's name wins, so the
+# more specific line goes first. Patterns are matched case-sensitively
+# against the name pci.ids gives, e.g. "AD102 [GeForce RTX 4090]".
+#
+# Where a family shipped in more than one size, the SMALLER is listed. The
+# installer would rather understate what a machine can run than promise a
+# model that will not load. The note says when that is the case.
+#
+# pattern <TAB> gb <TAB> note
+# Corrections are a pull request. Last reviewed 2026-10-06.
+
+# ── NVIDIA, 40 series ────────────────────────────────────────────────────
+GeForce RTX 4090	24	
+GeForce RTX 4080 SUPER	16	
+GeForce RTX 4080	16	
+GeForce RTX 4070 Ti SUPER	16	
+GeForce RTX 4070 Ti	12	
+GeForce RTX 4070 SUPER	12	
+GeForce RTX 4070	12	
+GeForce RTX 4060 Ti	8	a 16 GB version also exists
+GeForce RTX 4060	8	
+GeForce RTX 4050	6	
+# ── NVIDIA, 30 series ────────────────────────────────────────────────────
+GeForce RTX 3090 Ti	24	
+GeForce RTX 3090	24	
+GeForce RTX 3080 Ti	12	
+GeForce RTX 3080	10	a 12 GB version also exists
+GeForce RTX 3070 Ti	8	
+GeForce RTX 3070	8	
+GeForce RTX 3060 Ti	8	
+GeForce RTX 3060	8	a 12 GB version also exists
+GeForce RTX 3050	6	an 8 GB version also exists
+# ── NVIDIA, 20 and 16 series ─────────────────────────────────────────────
+GeForce RTX 2080 Ti	11	
+GeForce RTX 2080	8	
+GeForce RTX 2070	8	
+GeForce RTX 2060	6	a 12 GB version also exists
+GeForce GTX 1660	6	
+GeForce GTX 1650	4	
+# ── NVIDIA, 10 series ────────────────────────────────────────────────────
+GeForce GTX 1080 Ti	11	
+GeForce GTX 1080	8	
+GeForce GTX 1070	8	
+GeForce GTX 1060	6	a 3 GB version also exists
+# ── NVIDIA, workstation and datacentre ───────────────────────────────────
+A100	40	an 80 GB version also exists
+H100	80	
+L40	48	
+RTX A6000	48	
+RTX A5000	24	
+RTX A4000	16	
+Tesla P40	24	
+Tesla P100	16	
+Tesla T4	16	
+# ── AMD, RDNA 3 ──────────────────────────────────────────────────────────
+Radeon RX 7900	20	the XTX variant has 24 GB
+Radeon RX 7800	16	
+Radeon RX 7700	12	
+Radeon RX 7600	8	
+# ── AMD, RDNA 2 ──────────────────────────────────────────────────────────
+Radeon RX 6950	16	
+Radeon RX 6900	16	
+Radeon RX 6800	16	
+Radeon RX 6750	12	
+Radeon RX 6700	10	a 12 GB version also exists
+Radeon RX 6650	8	
+Radeon RX 6600	8	
+# ── AMD, older and compute ───────────────────────────────────────────────
+Radeon RX 5700	8	
+Radeon RX 5600	6	
+Radeon VII	16	
+Radeon RX Vega 64	8	
+Radeon RX Vega 56	8	
+Radeon Instinct MI100	32	
+Radeon Instinct MI50	16	
+# ── Intel ────────────────────────────────────────────────────────────────
+Arc A770	8	a 16 GB version also exists
+Arc A750	8	
+Arc A580	8	
+Arc B580	12	
+Arc B570	10	
