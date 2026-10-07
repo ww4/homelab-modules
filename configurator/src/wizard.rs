@@ -100,7 +100,10 @@ impl Step {
             Step::Profile => "The machine's name and the account you will log in with.",
             Step::Ssh => "SSH is how you reach the machine from another computer without sitting at it. Add the public keys that may log in as the admin: import them from GitHub, or paste one. Skipping is allowed; then only the machine's own screen works.",
             Step::Domain => "Every app gets a name under your domain and a real certificate, so browsers trust it. For this release the domain's DNS must be at Cloudflare (register there, or move a domain's nameservers there). Each box below is one line of a credentials file; the Cloudflare token is checked against your domain the moment you save it.",
-            Step::Ai => "This machine can run an assistant: a program that keeps working between conversations, reads and writes files you give it, runs things you ask for, and can be reached from a chat app on your phone. It is Hermes, which is somebody else's open-source work and not ours. It is entirely optional and nothing else on this machine depends on it, so saying no costs you nothing. Saying yes needs either a graphics card for models that run here, or an account with a model provider, and the next line says which of those this machine has.",
+            // ⚠️ SIX LINES ON AN 80-COLUMN CONSOLE IS THE BUDGET, and a test
+            // holds every screen to it. The first draft of this one ran to
+            // nine and the console cut the last two off.
+            Step::Ai => "This machine can run an assistant: a program that keeps working between conversations, reads and writes the files you give it, and runs what you ask it to. It is Hermes, somebody else's open-source work, and you talk to it here on the machine. Nothing else depends on the answer, so no costs you nothing. Yes needs either a graphics card for models that run here or an account with a model provider, and the line below says which this machine has.",
             Step::Extras => "Everything here is already set the way the kit wants it, and those answers are good ones: if you have no preference, press Continue. The list is every module in the library, with the kit's choices ticked — tick another to add it, untick one to leave it out. Anything that needed a value from you was asked on an earlier screen.",
             Step::Review => {
                 if live_usb {
@@ -1307,7 +1310,9 @@ impl Wizard {
         // follows it (a provider decides which lines its file needs).
         if var.starts_with("homelab.") {
             let v = f.value.clone();
-            self.set_value(var, &v);
+            // Propagated, not dropped: a rejected option here would otherwise
+            // leave the form showing an answer the model never took.
+            self.set_value(var, &v)?;
         }
         Ok(())
     }

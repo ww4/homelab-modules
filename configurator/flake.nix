@@ -138,14 +138,15 @@
           touch $out
         '';
 
-        # ⚠️ Which address Hermes is pointed at is decided by two things, and
-        # getting it wrong sends a paid API key to a loopback port with
-        # nothing listening. docker lets `-e` beat `--env-file`, so the
-        # local address may only be set when there are local models AND no
-        # credentials file to be overridden. All four combinations, asserted.
-        hermes-model-address =
+        # ⚠️ Three things about the Hermes container are the image's and not
+        # ours, and all three were wrong on the first pass: where its state
+        # has to be mounted, what has to be run to keep it alive, and when it
+        # may be pointed at local models. Each is a silent failure — a lost
+        # state directory, a restart loop, a provider key sent to a port with
+        # nothing behind it — so each is asserted here.
+        hermes-container =
           let
-            pointedLocal = { ollama, key }:
+            hermes = { ollama, key }:
               (lib.nixosSystem {
                 inherit system;
                 modules = [ library.nixosModules.hermes-agent ]
@@ -154,8 +155,9 @@
                     { nixpkgs.hostPlatform = system; }
                     { homelab.hermes.environmentFile = if key then "/run/secrets/hermes" else null; }
                   ];
-              }).config.virtualisation.oci-containers.containers.hermes-agent.environment
-                ? OPENAI_BASE_URL;
+              }).config.virtualisation.oci-containers.containers.hermes-agent;
+            plain = hermes { ollama = false; key = false; };
+            pointedLocal = args: (hermes args).environment ? OPENAI_BASE_URL;
             cases = [
               { case = { ollama = true; key = false; }; want = true; why = "models on this machine and no credentials: point at them"; }
               { case = { ollama = true; key = true; }; want = false; why = "credentials supplied: a -e here would silently beat the file"; }
@@ -163,10 +165,22 @@
               { case = { ollama = false; key = true; }; want = false; why = "credentials and no local models: the provider's own address"; }
             ];
             wrong = builtins.filter (t: pointedLocal t.case != t.want) cases;
+            # The image's HERMES_HOME. Mounted anywhere else, the state
+            # directory is an empty decoration and the real state is thrown
+            # away on the next recreate.
+            stateMounted = builtins.any (v: lib.hasSuffix ":/opt/data" v) plain.volumes;
+            # With no command the image runs the interactive CLI, which has
+            # no terminal under systemd and exits; the unit then restarts it
+            # forever.
+            staysUp = plain.cmd != [ ];
           in
           if wrong != [ ]
           then throw "hermes OPENAI_BASE_URL is wrong where: ${lib.concatMapStringsSep "; " (t: t.why) wrong}"
-          else pkgs.writeText "hermes-model-address" "ok\n";
+          else if !stateMounted
+          then throw "hermes state is not mounted at /opt/data, so nothing it writes survives a recreate"
+          else if !staysUp
+          then throw "hermes has no cmd, so the container runs the interactive CLI and restart-loops"
+          else pkgs.writeText "hermes-container" "ok\n";
 
         # No personal names, hosts, domains or addresses in the public tree.
         leak-scan = pkgs.runCommand "leak-scan" { nativeBuildInputs = [ pkgs.bash pkgs.ugrep pkgs.gnugrep pkgs.coreutils pkgs.findutils ]; } ''

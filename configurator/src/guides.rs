@@ -87,21 +87,28 @@ pub fn fields(option: &str, values: &BTreeMap<String, String>) -> Vec<SecretFiel
             }
             out
         }
-        "homelab.hermes.environmentFile" => {
-            let provider = values.get("__hermes_provider").map(|s| s.trim().to_lowercase()).unwrap_or_default();
-            let var = match provider.as_str() {
-                "anthropic" => "ANTHROPIC_API_KEY",
-                "openrouter" => "OPENROUTER_API_KEY",
-                _ => "OPENAI_API_KEY",
-            };
-            vec![f(
-                var,
+        // Two variables, not a provider pick-list: these are the two the
+        // container passes through to Hermes, and between them they reach
+        // every provider with an OpenAI-compatible endpoint. An earlier
+        // version switched the variable's NAME on a provider answer that
+        // nothing ever set, so it offered a choice that could not be made
+        // and named variables Hermes may not read.
+        "homelab.hermes.environmentFile" => vec![
+            f(
+                "OPENAI_API_KEY",
                 "API key",
                 "The key from whichever provider you chose. Leave it empty if this machine runs its own models, or if you would rather set it up when you first talk to the assistant.",
                 true,
                 true,
-            )]
-        }
+            ),
+            f(
+                "OPENAI_BASE_URL",
+                "Provider address",
+                "Only for a provider other than OpenAI: the address its documentation gives for OpenAI-compatible clients, such as https://openrouter.ai/api/v1 for OpenRouter. Leave it empty for OpenAI itself.",
+                false,
+                true,
+            ),
+        ],
         "homelab.backup.remote.environmentFile" => vec![
             f("B2_ACCOUNT_ID", "Application key ID", "The keyID Backblaze shows when you add an application key.", false, false),
             f("B2_ACCOUNT_KEY", "Application key", "The applicationKey beside it, shown once.", true, false),
@@ -159,12 +166,14 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
             steps: "The assistant is the program; the model is what it thinks with, and you choose where that comes from.\n\n\
                     If this machine has a graphics card big enough, it can run its own and you can skip this entirely: \
                     the assistant is already pointed at it.\n\n\
-                    Otherwise you need an account with somebody. Any of these works, and you need only one:\n\
-                    · OpenAI — platform.openai.com → API keys → Create. Pay per use.\n\
-                    · Anthropic — console.anthropic.com → API keys. Pay per use. ⚠️ Check the terms allow the use you have in mind.\n\
-                    · OpenRouter — openrouter.ai → Keys. One account, many providers, including free tiers.\n\n\
-                    Paste the key below. It is sealed in your browser before it is sent, and ends up as an encrypted file on the \
-                    machine. Skip is fine: the assistant will ask you for one the first time you talk to it.",
+                    Otherwise you need an account with somebody, and you need only one:\n\
+                    · OpenAI — platform.openai.com, API keys. Pay per use, and the address box below stays empty.\n\
+                    · OpenRouter — openrouter.ai/keys. One account reaching many companies' models, some of them free. \
+                    Put https://openrouter.ai/api/v1 in the address box.\n\n\
+                    Any other provider with an OpenAI-compatible endpoint works the same way: its key, and the address its \
+                    own documentation gives for OpenAI clients.\n\n\
+                    What you type is sealed in your browser before it is sent and ends up as an encrypted file on the \
+                    machine. Skipping is fine: the assistant will ask you for a key the first time you talk to it.",
             walkthrough: None,
         }),
         "homelab.backup.remote.environmentFile" => Some(Guide {

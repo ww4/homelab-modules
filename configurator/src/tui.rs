@@ -653,6 +653,47 @@ impl Ui {
         (v[0], v[1], v[2])
     }
 
+    /// How many lines a wrapped paragraph needs at this width.
+    ///
+    /// ⚠️ A FIXED HEIGHT CLIPS, SILENTLY. ratatui's `Length` is not a
+    /// minimum: text taller than its box is cut off mid-sentence, with no
+    /// ellipsis and nothing to scroll. Every screen here was given a height
+    /// guessed against a wide terminal, and a console is 80 columns — at 80
+    /// the Modules screen showed 2 of its 5 lines, the Domain screen lost its
+    /// last line, and the credentials form cut off the sealing fingerprint,
+    /// which is the one copy of that value a reader can trust. So measure.
+    ///
+    /// Newlines are honoured, because the wrapper honours them and because
+    /// the guide texts are written in paragraphs.
+    fn text_height(text: &str, width: u16, cap: u16) -> u16 {
+        let w = width.max(1) as usize;
+        let mut total: u16 = 0;
+        for para in text.split('\n') {
+            let mut lines: u16 = 1;
+            let mut used = 0usize;
+            for word in para.split_whitespace() {
+                let n = word.chars().count();
+                if used == 0 {
+                    used = n;
+                } else if used + 1 + n <= w {
+                    used += 1 + n;
+                } else {
+                    lines = lines.saturating_add(1);
+                    used = n;
+                }
+            }
+            total = total.saturating_add(lines);
+        }
+        total.clamp(1, cap.max(1))
+    }
+
+    /// The three bands, with the top one sized to its own text. `rows` is how
+    /// many lines the middle band must keep whatever the text wants.
+    fn split_text(area: Rect, text: &str, help: u16, rows: u16) -> (Rect, Rect, Rect) {
+        let cap = area.height.saturating_sub(help + rows).max(1);
+        Self::split(area, Self::text_height(text, area.width, cap), help)
+    }
+
     fn intro(&self, f: &mut Frame, area: Rect, text: &str) {
         f.render_widget(Paragraph::new(text.to_string()).wrap(Wrap { trim: true }), area);
     }
@@ -803,9 +844,10 @@ impl Ui {
     }
 
     fn draw_kit(&self, f: &mut Frame, area: Rect) {
-        let (i, l, h) = Self::split(area, 3, 5);
         let w = self.w.lock().unwrap();
-        self.intro(f, i, w.step.intro(w.live_usb));
+        let text = w.step.intro(w.live_usb);
+        let (i, l, h) = Self::split_text(area, text, 5, 8);
+        self.intro(f, i, text);
         let state = w.state_json();
         let mut lines = Vec::new();
         if let Some(kits) = state["kits"].as_array() {
@@ -835,9 +877,10 @@ impl Ui {
     }
 
     fn draw_storage(&self, f: &mut Frame, area: Rect) {
-        let (i, l, h) = Self::split(area, 4, 6);
         let w = self.w.lock().unwrap();
-        self.intro(f, i, w.step.intro(w.live_usb));
+        let text = w.step.intro(w.live_usb);
+        let (i, l, h) = Self::split_text(area, text, 6, 6);
+        self.intro(f, i, text);
         if w.disks.is_empty() {
             let (label, shown, help) = (w.disk_fallback.label.clone(), w.disk_fallback.shown(), w.disk_fallback.help.clone());
             drop(w);
@@ -869,9 +912,10 @@ impl Ui {
     }
 
     fn draw_profile(&self, f: &mut Frame, area: Rect) {
-        let (i, l, h) = Self::split(area, 2, 5);
         let w = self.w.lock().unwrap();
-        self.intro(f, i, w.step.intro(w.live_usb));
+        let text = w.step.intro(w.live_usb);
+        let (i, l, h) = Self::split_text(area, text, 5, 5);
+        self.intro(f, i, text);
         let fields: Vec<(String, String)> = w.profile.iter().map(|f| (f.label.clone(), if f.choices.is_empty() { f.shown() } else { f.label_of(&f.value) })).collect();
         let help: Option<(String, String)> = match self.focused() {
             Row::Field(i) => w.profile.get(i).map(|f| (f.label.clone(), format!("{}{}", f.help, if f.choices.is_empty() { "" } else { "\nSpace walks the list; Enter types one the list does not have." }))),
@@ -892,9 +936,10 @@ impl Ui {
     }
 
     fn draw_ssh(&self, f: &mut Frame, area: Rect) {
-        let (i, l, h) = Self::split(area, 3, 5);
         let w = self.w.lock().unwrap();
-        self.intro(f, i, w.step.intro(w.live_usb));
+        let text = w.step.intro(w.live_usb);
+        let (i, l, h) = Self::split_text(area, text, 5, 6);
+        self.intro(f, i, text);
         let two = [(w.github_user.label.clone(), w.github_user.shown()), (w.pasted_key.label.clone(), w.pasted_key.shown())];
         let keys: Vec<String> = w.keys.iter().map(|k| key_summary(k)).collect();
         let help: (String, String) = match self.focused() {
@@ -917,9 +962,10 @@ impl Ui {
     }
 
     fn draw_domain(&self, f: &mut Frame, area: Rect) {
-        let (i, l, h) = Self::split(area, 4, 5);
         let w = self.w.lock().unwrap();
-        self.intro(f, i, w.step.intro(w.live_usb));
+        let text = w.step.intro(w.live_usb);
+        let (i, l, h) = Self::split_text(area, text, 5, 6);
+        self.intro(f, i, text);
         let fields: Vec<(String, String)> = w.domain.iter().map(|f| (f.label.clone(), f.shown())).collect();
         let secrets: Vec<(String, String, bool)> = w
             .secrets
@@ -952,9 +998,10 @@ impl Ui {
     /// The assistant: one question, and the credential it needs if the answer
     /// is yes. Nothing else on the machine depends on either.
     fn draw_ai(&self, f: &mut Frame, area: Rect) {
-        let (i, l, h) = Self::split(area, 7, 5);
         let w = self.w.lock().unwrap();
-        self.intro(f, i, w.step.intro(w.live_usb));
+        let text = w.step.intro(w.live_usb);
+        let (i, l, h) = Self::split_text(area, text, 5, 7);
+        self.intro(f, i, text);
         let want = w.ai;
         let local = w.can_run_models_locally();
         let card = w.card.as_ref().map(|c| (c.name.clone(), c.runs.clone()));
@@ -1018,8 +1065,13 @@ impl Ui {
         // did not travel. A browser showing a different one is talking to
         // something else. A browser showing the same one has only told you
         // what it was given.
-        let steps = format!(
-            "{steps}\n\nTyped in a browser, this value is encrypted before it is sent. This machine's key is {}; the browser shows the same, and a difference means something is wrong. Typed here, it goes nowhere near the network.",
+        //
+        // ⚠️ IT IS A LINE OF ITS OWN, not the tail of the steps paragraph.
+        // On an 80-column console the steps alone are taller than the box,
+        // and this sentence — the only copy of the fingerprint that did not
+        // cross the network — was the part that got cut.
+        let seal = format!(
+            "browser-typed values are encrypted first; this machine's key is {} and the browser must show the same",
             w.sealer.fingerprint()
         );
         let path_only = s.path_only;
@@ -1042,10 +1094,17 @@ impl Ui {
             _ => None,
         };
         drop(w);
-        let (intro_a, list_a, help_a) = Self::split(area, 8, 5);
+        // The rows the middle band must keep: the fingerprint line, a blank,
+        // and one line per value. The steps take whatever is left.
+        let keep = rows.len() as u16 + 2;
+        let (intro_a, list_a, help_a) = Self::split_text(area, &steps, 5, keep);
         f.render_widget(Paragraph::new(steps).wrap(Wrap { trim: true }).block(Block::default().borders(Borders::BOTTOM).title(format!(" {title} "))), intro_a);
+        f.render_widget(
+            Paragraph::new(seal).wrap(Wrap { trim: true }).style(Style::default().add_modifier(Modifier::DIM)),
+            Rect { height: 1.min(list_a.height), ..list_a },
+        );
         for (idx, (label, shown)) in rows.iter().enumerate() {
-            self.field_line(f, list_a, list_a.y + idx as u16, Row::SecretField(idx), label, shown.clone());
+            self.field_line(f, list_a, list_a.y + 2 + idx as u16, Row::SecretField(idx), label, shown.clone());
         }
         match help {
             Some((t, text)) => self.help(f, help_a, &t, &text),
@@ -1054,10 +1113,11 @@ impl Ui {
     }
 
     fn draw_extras(&self, f: &mut Frame, area: Rect) {
-        let (i, l, h) = Self::split(area, 2, 5);
         let w = self.w.lock().unwrap();
         let (_, verdict, short) = w.memory();
-        self.intro(f, i, &format!("{} {verdict}", w.step.intro(w.live_usb)));
+        let text = format!("{} {verdict}", w.step.intro(w.live_usb));
+        let (i, l, h) = Self::split_text(area, &text, 5, 8);
+        self.intro(f, i, &text);
         let values = w.open_values();
         let modules: Vec<(String, String, bool, bool, u64)> = w.modules.iter().map(|m| (m.name.clone(), m.description.clone(), m.chosen, m.locked, m.memory)).collect();
         let help: Option<(String, String)> = match self.focused() {
@@ -1150,5 +1210,67 @@ impl Ui {
         }
         lines.extend(tail.into_iter().map(Line::from));
         f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).block(Block::default().borders(Borders::ALL).title(" what happened ")), area);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_height_counts_wrapped_and_explicit_lines() {
+        assert_eq!(Ui::text_height("short", 20, 10), 1);
+        // 24 characters at width 10 is three lines of words, not 2.4 of them.
+        assert_eq!(Ui::text_height("aaaa bbbb cccc dddd eeee", 10, 10), 3);
+        // A blank line between paragraphs is a line.
+        assert_eq!(Ui::text_height("one\n\ntwo", 40, 10), 3);
+        // The cap is a cap, not a suggestion.
+        assert_eq!(Ui::text_height("aaaa bbbb cccc dddd eeee", 10, 2), 2);
+        // A word longer than the width still takes a line rather than looping.
+        assert_eq!(Ui::text_height("aaaaaaaaaaaaaaa", 4, 9), 1);
+    }
+
+    /// The band holding the rows must never be squeezed away by a long
+    /// paragraph above it. That band is where the fields and the sealing
+    /// fingerprint are drawn, so a zero-height one hides them rather than
+    /// merely crowding them.
+    #[test]
+    fn split_text_leaves_the_rows_their_minimum() {
+        let long = "word ".repeat(400);
+        for height in 8..40u16 {
+            for width in [40u16, 80, 100, 200] {
+                for keep in [2u16, 5, 8] {
+                    let area = Rect { x: 0, y: 0, width, height };
+                    let (_, rows, _) = Ui::split_text(area, &long, 5, keep);
+                    let room = height.saturating_sub(5 + 1);
+                    assert!(
+                        rows.height >= keep.min(room),
+                        "{width}x{height} keep={keep}: rows got {} lines",
+                        rows.height
+                    );
+                }
+            }
+        }
+    }
+
+    /// ⚠️ A real VGA text console is 80 columns, and every intro here was
+    /// written against a terminal twice that wide. Three of them were being
+    /// cut off mid-sentence in the place the installer is most often read:
+    /// standing at the machine. Six lines is what the layout can give an
+    /// intro at 80 columns while the rows below it stay usable, so six lines
+    /// is the budget, and it is checked rather than remembered.
+    #[test]
+    fn every_screens_intro_fits_an_80_column_console() {
+        for step in crate::wizard::STEPS {
+            for live in [true, false] {
+                let text = step.intro(live);
+                let need = Ui::text_height(text, 78, u16::MAX);
+                assert!(
+                    need <= 6,
+                    "{:?} needs {need} lines at 80 columns; shorten it or move the detail to the guide page",
+                    step
+                );
+            }
+        }
     }
 }
