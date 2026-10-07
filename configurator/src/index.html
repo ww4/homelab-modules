@@ -542,6 +542,12 @@ const screens = {
         el("dt", { textContent: "Memory" }), el("dd", { textContent: m.ram_mib ? (m.ram_mib / 1024).toFixed(1) + " GB" : "unknown" }),
         el("dt", { textContent: "Disks" }), el("dd", { textContent: m.disks + " available to install on" }),
         el("dt", { textContent: "Network" }), el("dd", { textContent: net }),
+        el("dt", { textContent: "Processor" }), el("dd", { textContent: (m.cpu || "unknown") + (m.cores ? " (" + m.cores + " cores)" : "") }),
+        el("dt", { textContent: "Graphics" }), el("dd", {
+          textContent: m.gpu ? m.gpu.vendor + " (" + m.gpu.id + ")"
+            : (m.gpus && m.gpus.length ? "none usable; the display is a management chip" : "none"),
+        }),
+        el("dt", { textContent: "Kind of machine" }), el("dd", { textContent: m.chassis || "unknown" }),
       ]),
       el("p", { className: "muted", textContent: "You are filling this in from another computer; the machine's own screen shows the same answers as you go." }),
     ])];

@@ -508,6 +508,9 @@ pub struct Wizard {
     /// The last thing that happened, and whether it was a complaint.
     pub status: Option<(String, bool)>,
     pub ram_mib: u64,
+    /// What kind of machine this is: chassis, processor, graphics. Read once
+    /// at startup, because none of it changes under us.
+    pub machine: crate::machine::Machine,
     pub network: Arc<Mutex<(String, Option<bool>)>>,
     pub live_usb: bool,
     pub kits: Vec<Kit>,
@@ -606,6 +609,7 @@ impl Wizard {
             step: Step::Welcome,
             status: None,
             ram_mib: crate::plan::machine_ram_mib(),
+            machine: crate::machine::Machine::read(),
             network: Arc::new(Mutex::new((String::new(), None))),
             live_usb,
             kits: kits(),
@@ -1685,6 +1689,15 @@ impl Wizard {
                 "internet": internet,
                 "live_usb": self.live_usb,
                 "disks": self.disks.len(),
+                "chassis": self.machine.chassis,
+                "cpu": self.machine.cpu,
+                "cores": self.machine.cores,
+                // Every display adapter, with the management chips marked, so
+                // a reader can see why a card was or was not counted.
+                "gpus": self.machine.gpus.iter().map(|g| json!({
+                    "id": g.id, "vendor": g.vendor, "primary": g.primary, "usable": g.usable,
+                })).collect::<Vec<_>>(),
+                "gpu": self.machine.best_gpu().map(|g| json!({ "id": g.id, "vendor": g.vendor })),
             },
             "memory": { "need_mib": need, "verdict": verdict, "short": short },
             "kit": self.chosen_kit(),

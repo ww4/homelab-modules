@@ -711,10 +711,24 @@ impl Ui {
     // -------------------------------------------------------- screens
 
     fn draw_welcome(&mut self, f: &mut Frame, area: Rect) {
-        let (intro, ram, disks, address, internet, live, port, code, seen) = {
+        let (intro, ram, disks, address, internet, live, port, code, seen, hw) = {
             let w = self.w.lock().unwrap();
             let (a, i) = w.network();
-            (w.step.intro(w.live_usb), w.ram_mib, w.disks.len(), a, i, w.live_usb, w.web_port, w.pairing.clone(), w.web_seen.clone())
+            // What this box is, in one line: the kit screen reads the same
+            // facts to decide what it can honestly offer.
+            let chassis = w.machine.chassis.unwrap_or("unknown");
+            let cpu = match (&w.machine.cpu, w.machine.cores) {
+                (Some(c), n) if n > 0 => format!("{c} ({n} cores)"),
+                (Some(c), _) => c.clone(),
+                (None, _) => "unknown processor".into(),
+            };
+            let gpu = match w.machine.best_gpu() {
+                Some(g) => format!("{} graphics ({})", g.vendor, g.id),
+                None if w.machine.gpus.is_empty() => "no graphics card".into(),
+                None => "no graphics card (display is a management chip)".into(),
+            };
+            (w.step.intro(w.live_usb), w.ram_mib, w.disks.len(), a, i, w.live_usb, w.web_port, w.pairing.clone(), w.web_seen.clone(),
+             format!("{chassis} · {cpu} · {gpu}"))
         };
         let gb = |m: u64| format!("{:.1} GB", m as f64 / 1024.0);
         let net = match (address.is_empty(), internet) {
@@ -729,6 +743,7 @@ impl Ui {
             Line::from(intro),
             Line::from(""),
             Line::from(vec![Span::styled("This machine  ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{} of RAM · {disks} disk(s) available · {net}", if ram == 0 { "unknown".into() } else { gb(ram) }))]),
+            Line::from(vec![Span::styled("              ", Style::default()), Span::raw(hw)]),
         ];
         if !url.is_empty() {
             lines.push(Line::from(""));
