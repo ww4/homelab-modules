@@ -42,6 +42,7 @@
   button:disabled { opacity:.5; cursor:default }
   .choice { display:flex; gap:.7rem; padding:.6rem; border:1px solid var(--line); border-radius:6px; margin:.4rem 0; cursor:pointer; align-items:flex-start }
   .choice.on { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent) }
+  .choice.off { opacity:.55; cursor:default }
   .choice b { display:block }
   .choice .mem { font-variant-numeric:tabular-nums; font-weight:600 }
   .fits { color:var(--ok) } .short { color:var(--bad) }
@@ -553,10 +554,20 @@ const screens = {
     ])];
   },
 
+  // A kit this machine cannot run is shown, dimmed, with the reason. Hiding
+  // it would leave a reader wondering whether the installer has such a thing.
   kit: (s) => s.kits.map((k, i) =>
-    el("div", { key: k.name, className: "choice" + (k.chosen ? " on" : ""), onclick: () => call({ do: "set_kit", index: i }) }, [
+    el("div", {
+      key: k.name,
+      className: "choice" + (k.chosen ? " on" : "") + (k.offered === false ? " off" : ""),
+      onclick: () => { if (k.offered !== false) call({ do: "set_kit", index: i }); },
+    }, [
       el("div", { className: "mem " + (k.fits ? "fits" : "short"), textContent: "~" + k.need_gb + " GB" }),
-      el("div", {}, [el("b", { textContent: k.name }), el("span", { className: "muted", textContent: k.blurb })]),
+      el("div", {}, [
+        el("b", { textContent: k.name }),
+        el("span", { className: "muted", textContent: k.blurb }),
+        ...(k.why_not ? [el("div", { className: "bad", style: "margin-top:.3rem", textContent: "Not available here: " + k.why_not })] : []),
+      ]),
     ])),
 
   storage: (s) => {

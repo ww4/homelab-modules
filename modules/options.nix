@@ -294,6 +294,30 @@
     };
 
     # ── drive-temps exporter ──────────────────────────────────────────────────
+    ollama = {
+      acceleration = lib.mkOption {
+        type = lib.types.nullOr (lib.types.enum [ "cuda" "rocm" ]);
+        default = null;
+        description = ''
+          How the models are run. `null` means the processor does the work,
+          which is correct and slow. "cuda" is for NVIDIA cards and "rocm" for
+          AMD; both pull a large vendor-specific build, and the CUDA one is
+          unfree. The installer sets this from the card it found.
+        '';
+      };
+      models = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "llama3.2:3b" "qwen2.5-coder:7b" ];
+        description = ''
+          Models pulled when the service first starts, so the machine is
+          useful without a second step. Each one is a download of several
+          gigabytes. What a card can comfortably hold is what the installer
+          reports from the published card list.
+        '';
+      };
+    };
+
     nginxAccess = {
       allowedSources = lib.mkOption {
         type = lib.types.listOf lib.types.str;

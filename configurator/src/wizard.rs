@@ -242,6 +242,35 @@ pub struct Kit {
     pub name: &'static str,
     pub blurb: &'static str,
     pub modules: Vec<String>,
+    /// Video memory this kit needs before it is worth offering, in whole
+    /// gigabytes. Zero means it does not care about graphics, which is every
+    /// kit but one.
+    ///
+    /// ⚠️ A kit the machine cannot run is still SHOWN, greyed, with the
+    /// reason. Hiding it would leave somebody wondering whether the installer
+    /// has such a thing at all, and the answer "your card is too small" is
+    /// more use than silence.
+    pub needs_vram_gb: u64,
+}
+
+/// Why a kit is not on offer here, or `None` when it is.
+pub fn kit_blocked(kit: &Kit, machine: &crate::machine::Machine, card: Option<&crate::machine::Card>) -> Option<String> {
+    if kit.needs_vram_gb == 0 {
+        return None;
+    }
+    match (machine.best_gpu(), card) {
+        (None, _) if machine.gpus.is_empty() => Some("this machine has no graphics card".into()),
+        (None, _) => Some("this machine's only display adapter is a management chip, not a graphics card".into()),
+        (Some(g), None) => Some(format!(
+            "the published card list does not know {} — it may be too new, or the list could not be fetched",
+            g.id
+        )),
+        (Some(_), Some(c)) if c.vram_gb < kit.needs_vram_gb => Some(format!(
+            "{} has {} GB of memory; this needs at least {} GB",
+            c.name, c.vram_gb, kit.needs_vram_gb
+        )),
+        _ => None,
+    }
 }
 
 pub fn kits() -> Vec<Kit> {
@@ -256,12 +285,21 @@ pub fn kits() -> Vec<Kit> {
             name: "Starter",
             blurb: "Movies and shows (Jellyfin), a recipe app (Tandoor), nightly backups, monitoring with alerts to your phone. The smallest real homelab; add more later.",
             modules: ["acme", "nginx-access", "jellyfin", "tandoor", "backup", "monitoring", "ntfy", "alertmanager-ntfy"].iter().map(|s| s.to_string()).collect(),
+            needs_vram_gb: 0,
         },
-        Kit { name: "Media box", blurb: "The Starter plus the whole media pipeline: *arr apps behind a VPN, audiobooks, music, a disk pool with parity.", modules: profile(include_str!("../profiles/media-box.json")) },
-        Kit { name: "Docs and forge", blurb: "Documents, photos, notes, passwords, a git forge, single sign-on: the office half.", modules: profile(include_str!("../profiles/docs-forge.json")) },
-        Kit { name: "Everything", blurb: "Everything that runs on its own: 40 of the library's 42 modules. Needs a domain, a VPN account, a Backblaze account and a few disks. The two left out need a server you already run elsewhere (MeshCentral) or a config file you write yourself (recyclarr); add them on the Modules screen.", modules: profile(include_str!("../profiles/everything.json")) },
-        Kit { name: "Minimal", blurb: "Just the foundation: a machine that boots and is yours, serving nothing yet.", modules: vec![] },
-        Kit { name: "Custom", blurb: "Whatever you tick on the Modules screen. Picking this changes nothing; it is what the kit says when your list matches none of the above.", modules: vec![CUSTOM.to_string()] },
+        Kit { name: "Media box", blurb: "The Starter plus the whole media pipeline: *arr apps behind a VPN, audiobooks, music, a disk pool with parity.", modules: profile(include_str!("../profiles/media-box.json")), needs_vram_gb: 0 },
+        Kit { name: "Docs and forge", blurb: "Documents, photos, notes, passwords, a git forge, single sign-on: the office half.", modules: profile(include_str!("../profiles/docs-forge.json")), needs_vram_gb: 0 },
+        // ⚠️ Only offered on a machine with a card the published list knows
+        // and rates. Everything else about it is an ordinary kit.
+        Kit {
+            name: "AI box",
+            blurb: "Run open-weight language models on this machine, with a browser front end. Needs a graphics card; what it can comfortably run depends on the card's memory.",
+            modules: ["acme", "nginx-access", "ollama", "open-webui", "backup", "monitoring", "ntfy", "alertmanager-ntfy"].iter().map(|s| s.to_string()).collect(),
+            needs_vram_gb: 6,
+        },
+        Kit { name: "Everything", blurb: "Everything that runs on its own: 40 of the library's 42 modules. Needs a domain, a VPN account, a Backblaze account and a few disks. The two left out need a server you already run elsewhere (MeshCentral) or a config file you write yourself (recyclarr); add them on the Modules screen.", modules: profile(include_str!("../profiles/everything.json")), needs_vram_gb: 0 },
+        Kit { name: "Minimal", blurb: "Just the foundation: a machine that boots and is yours, serving nothing yet.", modules: vec![], needs_vram_gb: 0 },
+        Kit { name: "Custom", blurb: "Whatever you tick on the Modules screen. Picking this changes nothing; it is what the kit says when your list matches none of the above.", modules: vec![CUSTOM.to_string()], needs_vram_gb: 0 },
     ]
 }
 
@@ -933,13 +971,20 @@ impl Wizard {
     }
 
     pub fn set_kit(&mut self, i: usize) {
-        if i < self.kits.len() {
-            self.kit = i;
-            self.apply_kit();
-            let (_, verdict, _) = self.memory();
-            let name = self.kits[i].name;
-            self.say(format!("{name}: {verdict}"), false);
+        let Some(k) = self.kits.get(i) else { return };
+        // ⚠️ The screen greys a kit the machine cannot run, and this refuses
+        // it as well. A browser that skipped the page's own JavaScript must
+        // not be able to pick a kit the machine has no hardware for.
+        if let Some(why) = kit_blocked(k, &self.machine, self.card.as_ref()) {
+            let name = k.name;
+            self.say(format!("{name} is not available on this machine: {why}"), true);
+            return;
         }
+        self.kit = i;
+        self.apply_kit();
+        let (_, verdict, _) = self.memory();
+        let name = self.kits[i].name;
+        self.say(format!("{name}: {verdict}"), false);
     }
 
     pub fn chosen(&self) -> Vec<String> {
@@ -1743,10 +1788,13 @@ impl Wizard {
                 let n = crate::plan::memory_need(self.schema, &closed);
                 let custom = k.modules.iter().any(|m| m == CUSTOM);
                 let need = if custom { crate::plan::memory_need(self.schema, &self.closed()) } else { n };
+                let blocked = kit_blocked(k, &self.machine, self.card.as_ref());
                 json!({
                     "name": k.name, "blurb": k.blurb,
                     "need_gb": (need + 511) / 1024,
                     "fits": self.ram_mib == 0 || need <= self.ram_mib,
+                    "offered": blocked.is_none(),
+                    "why_not": blocked,
                     "chosen": i == self.chosen_kit(),
                     "modules": if custom { self.closed() } else { k.modules.clone() },
                 })
@@ -2284,6 +2332,40 @@ error: Cannot build '/nix/store/k48mnl-homelab-configure-0.1.0.drv'.
     /// The Kit screen must say what the ticked modules amount to, not what
     /// was clicked once: after a reload or an in-place update the answers
     /// come back as a module list and nothing else.
+    /// The card gate is a rule of the model, not a style on a button.
+    #[test]
+    fn a_kit_that_needs_a_card_is_refused_without_one() {
+        let mut w = test_wizard();
+        let ai = w.kits.iter().position(|k| k.needs_vram_gb > 0).expect("a kit that wants a card");
+        let before = w.kit;
+
+        // No card at all.
+        w.machine = crate::machine::Machine::default();
+        assert!(kit_blocked(&w.kits[ai], &w.machine, None).unwrap().contains("no graphics card"));
+        w.set_kit(ai);
+        assert_eq!(w.kit, before, "the kit did not change");
+
+        // A card, but the list has never heard of it.
+        w.machine.gpus = vec![crate::machine::Gpu {
+            id: "10de:ffff".into(), vendor: "NVIDIA".into(), primary: true, usable: true,
+        }];
+        assert!(kit_blocked(&w.kits[ai], &w.machine, None).unwrap().contains("10de:ffff"));
+
+        // A card the list knows, and too small.
+        let small = crate::machine::Card {
+            name: "Some Card".into(), vendor: "NVIDIA".into(), vram_gb: 4,
+            note: None, tier: "none".into(), runs: "nothing".into(),
+        };
+        assert!(kit_blocked(&w.kits[ai], &w.machine, Some(&small)).unwrap().contains("4 GB"));
+
+        // A card the list knows, and big enough.
+        let big = crate::machine::Card { vram_gb: 24, tier: "large".into(), ..small };
+        assert!(kit_blocked(&w.kits[ai], &w.machine, Some(&big)).is_none());
+        w.card = Some(big);
+        w.set_kit(ai);
+        assert_eq!(w.kit, ai, "with a real card it is an ordinary kit");
+    }
+
     #[test]
     fn the_kit_is_derived_from_the_modules() {
         let ks = kits();
@@ -2298,8 +2380,13 @@ error: Cannot build '/nix/store/k48mnl-homelab-configure-0.1.0.drv'.
         // Custom is last and is not a module list.
         assert_eq!(ks.last().unwrap().name, "Custom");
         assert!(ks.last().unwrap().modules.iter().any(|m| m == CUSTOM));
-        assert_eq!(ks[ks.len() - 2].name, "Minimal");
-        assert!(ks[ks.len() - 2].modules.is_empty());
+        // By name, not by position: kits get added in the middle.
+        let minimal = ks.iter().find(|k| k.name == "Minimal").expect("a Minimal kit");
+        assert!(minimal.modules.is_empty());
+        // Only the one kit asks for a graphics card, and it asks for a real one.
+        let gpu_kits: Vec<_> = ks.iter().filter(|k| k.needs_vram_gb > 0).collect();
+        assert_eq!(gpu_kits.len(), 1, "one kit wants a card: {:?}", gpu_kits.iter().map(|k| k.name).collect::<Vec<_>>());
+        assert!(gpu_kits[0].needs_vram_gb >= 6);
     }
 
     #[test]

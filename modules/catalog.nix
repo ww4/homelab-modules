@@ -82,6 +82,29 @@ in
       (envRoot "homelab.acme.credentialsFile" [ "<DNS provider API credential, lego variable name>" ] "supply")
     ];
   };
+  ollama = {
+    description = "Run open-weight language models on this machine.";
+    # The idle daemon. A loaded model lives in the card's memory when
+    # acceleration is on, and is the reader's choice either way, so it is not
+    # a figure this column can carry.
+    memory = 300;
+    enable = "import";
+    options = [ "homelab.ollama" ];
+    requires = [ ];
+    vhosts = [ ];
+    secrets = [ ];
+  };
+
+  open-webui = {
+    description = "A browser front end for the models ollama is serving.";
+    memory = 500;
+    enable = "import";
+    options = [ "homelab.domain" ];
+    requires = [ "ollama" "acme" "nginx-access" ];
+    vhosts = [ "chat" ];
+    secrets = [ ];
+  };
+
   authelia = {
     description = "Authelia SSO: forward-auth gateway + OIDC provider.";
     memory = 160;
