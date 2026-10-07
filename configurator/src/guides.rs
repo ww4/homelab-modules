@@ -174,7 +174,7 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
                     own documentation gives for OpenAI clients.\n\n\
                     What you type is sealed in your browser before it is sent and ends up as an encrypted file on the \
                     machine. Skipping is fine: the assistant will ask you for a key the first time you talk to it.",
-            walkthrough: None,
+            walkthrough: Some("https://ww4.github.io/imperfect-homelab/accounts/model-provider/"),
         }),
         "homelab.backup.remote.environmentFile" => Some(Guide {
             title: "Backblaze B2 credentials for the offsite restic repository",
