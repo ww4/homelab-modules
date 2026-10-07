@@ -63,6 +63,7 @@
     nextcloud.adminPasswordFile = "/run/secrets/nextcloud";
     paperless.adminPasswordFile = "/run/secrets/paperless";
     meshagent.mshFile = "/run/secrets/agent.msh";
+    hermes.environmentFile = "/run/secrets/hermes";
     monitoring.enable = true;
   };
 }

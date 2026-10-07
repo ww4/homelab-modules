@@ -138,6 +138,36 @@
           touch $out
         '';
 
+        # ⚠️ Which address Hermes is pointed at is decided by two things, and
+        # getting it wrong sends a paid API key to a loopback port with
+        # nothing listening. docker lets `-e` beat `--env-file`, so the
+        # local address may only be set when there are local models AND no
+        # credentials file to be overridden. All four combinations, asserted.
+        hermes-model-address =
+          let
+            pointedLocal = { ollama, key }:
+              (lib.nixosSystem {
+                inherit system;
+                modules = [ library.nixosModules.hermes-agent ]
+                  ++ lib.optional ollama library.nixosModules.ollama
+                  ++ [
+                    { nixpkgs.hostPlatform = system; }
+                    { homelab.hermes.environmentFile = if key then "/run/secrets/hermes" else null; }
+                  ];
+              }).config.virtualisation.oci-containers.containers.hermes-agent.environment
+                ? OPENAI_BASE_URL;
+            cases = [
+              { case = { ollama = true; key = false; }; want = true; why = "models on this machine and no credentials: point at them"; }
+              { case = { ollama = true; key = true; }; want = false; why = "credentials supplied: a -e here would silently beat the file"; }
+              { case = { ollama = false; key = false; }; want = false; why = "no models on this machine: that port has nothing behind it"; }
+              { case = { ollama = false; key = true; }; want = false; why = "credentials and no local models: the provider's own address"; }
+            ];
+            wrong = builtins.filter (t: pointedLocal t.case != t.want) cases;
+          in
+          if wrong != [ ]
+          then throw "hermes OPENAI_BASE_URL is wrong where: ${lib.concatMapStringsSep "; " (t: t.why) wrong}"
+          else pkgs.writeText "hermes-model-address" "ok\n";
+
         # No personal names, hosts, domains or addresses in the public tree.
         leak-scan = pkgs.runCommand "leak-scan" { nativeBuildInputs = [ pkgs.bash pkgs.ugrep pkgs.gnugrep pkgs.coreutils pkgs.findutils ]; } ''
           cp -r ${../.} src && chmod -R u+w src && cd src

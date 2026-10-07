@@ -53,10 +53,15 @@ in
     volumes = [ "${cfg.stateDir}:/data" ] ++ cfg.extraMounts;
     environment = {
       HERMES_CONFIG_DIR = "/data";
-      # Point it at the models on this machine by default. The container
-      # reaches the host's ollama on the docker bridge; a paid provider is
-      # configured in the secret instead.
-      OPENAI_BASE_URL = lib.mkDefault "http://host.docker.internal:11434/v1";
+    }
+    # Point it at the models on this machine, and only when that is the whole
+    # story: this is a `-e`, and docker lets `-e` beat `--env-file`, so
+    # setting it unconditionally would send a provider key to a loopback port
+    # with nothing behind it. With credentials supplied, the container's own
+    # default address for that provider is the right one, and anyone who wants
+    # both can put OPENAI_BASE_URL in the credentials file themselves.
+    // lib.optionalAttrs (config.services.ollama.enable && cfg.environmentFile == null) {
+      OPENAI_BASE_URL = "http://host.docker.internal:11434/v1";
     };
     # Keys for whichever provider is in use. Absent is fine: Hermes asks for
     # one on first run and a local model needs none.

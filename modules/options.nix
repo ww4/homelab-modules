@@ -306,7 +306,10 @@
         description = ''
           A file of `KEY=value` lines carrying whichever provider credentials
           Hermes should use. Not needed at all when it is talking to the
-          models on this machine.
+          models on this machine: with this unset and `ollama` imported,
+          Hermes is pointed at them. Setting it hands the choice of address
+          back to the container, so a file for a provider other than OpenAI
+          should carry that provider's `OPENAI_BASE_URL` as well.
         '';
       };
       extraMounts = lib.mkOption {
