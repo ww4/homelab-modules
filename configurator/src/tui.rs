@@ -29,6 +29,7 @@ use crate::wizard::{key_summary, Role, Step, Wizard};
 /// Where the focus can rest. The index is into the model's lists.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Row {
+    Ai(bool),
     Field(usize),
     Kit(usize),
     Disk(usize),
@@ -154,7 +155,15 @@ impl Ui {
             }
             Step::Domain => {
                 r.extend((0..w.domain.len()).map(Row::Field));
-                r.extend((0..w.secrets.len()).map(Row::Secret));
+                // The assistant's credentials belong on its own screen.
+                r.extend((0..w.secrets.len()).filter(|i| !w.ai_secret(&w.secrets[*i].option)).map(Row::Secret));
+            }
+            Step::Ai => {
+                r.push(Row::Ai(false));
+                r.push(Row::Ai(true));
+                if w.ai {
+                    r.extend((0..w.secrets.len()).filter(|i| w.ai_secret(&w.secrets[*i].option)).map(Row::Secret));
+                }
             }
             Step::Extras => {
                 r.extend((0..w.open_values().len()).map(Row::Value));
@@ -310,6 +319,10 @@ impl Ui {
         match row {
             Row::Continue => self.forward(),
             Row::Back => self.back(),
+            Row::Ai(want) => {
+                self.w.lock().unwrap().set_ai(want);
+                self.sync_rows();
+            }
             Row::Kit(i) => self.w.lock().unwrap().set_kit(i),
             Row::Disk(i) => self.w.lock().unwrap().cycle_disk(i),
             Row::Key(i) => {
@@ -550,7 +563,7 @@ impl Ui {
             }
             return;
         }
-        if self.open_secret.is_some() && step == Step::Domain {
+        if self.open_secret.is_some() && matches!(step, Step::Domain | Step::Ai) {
             self.draw_secret_form(f, body[0]);
         } else {
             match step {
@@ -560,6 +573,7 @@ impl Ui {
                 Step::Profile => self.draw_profile(f, body[0]),
                 Step::Ssh => self.draw_ssh(f, body[0]),
                 Step::Domain => self.draw_domain(f, body[0]),
+                Step::Ai => self.draw_ai(f, body[0]),
                 Step::Extras => self.draw_extras(f, body[0]),
                 Step::Review => self.draw_review(f, body[0]),
                 Step::Install => self.draw_install(f, body[0]),
@@ -798,10 +812,17 @@ impl Ui {
             for (idx, k) in kits.iter().enumerate() {
                 let row = Row::Kit(idx);
                 let fits = k["fits"].as_bool().unwrap_or(true);
+                // A kit this machine cannot run is shown with the reason
+                // instead of its description. Hiding it would leave somebody
+                // wondering whether the installer has such a thing at all.
+                let why_not = k["why_not"].as_str();
                 lines.push(Line::from(vec![
                     Span::styled(format!("{}({}) {:<16}", self.marker(row), if k["chosen"].as_bool().unwrap_or(false) { "*" } else { " " }, k["name"].as_str().unwrap_or("")), self.style(row)),
                     Span::styled(format!(" ~{} GB ", k["need_gb"].as_u64().unwrap_or(0)), Style::default().fg(if fits { Color::Green } else { Color::Red }).add_modifier(Modifier::BOLD)),
-                    Span::raw(k["blurb"].as_str().unwrap_or("").to_string()),
+                    match why_not {
+                        Some(w) => Span::styled(format!("not available here: {w}"), Style::default().fg(Color::Red)),
+                        None => Span::raw(k["blurb"].as_str().unwrap_or("").to_string()),
+                    },
                 ]));
             }
         }
@@ -900,7 +921,12 @@ impl Ui {
         let w = self.w.lock().unwrap();
         self.intro(f, i, w.step.intro(w.live_usb));
         let fields: Vec<(String, String)> = w.domain.iter().map(|f| (f.label.clone(), f.shown())).collect();
-        let secrets: Vec<(String, String, bool)> = w.secrets.iter().map(|s| (s.short(), s.state(), s.filled())).collect();
+        let secrets: Vec<(String, String, bool)> = w
+            .secrets
+            .iter()
+            .filter(|s| !w.ai_secret(&s.option))
+            .map(|s| (s.short(), s.state(), s.filled()))
+            .collect();
         let help: (String, String) = match self.focused() {
             Row::Field(i) => (w.domain[i].label.clone(), w.domain[i].help.clone()),
             Row::Secret(i) => (w.secrets[i].short(), "Enter opens the form for this credential: one line per value it needs, with the steps to get them.".to_string()),
@@ -920,6 +946,59 @@ impl Ui {
             ]));
         }
         f.render_widget(Paragraph::new(lines), Rect { y: base, height: (l.y + l.height).saturating_sub(base), ..l });
+        self.help(f, h, &help.0, &help.1);
+    }
+
+    /// The assistant: one question, and the credential it needs if the answer
+    /// is yes. Nothing else on the machine depends on either.
+    fn draw_ai(&self, f: &mut Frame, area: Rect) {
+        let (i, l, h) = Self::split(area, 7, 5);
+        let w = self.w.lock().unwrap();
+        self.intro(f, i, w.step.intro(w.live_usb));
+        let want = w.ai;
+        let local = w.can_run_models_locally();
+        let card = w.card.as_ref().map(|c| (c.name.clone(), c.runs.clone()));
+        let mods = w.ai_modules().join(", ");
+        let secrets: Vec<(String, String, bool)> = w
+            .secrets
+            .iter()
+            .filter(|s| w.ai_secret(&s.option))
+            .map(|s| (s.short(), s.state(), s.filled()))
+            .collect();
+        let help: (String, String) = match self.focused() {
+            Row::Ai(false) => ("No".into(), "Nothing is installed for this and nothing else changes. You can add it later.".into()),
+            Row::Ai(true) => ("Yes".into(), format!("Installs {mods}. You can change your mind on the Modules screen.")),
+            Row::Secret(_) => ("Credentials".into(), "Enter opens the form. Skip it if this machine runs its own models, or if you would rather set it up afterwards.".into()),
+            _ => ("Continue".into(), "Either answer is fine; no is the default.".into()),
+        };
+        drop(w);
+
+        let mut lines = Vec::new();
+        for (idx, (row, label)) in [(Row::Ai(false), "No, thank you"), (Row::Ai(true), "Yes, set one up")].into_iter().enumerate() {
+            let on = (idx == 1) == want;
+            lines.push(Line::from(Span::styled(
+                format!("{}{} {}", self.marker(row), if on { "(•)" } else { "( )" }, label),
+                self.style(row).add_modifier(if on { Modifier::BOLD } else { Modifier::empty() }),
+            )));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(match &card {
+            Some((name, runs)) if local => format!("This machine has {name}, which can run {runs}. An account elsewhere is optional."),
+            Some((name, _)) => format!("This machine has {name}, which is not enough to run a model here, so an assistant would need an account with a provider."),
+            None => "This machine has no graphics card the list knows, so an assistant would need an account with a provider.".to_string(),
+        }));
+        if want && !secrets.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled("  credentials — Enter opens the form:", Style::default().add_modifier(Modifier::UNDERLINED))));
+            for (idx, (short, state, filled)) in secrets.iter().enumerate() {
+                let row = Row::Secret(idx);
+                lines.push(Line::from(vec![
+                    Span::styled(format!("{}{:<LABEL$}", self.marker(row), short), self.style(row).add_modifier(Modifier::BOLD)),
+                    Span::styled(state.clone(), self.style(row).fg(if *filled { Color::Green } else { Color::Reset })),
+                ]));
+            }
+        }
+        f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), l);
         self.help(f, h, &help.0, &help.1);
     }
 

@@ -277,6 +277,7 @@ fn apply(w: &Arc<Mutex<Wizard>>, a: &Value) -> Value {
     }
     match a["do"].as_str().unwrap_or("") {
         "set_kit" => g.set_kit(n("index")),
+        "set_ai" => g.set_ai(a["want"].as_bool().unwrap_or(false)),
         "set_disk" => g.set_disk_role(n("index"), Role::from_id(&s("role"))),
         "set_disk_path" => g.set_disk_path(&s("value")),
         "set_profile" => {

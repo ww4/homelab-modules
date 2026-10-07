@@ -33,19 +33,21 @@ pub enum Step {
     Profile,
     Ssh,
     Domain,
+    Ai,
     Extras,
     Review,
     Install,
     Done,
 }
 
-pub const STEPS: [Step; 10] = [
+pub const STEPS: [Step; 11] = [
     Step::Welcome,
     Step::Kit,
     Step::Storage,
     Step::Profile,
     Step::Ssh,
     Step::Domain,
+    Step::Ai,
     Step::Extras,
     Step::Review,
     Step::Install,
@@ -53,7 +55,7 @@ pub const STEPS: [Step; 10] = [
 ];
 
 /// The steps a person counts: Install and Done are not questions.
-pub const QUESTION_STEPS: usize = 8;
+pub const QUESTION_STEPS: usize = 9;
 
 impl Step {
     pub fn title(self) -> &'static str {
@@ -64,6 +66,7 @@ impl Step {
             Step::Profile => "Profile",
             Step::Ssh => "SSH access",
             Step::Domain => "Domain and certificates",
+            Step::Ai => "An assistant",
             Step::Extras => "Modules",
             Step::Review => "Review",
             Step::Install => "Installing",
@@ -78,6 +81,7 @@ impl Step {
             Step::Profile => "profile",
             Step::Ssh => "ssh",
             Step::Domain => "domain",
+            Step::Ai => "ai",
             Step::Extras => "extras",
             Step::Review => "review",
             Step::Install => "install",
@@ -96,6 +100,7 @@ impl Step {
             Step::Profile => "The machine's name and the account you will log in with.",
             Step::Ssh => "SSH is how you reach the machine from another computer without sitting at it. Add the public keys that may log in as the admin: import them from GitHub, or paste one. Skipping is allowed; then only the machine's own screen works.",
             Step::Domain => "Every app gets a name under your domain and a real certificate, so browsers trust it. For this release the domain's DNS must be at Cloudflare (register there, or move a domain's nameservers there). Each box below is one line of a credentials file; the Cloudflare token is checked against your domain the moment you save it.",
+            Step::Ai => "This machine can run an assistant: a program that keeps working between conversations, reads and writes files you give it, runs things you ask for, and can be reached from a chat app on your phone. It is Hermes, which is somebody else's open-source work and not ours. It is entirely optional and nothing else on this machine depends on it, so saying no costs you nothing. Saying yes needs either a graphics card for models that run here, or an account with a model provider, and the next line says which of those this machine has.",
             Step::Extras => "Everything here is already set the way the kit wants it, and those answers are good ones: if you have no preference, press Continue. The list is every module in the library, with the kit's choices ticked — tick another to add it, untick one to leave it out. Anything that needed a value from you was asked on an earlier screen.",
             Step::Review => {
                 if live_usb {
@@ -436,6 +441,7 @@ impl SecretRow {
             "homelab.arrStack.vpnEnvFile" => "VPN account".into(),
             "homelab.backup.remote.environmentFile" => "Offsite backup account".into(),
             "homelab.meshagent.mshFile" => "MeshCentral agent file".into(),
+            "homelab.hermes.environmentFile" => "Model provider key".into(),
             o => o.rsplit('.').next().unwrap_or(o).to_string(),
         }
     }
@@ -549,6 +555,10 @@ pub struct Wizard {
     /// What kind of machine this is: chassis, processor, graphics. Read once
     /// at startup, because none of it changes under us.
     pub machine: crate::machine::Machine,
+    /// Whether this machine gets an assistant. Off unless asked for: it is a
+    /// choice somebody makes, not a default anybody inherits, and nothing
+    /// else on the machine depends on the answer.
+    pub ai: bool,
     /// What the published card list says about the graphics in this machine.
     /// Looked up once, after the network is known to work, and only when
     /// there is a card to look up.
@@ -653,6 +663,7 @@ impl Wizard {
             status: None,
             ram_mib: crate::plan::machine_ram_mib(),
             machine: crate::machine::Machine::read(),
+            ai: false,
             card: None,
             card_list_tried: false,
             network: Arc::new(Mutex::new((String::new(), None))),
@@ -1500,6 +1511,7 @@ impl Wizard {
                     }
                 }
             }
+            Step::Ai => {}
             Step::Extras => {
                 if let Some((name, _, _)) = self.open_values().iter().find(|(_, v, _)| v.trim().is_empty()).cloned() {
                     return Err(hard(&format!("{name} has no default and needs a value")));
@@ -1626,6 +1638,74 @@ impl Wizard {
         if let Some(list) = crate::machine::fetch_card_list() {
             self.card = crate::machine::card_from_list(&list, &id);
         }
+    }
+
+    /// Modules the assistant answer turns on. Hermes is the assistant itself
+    /// and runs anywhere; ollama and its front end are added only when this
+    /// machine has a card that can actually serve a model, because without
+    /// one they would sit there doing nothing useful.
+    pub fn ai_modules(&self) -> Vec<&'static str> {
+        let mut m = vec!["hermes-agent"];
+        if self.can_run_models_locally() {
+            m.push("ollama");
+            m.push("open-webui");
+        }
+        m
+    }
+
+    /// Whether models could run on this machine rather than somebody else's.
+    pub fn can_run_models_locally(&self) -> bool {
+        self.card.as_ref().map(|c| c.vram_gb >= 6).unwrap_or(false)
+    }
+
+    /// Say yes or no to an assistant.
+    ///
+    /// ⚠️ The modules this turns on are recorded as the wizard's doing, not
+    /// the reader's, so the Kit screen still reads "Starter" rather than
+    /// falling through to "Custom" — the same reason marking a data disk does
+    /// not rename your kit.
+    pub fn set_ai(&mut self, want: bool) {
+        self.ai = want;
+        let names = self.ai_modules();
+        for name in &names {
+            let was = self.modules.iter().find(|m| m.name == *name).map(|m| m.chosen);
+            if let Some(m) = self.modules.iter_mut().find(|m| m.name == *name) {
+                m.chosen = want;
+            }
+            if want && was == Some(false) {
+                self.auto_modules.insert((*name).to_string());
+            }
+            if !want {
+                self.auto_modules.remove(*name);
+            }
+        }
+        // Anything the assistant was alone in wanting goes with it.
+        if !want {
+            for name in ["ollama", "open-webui"] {
+                if let Some(m) = self.modules.iter_mut().find(|m| m.name == name) {
+                    if self.kits[self.kit].modules.iter().all(|k| k != name) {
+                        m.chosen = false;
+                    }
+                }
+            }
+        }
+        self.kit = self.chosen_kit();
+        self.refresh_secrets();
+        self.say(
+            if want {
+                let local = if self.can_run_models_locally() { " Models will run on this machine's card." } else { "" };
+                format!("an assistant it is.{local}")
+            } else {
+                "no assistant; nothing else changes".to_string()
+            },
+            false,
+        );
+    }
+
+    /// The credential rows that belong on the assistant's screen rather than
+    /// the one about domains.
+    pub fn ai_secret(&self, option: &str) -> bool {
+        option.starts_with("homelab.hermes")
     }
 
     pub fn back(&mut self) {
@@ -1809,6 +1889,9 @@ impl Wizard {
             "domain": self.domain.iter().map(&field).collect::<Vec<_>>(),
             "secrets": self.secrets.iter().map(|r| json!({
                 "option": r.option, "short": r.short(), "title": r.title, "steps": r.steps, "walkthrough": r.walkthrough,
+                // Which screen asks for it: the assistant's own, or the one
+                // about domains. The rule lives here, not in the page.
+                "ai": self.ai_secret(&r.option),
                 "path_only": r.path_only, "path": r.path,
                 "fields": r.fields.iter().zip(&r.optional).map(|(f, opt)| {
                     let mut v = field(f);
@@ -1840,6 +1923,12 @@ impl Wizard {
             // machine; it is never used as a secret.
             "sealing": { "public_key": self.sealer.public_hex(), "fingerprint": self.sealer.fingerprint() },
             "cleartext_secret_seen": self.saw_cleartext_secret,
+            "ai": {
+                "wanted": self.ai,
+                "local_models": self.can_run_models_locally(),
+                "card": self.card.as_ref().map(|c| json!({ "name": c.name, "runs": c.runs })),
+                "modules": self.ai_modules(),
+            },
             "awaiting_console": self.install_request.is_some(),
             "awaiting_takeover": self.takeover_request.is_some(),
             "update": self.update.as_ref().map(|u| json!({
@@ -2364,6 +2453,47 @@ error: Cannot build '/nix/store/k48mnl-homelab-configure-0.1.0.drv'.
         w.card = Some(big);
         w.set_kit(ai);
         assert_eq!(w.kit, ai, "with a real card it is an ordinary kit");
+    }
+
+    /// An assistant is a choice, and choosing it must not look like choosing
+    /// a different kit: the same reason marking a data disk does not rename
+    /// one.
+    #[test]
+    fn saying_yes_to_an_assistant_does_not_rename_the_kit() {
+        let mut w = test_wizard();
+        let starter = w.kits.iter().position(|k| k.name == "Starter").unwrap();
+        w.set_kit(starter);
+        assert_eq!(w.chosen_kit(), starter);
+
+        w.set_ai(true);
+        assert!(w.ai);
+        assert_eq!(w.chosen_kit(), starter, "still Starter");
+
+        w.set_ai(false);
+        assert!(!w.ai);
+        assert_eq!(w.chosen_kit(), starter, "and still Starter after changing your mind");
+    }
+
+    /// Without a card that can serve a model, an assistant is still offered:
+    /// it just talks to somebody else's. With one, the local pieces come too.
+    #[test]
+    fn local_models_are_added_only_when_the_card_can_serve_them() {
+        let mut w = test_wizard();
+        assert_eq!(w.ai_modules(), vec!["hermes-agent"], "no card: the harness alone");
+
+        w.card = Some(crate::machine::Card {
+            name: "Some Card".into(), vendor: "NVIDIA".into(), vram_gb: 24,
+            note: None, tier: "large".into(), runs: "big models".into(),
+        });
+        assert!(w.can_run_models_locally());
+        assert_eq!(w.ai_modules(), vec!["hermes-agent", "ollama", "open-webui"]);
+
+        w.card = Some(crate::machine::Card {
+            name: "Tiny".into(), vendor: "Intel".into(), vram_gb: 2,
+            note: None, tier: "none".into(), runs: "nothing".into(),
+        });
+        assert!(!w.can_run_models_locally(), "2 GB is not a card to serve from");
+        assert_eq!(w.ai_modules(), vec!["hermes-agent"]);
     }
 
     #[test]

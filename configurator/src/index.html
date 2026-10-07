@@ -610,9 +610,11 @@ const screens = {
     ];
   },
 
-  domain: (s) => {
-    const out = s.domain.map((f) => textField(f, (v) => sendValue({ do: "set_domain", key: f.key }, v, f.masked)));
-    for (const sec of s.secrets) {
+  // One credential, as a card. Both the domain screen and the assistant's
+  // screen show these; which credentials belong to which is the server's
+  // decision, carried on each row.
+  secretCard: (s, sec) => {
+
       const card = el("div", { key: sec.option, className: "card" }, [
         el("h3", { key: "title", textContent: sec.title }),
         el("p", { key: "steps", className: "muted", style: "white-space:pre-wrap; font-size:.88rem", textContent: sec.steps }),
@@ -646,8 +648,35 @@ const screens = {
         el("button", { key: "skip", textContent: "Skip for now", onclick: () => call({ do: "skip_secret", option: sec.option }) }),
         el("span", { key: "state", className: sec.skipped || (sec.verified && !sec.verified.ok) ? "bad" : sec.filled ? "ok" : "muted", textContent: sec.state }),
       ]));
-      out.push(card);
-    }
+    return card;
+  },
+
+  // The assistant: one question, and the credential it needs if the answer is
+  // yes. Nothing else on the machine depends on either answer.
+  ai: (s) => {
+    const a = s.ai || {};
+    const choice = (want, label, help) =>
+      el("div", {
+        key: label,
+        className: "choice" + (a.wanted === want ? " on" : ""),
+        onclick: () => call({ do: "set_ai", want }),
+      }, [el("div", {}, [el("b", { textContent: label }), el("span", { className: "muted", textContent: help })])]);
+
+    const out = [
+      choice(false, "No, thank you", "Nothing is installed for this and nothing else changes. You can add it later."),
+      choice(true, "Yes, set one up", "Installs " + (a.modules || []).join(", ") + ". You can change your mind on the Modules screen."),
+      el("p", { key: "hw", className: "muted", textContent:
+        a.local_models && a.card ? "This machine has " + a.card.name + ", which can run " + a.card.runs + ". An account elsewhere is optional."
+        : a.card ? "This machine has " + a.card.name + ", which is not enough to run a model here, so an assistant would need an account with a provider."
+        : "This machine has no graphics card the list knows, so an assistant would need an account with a provider." }),
+    ];
+    if (a.wanted) for (const sec of s.secrets.filter((x) => x.ai)) out.push(screens.secretCard(s, sec));
+    return out;
+  },
+
+  domain: (s) => {
+    const out = s.domain.map((f) => textField(f, (v) => sendValue({ do: "set_domain", key: f.key }, v, f.masked)));
+    for (const sec of s.secrets.filter((x) => !x.ai)) out.push(screens.secretCard(s, sec));
     return out;
   },
 

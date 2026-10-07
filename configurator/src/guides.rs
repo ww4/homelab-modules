@@ -87,6 +87,21 @@ pub fn fields(option: &str, values: &BTreeMap<String, String>) -> Vec<SecretFiel
             }
             out
         }
+        "homelab.hermes.environmentFile" => {
+            let provider = values.get("__hermes_provider").map(|s| s.trim().to_lowercase()).unwrap_or_default();
+            let var = match provider.as_str() {
+                "anthropic" => "ANTHROPIC_API_KEY",
+                "openrouter" => "OPENROUTER_API_KEY",
+                _ => "OPENAI_API_KEY",
+            };
+            vec![f(
+                var,
+                "API key",
+                "The key from whichever provider you chose. Leave it empty if this machine runs its own models, or if you would rather set it up when you first talk to the assistant.",
+                true,
+                true,
+            )]
+        }
         "homelab.backup.remote.environmentFile" => vec![
             f("B2_ACCOUNT_ID", "Application key ID", "The keyID Backblaze shows when you add an application key.", false, false),
             f("B2_ACCOUNT_KEY", "Application key", "The applicationKey beside it, shown once.", true, false),
@@ -139,6 +154,19 @@ pub fn for_option(option: &str, values: &BTreeMap<String, String>) -> Option<Gui
             let steps: &'static str = Box::leak(steps.replace("{other}", &provider).into_boxed_str());
             Some(Guide { title, steps, walkthrough: Some("https://ww4.github.io/imperfect-homelab/accounts/vpn/") })
         }
+        "homelab.hermes.environmentFile" => Some(Guide {
+            title: "A model for the assistant to think with",
+            steps: "The assistant is the program; the model is what it thinks with, and you choose where that comes from.\n\n\
+                    If this machine has a graphics card big enough, it can run its own and you can skip this entirely: \
+                    the assistant is already pointed at it.\n\n\
+                    Otherwise you need an account with somebody. Any of these works, and you need only one:\n\
+                    · OpenAI — platform.openai.com → API keys → Create. Pay per use.\n\
+                    · Anthropic — console.anthropic.com → API keys. Pay per use. ⚠️ Check the terms allow the use you have in mind.\n\
+                    · OpenRouter — openrouter.ai → Keys. One account, many providers, including free tiers.\n\n\
+                    Paste the key below. It is sealed in your browser before it is sent, and ends up as an encrypted file on the \
+                    machine. Skip is fine: the assistant will ask you for one the first time you talk to it.",
+            walkthrough: None,
+        }),
         "homelab.backup.remote.environmentFile" => Some(Guide {
             title: "Backblaze B2 credentials for the offsite restic repository",
             steps: "backblaze.com → B2 Cloud Storage → create a bucket (private) → Application Keys → Add a New Application Key, \
