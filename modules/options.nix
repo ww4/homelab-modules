@@ -294,6 +294,40 @@
     };
 
     # ── drive-temps exporter ──────────────────────────────────────────────────
+    hermes = {
+      stateDir = lib.mkOption {
+        type = lib.types.str;
+        default = "/var/lib/hermes";
+        description = "Everything Hermes keeps, and everything it can see unless you add to `extraMounts`.";
+      };
+      environmentFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = ''
+          A file of `KEY=value` lines carrying whichever provider credentials
+          Hermes should use. Not needed at all when it is talking to the
+          models on this machine.
+        '';
+      };
+      extraMounts = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "/mnt/media/photos:/photos:ro" ];
+        description = ''
+          Anything else Hermes may see, in docker's `host:container[:ro]`
+          form. ⚠️ This is the whole of its reach. Hermes runs code and acts
+          on what it finds, so each line here is a deliberate decision about
+          what an agent is allowed to touch. Read-only unless it genuinely
+          needs to write.
+        '';
+      };
+      memoryMax = lib.mkOption {
+        type = lib.types.str;
+        default = "4g";
+        description = "A ceiling on the container's memory, so a runaway cannot take the machine with it.";
+      };
+    };
+
     ollama = {
       acceleration = lib.mkOption {
         type = lib.types.nullOr (lib.types.enum [ "cuda" "rocm" ]);

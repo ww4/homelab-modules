@@ -82,6 +82,23 @@ in
       (envRoot "homelab.acme.credentialsFile" [ "<DNS provider API credential, lego variable name>" ] "supply")
     ];
   };
+  hermes-agent = {
+    description = "A self-hosted agent harness that runs code and acts on its own; talks to local or paid models.";
+    memory = 700;
+    enable = "import";
+    options = [ "homelab.hermes" ];
+    requires = [ ];
+    vhosts = [ ];
+    secrets = [
+      {
+        option = "homelab.hermes.environmentFile";
+        keys = [ "OPENAI_API_KEY=…  # or the provider you use; none is needed for local models" ];
+        owner = "root";
+        source = "supply";
+      }
+    ];
+  };
+
   ollama = {
     description = "Run open-weight language models on this machine.";
     # The idle daemon. A loaded model lives in the card's memory when

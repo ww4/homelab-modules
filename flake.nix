@@ -41,6 +41,7 @@
       # Services & tooling.
       mergerfs-pools = ./modules/services/mergerfs-pools.nix;
       authelia = ./modules/services/authelia.nix;
+      hermes-agent = ./modules/services/hermes-agent.nix;
       ollama = ./modules/services/ollama.nix;
       open-webui = ./modules/services/open-webui.nix;
       monitoring = ./modules/services/monitoring;
