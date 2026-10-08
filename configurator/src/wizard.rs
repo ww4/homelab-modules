@@ -735,6 +735,13 @@ impl Wizard {
         self.network.lock().unwrap().clone()
     }
 
+    /// Give the wizard an address without a network, so a screen that is
+    /// only drawn once there is one can be rendered in a test.
+    #[cfg(test)]
+    pub fn set_network_for_test(&mut self, address: &str) {
+        *self.network.lock().unwrap() = (address.to_string(), Some(true));
+    }
+
     /// The commit this binary was built from, or "dirty" from a work tree.
     pub fn version() -> &'static str {
         option_env!("HOMELAB_REV").unwrap_or("dirty")

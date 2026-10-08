@@ -18,7 +18,12 @@ let
       ({ pkgs, lib, ... }: {
         isoImage.isoName = lib.mkForce "homelab-installer-${system}.iso";
         isoImage.volumeID = lib.mkForce "HOMELAB";
-        environment.systemPackages = [ homelab-configure pkgs.git pkgs.curl pkgs.jq pkgs.qrencode ];
+        # qrencode is NOT here any more: it is on the binary's own PATH, where
+        # the rest of the tools it shells out to live. Leaving it to the ISO
+        # meant the dependency held only by accident, and when it was missing
+        # the Welcome screen drew a hole where the square belongs and said
+        # nothing about it.
+        environment.systemPackages = [ homelab-configure pkgs.git pkgs.curl pkgs.jq ];
         # The browser installer: the same wizard, served to any computer on the
         # network so a long token can be pasted instead of typed.
         # The browser installer answers computers on this network and nobody

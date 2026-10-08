@@ -54,7 +54,10 @@ struct Ui {
     /// The Domain screen opens one credential at a time as its own form.
     open_secret: Option<usize>,
     /// Rendered QR of the browser URL, kept for the URL it was made from.
-    qr: Option<(String, Vec<String>)>,
+    /// The inner `None` means qrencode could not be run — said out loud
+    /// rather than left as a gap, because a gap is what a reader reports as
+    /// "there was space for one but it didn't print".
+    qr: Option<(String, Option<Vec<String>>)>,
     /// The rows of the current screen, refreshed once per frame and before
     /// every key. Rendering must never take the model lock twice: a std
     /// Mutex is not reentrant, and the draw path deadlocked itself.
@@ -816,14 +819,41 @@ impl Ui {
             lines.push(Line::from(""));
             lines.push(Line::from("Not running from the installer: the last screen writes the configuration and prints the install command instead of running it."));
         }
-        let text_h = lines.len() as u16 + 1;
+        // ⚠️ MEASURED, NOT COUNTED. This was `lines.len() + 1`, which counts
+        // the lines handed to the paragraph and not the rows it draws after
+        // wrapping. At 80 columns the intro alone wraps to five, so the text
+        // was cut off AND the square was placed on top of the address and the
+        // pairing code — the two things on this screen a reader actually
+        // needs. Ask the wrapper how tall each line really is.
+        let text_h: u16 = lines
+            .iter()
+            .map(|l| Self::text_height(&l.to_string(), area.width, u16::MAX))
+            .sum::<u16>()
+            .saturating_add(1);
         f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), Rect { height: text_h.min(area.height), ..area });
-        if let Some((_, qr)) = &self.qr {
-            let y = area.y + text_h;
-            if y + 2 < area.y + area.height {
-                let rows: Vec<Line> = qr.iter().map(|l| Line::from(l.clone())).collect();
-                f.render_widget(Paragraph::new(rows), Rect { x: area.x + 1, y, width: area.width.saturating_sub(1), height: (area.y + area.height).saturating_sub(y) });
+
+        let y = area.y + text_h;
+        let room = (area.y + area.height).saturating_sub(y);
+        match &self.qr {
+            // ⚠️ WHOLE OR NOT AT ALL. A clipped QR code does not scan, and
+            // drawing one costs the reader the lines the address was on.
+            Some((_, Some(rows))) if rows.len() as u16 <= room => {
+                let drawn: Vec<Line> = rows.iter().map(|l| Line::from(l.clone())).collect();
+                let h = drawn.len() as u16;
+                f.render_widget(Paragraph::new(drawn), Rect { x: area.x + 1, y, width: area.width.saturating_sub(1), height: h });
             }
+            // Too short a screen for the square: the address above is the
+            // whole answer, so say nothing and leave the room to the text.
+            Some((_, Some(_))) => {}
+            Some((_, None)) if room >= 1 => {
+                f.render_widget(
+                    Paragraph::new("(no qrencode on this machine, so there is no square to scan — type the address above)")
+                        .wrap(Wrap { trim: true })
+                        .style(Style::default().add_modifier(Modifier::DIM)),
+                    Rect { x: area.x + 1, y, width: area.width.saturating_sub(1), height: room.min(2) },
+                );
+            }
+            _ => {}
         }
     }
 
@@ -833,14 +863,15 @@ impl Ui {
         if url.is_empty() || self.qr.as_ref().map(|(u, _)| u == url).unwrap_or(false) {
             return;
         }
-        if let Ok(o) = Command::new("qrencode").args(["-t", "UTF8i", "-m", "1", "-o", "-", url]).output() {
-            if o.status.success() {
+        let drawn = match Command::new("qrencode").args(["-t", "UTF8i", "-m", "1", "-o", "-", url]).output() {
+            Ok(o) if o.status.success() => {
                 let lines: Vec<String> = String::from_utf8_lossy(&o.stdout).lines().map(|l| l.to_string()).collect();
-                if !lines.is_empty() {
-                    self.qr = Some((url.to_string(), lines));
-                }
+                if lines.is_empty() { None } else { Some(lines) }
             }
-        }
+            // Not installed, or it failed: recorded, so the screen can say so.
+            _ => None,
+        };
+        self.qr = Some((url.to_string(), drawn));
     }
 
     fn draw_kit(&self, f: &mut Frame, area: Rect) {
@@ -1230,7 +1261,56 @@ mod tests {
         assert_eq!(Ui::text_height("aaaaaaaaaaaaaaa", 4, 9), 1);
     }
 
-    /// The band holding the rows must never be squeezed away by a long
+    /// A wizard over a catalogue small enough to build in a test.
+    fn test_ui(address: &str) -> Ui {
+        let catalog = serde_json::json!({
+            "acme": {"description": "acme", "enable": "import", "options": [], "requires": [], "vhosts": [], "secrets": []}
+        })
+        .to_string();
+        let schema = Box::leak(Box::new(crate::schema::Schema::parse(&catalog, "[]").expect("a schema")));
+        let dir = std::env::temp_dir().join(format!("hl-tui-test-{}", std::process::id()));
+        let mut wiz = Wizard::new(schema, &dir.join("answers.json"), &dir, vec![], 8099);
+        wiz.set_network_for_test(address);
+        Ui { w: Arc::new(Mutex::new(wiz)), focus: 0, editing: None, open_secret: None, qr: None, rows: Vec::new(), quit: false }
+    }
+
+    /// ⚠️ THE SQUARE WAS DRAWN ON TOP OF THE ADDRESS. The Welcome screen
+    /// placed the QR code at `lines.len() + 1`, a count of the lines handed
+    /// to the paragraph rather than the rows it draws after wrapping. At 80
+    /// columns the intro alone wraps to five, so the square landed over the
+    /// browser address and the pairing code — the two things on that screen
+    /// a reader cannot do without. Render it and look.
+    #[test]
+    fn the_welcome_screen_keeps_its_address_and_code() {
+        for (w, h) in [(80u16, 25u16), (100, 40), (120, 60)] {
+            let mut ui = test_ui("192.168.1.65");
+            let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).expect("a terminal");
+            term.draw(|f| ui.draw(f)).expect("a frame");
+            let screen: String = term.backend().buffer().content().iter().map(|c| c.symbol()).collect();
+            let code = ui.w.lock().unwrap().pairing.clone();
+            assert!(screen.contains("192.168.1.65:8099"), "{w}x{h}: the browser address is not on the screen");
+            assert!(screen.contains(&code), "{w}x{h}: the pairing code is not on the screen");
+        }
+    }
+
+    /// A clipped QR code does not scan, and drawing one costs the reader the
+    /// lines the address was on. Whole or not at all.
+    #[test]
+    fn a_square_that_does_not_fit_is_not_drawn() {
+        let mut ui = test_ui("192.168.1.65");
+        // A tall square and a short screen: the rows must not appear.
+        ui.qr = Some((
+            "http://192.168.1.65:8099/?code=X".to_string(),
+            Some((0..60).map(|_| "\u{2588}".repeat(29)).collect()),
+        ));
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 25)).expect("a terminal");
+        term.draw(|f| ui.draw(f)).expect("a frame");
+        let screen: String = term.backend().buffer().content().iter().map(|c| c.symbol()).collect();
+        assert!(!screen.contains("\u{2588}\u{2588}\u{2588}"), "a square too tall for the screen was drawn anyway");
+        assert!(screen.contains("192.168.1.65:8099"), "the address was covered by a square that did not fit");
+    }
+
+    /// The band holding the rows must never be squeezed away by a long    /// The band holding the rows must never be squeezed away by a long
     /// paragraph above it. That band is where the fields and the sealing
     /// fingerprint are drawn, so a zero-height one hides them rather than
     /// merely crowding them.
