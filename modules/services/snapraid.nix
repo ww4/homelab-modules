@@ -38,7 +38,15 @@
 let
   cfg = config.homelab.snapraid;
   pool = config.homelab.pools.${cfg.pool} or null;
-  memberPath = m: "${pool.memberDir}/${m}";
+  # ⚠️ ASSERTIONS DO NOT SHORT-CIRCUIT. NixOS evaluates the whole of `config`
+  # and checks assertions afterwards, so anything derived from `pool` is
+  # forced BEFORE the assertion below can say what is wrong. Reading
+  # `pool.members` off a null pool produced "expected a set but found null"
+  # from deep inside nixpkgs, and the careful message written for exactly
+  # this case never printed. Derive from safe values; let the assertion talk.
+  members = if pool == null then [ ] else pool.members;
+  memberDir = if pool == null then "/mnt/disks" else pool.memberDir;
+  memberPath = m: "${memberDir}/${m}";
 in
 {
   imports = [ ../options.nix ];
@@ -62,13 +70,13 @@ in
     services.snapraid = {
       enable = true;
       # d1 = /mnt/disks/D1 … — the key is the member name, lowercased.
-      dataDisks = lib.listToAttrs (map (m: lib.nameValuePair (lib.toLower m) (memberPath m)) pool.members);
+      dataDisks = lib.listToAttrs (map (m: lib.nameValuePair (lib.toLower m) (memberPath m)) members);
       parityFiles = cfg.parityFiles;
       # Content (database) copies: one on persistent local storage plus one
       # per data disk — more copies than parity disks, so no single loss
       # takes the database with it.
       contentFiles = [ "${cfg.contentDir}/snapraid.content" ]
-        ++ map (m: "${memberPath m}/snapraid.content") pool.members;
+        ++ map (m: "${memberPath m}/snapraid.content") members;
       # The content files themselves are always excluded, last.
       exclude = cfg.exclude ++ cfg.extraExclude ++ [ ".snapraid.content*" ];
       sync.interval = cfg.sync.interval;

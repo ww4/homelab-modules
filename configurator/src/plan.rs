@@ -22,6 +22,10 @@ use crate::Rejected;
 /// A consumer who does have another copy can override it in the answers.
 pub const DEFAULT_LIBRARY: &str = "github:ww4/homelab-modules";
 
+/// The pool the installer makes from the data disks. Matches the default of
+/// `homelab.snapraid.pool`, so the two agree without either being told.
+const POOL: &str = "media";
+
 /// Foundation modules — present from the first run, never offered as choices.
 /// `system` and `boot` are added to every plan; they read no values.
 pub const FOUNDATION_ALWAYS: &[&str] = &["system", "boot"];
@@ -195,17 +199,87 @@ impl<'a> Plan<'a> {
             }
         }
 
+        // ⚠️ A POOL IS NOT IMPLIED BY A DISK ROLE, and until this ran nothing
+        // ever created one. Marking a data disk ticks mergerfs-pools and
+        // marking a parity disk ticks snapraid, but `homelab.pools` stayed at
+        // its empty default, so snapraid pointed at a pool that did not exist
+        // and the whole configuration failed to evaluate. Every install with a
+        // parity disk failed this way; nobody had rehearsed one.
+        //
+        // The disks are mounted by disko at /mnt/disks/<name> (see emit/nix),
+        // and the parity disk is the member literally named "parity", so the
+        // pool can be derived from the answers rather than asked for again.
+        let data_members: Vec<String> = answers
+            .host
+            .data_disks
+            .iter()
+            .filter(|d| d.name != "parity")
+            .map(|d| d.name.clone())
+            .collect();
+        let has_parity = answers.host.data_disks.iter().any(|d| d.name == "parity");
+        if modules.iter().any(|m| m == "mergerfs-pools") && !data_members.is_empty() {
+            let name = values
+                .get("homelab.snapraid.pool")
+                .and_then(|v| v.as_str())
+                .unwrap_or(POOL)
+                .to_string();
+            let key = format!("homelab.pools.{name}");
+            if !values.keys().any(|k| k == &key || k.starts_with(&format!("{key}."))) {
+                values.insert(
+                    key,
+                    serde_json::json!({
+                        "mountpoint": format!("/mnt/{name}"),
+                        "branches": "/mnt/disks/*",
+                        "memberDir": "/mnt/disks",
+                        "members": data_members,
+                    }),
+                );
+                auto_values.push(format!("homelab.pools.{name}"));
+            }
+            if has_parity && !values.contains_key("homelab.snapraid.pool") {
+                values.insert("homelab.snapraid.pool".into(), serde_json::Value::String(name.clone()));
+                auto_values.push("homelab.snapraid.pool".into());
+            }
+        }
+        if modules.iter().any(|m| m == "snapraid") {
+            if has_parity && !values.contains_key("homelab.snapraid.parityFiles") {
+                values.insert(
+                    "homelab.snapraid.parityFiles".into(),
+                    serde_json::json!(["/mnt/disks/parity/snapraid.parity"]),
+                );
+                auto_values.push("homelab.snapraid.parityFiles".into());
+            }
+            if data_members.is_empty() {
+                problems.push(
+                    "snapraid needs at least one data disk to protect: mark one on the Storage screen, or leave the parity disk unmarked".into(),
+                );
+            }
+        }
+
         // Backups on a one-disk box: the library insists on an explicit
         // repository (it belongs on a pool, not the system disk), but a
         // first install has nowhere else. Put it on the first pool when
         // there is one, else on the system disk, and say so.
         if modules.iter().any(|m| m == "backup") {
+            // A pool arrives either as a nested `homelab.pools` attrset the
+            // reader wrote, or as the flattened `homelab.pools.<name>` key the
+            // storage step derives. Reading only the first shape meant a
+            // machine WITH a pool still put its backups on the system disk and
+            // warned about having no pool.
             let pool_mount = values
                 .get("homelab.pools")
                 .and_then(|p| p.as_object())
                 .and_then(|p| p.values().next())
                 .and_then(|p| p["mountpoint"].as_str())
-                .map(String::from);
+                .map(String::from)
+                .or_else(|| {
+                    values
+                        .iter()
+                        .filter(|(k, _)| k.starts_with("homelab.pools."))
+                        .map(|(_, v)| v)
+                        .find_map(|v| v["mountpoint"].as_str())
+                        .map(String::from)
+                });
             if !values.contains_key("homelab.backup.local.repository") && values.get("homelab.backup.local.enable").and_then(|v| v.as_bool()).unwrap_or(true) {
                 let repo = match &pool_mount {
                     Some(m) => format!("{}/restic", m.trim_end_matches('/')),
@@ -438,7 +512,9 @@ mod tests {
           "jellyfin": {"description":"j","enable":"import","options":["homelab.domain"],"requires":["acme","nginx-access"],"vhosts":["jellyfin"],"secrets":[]},
           "backup": {"description":"k","enable":"import","options":["homelab.backup"],"requires":[],"vhosts":[],"secrets":[
              {"option":"homelab.backup.passwordFile","keys":["<passphrase>"],"owner":"root","source":"generate"}]},
-          "authelia": {"description":"au","enable":"homelab.authelia.enable","options":["homelab.authelia"],"requires":["acme"],"vhosts":["auth"],"secrets":[]}
+          "authelia": {"description":"au","enable":"homelab.authelia.enable","options":["homelab.authelia"],"requires":["acme"],"vhosts":["auth"],"secrets":[]},
+          "mergerfs-pools": {"description":"mp","enable":"import","options":["homelab.pools"],"requires":[],"vhosts":[],"secrets":[]},
+          "snapraid": {"description":"sr","enable":"homelab.snapraid.enable","options":["homelab.snapraid"],"requires":["mergerfs-pools"],"vhosts":[],"secrets":[]}
         }"#;
         let options = r#"[
           {"name":"homelab.domain","type":"string","description":"d","hasDefault":false,"default":null,"example":null},
@@ -446,7 +522,11 @@ mod tests {
           {"name":"homelab.acme.credentialsFile","type":"string","description":"c","hasDefault":false,"default":null,"example":null},
           {"name":"homelab.backup.paths","type":"list of string","description":"p","hasDefault":false,"default":null,"example":null},
           {"name":"homelab.backup.passwordFile","type":"string","description":"pw","hasDefault":false,"default":null,"example":null},
-          {"name":"homelab.authelia.enable","type":"boolean","description":"en","hasDefault":true,"default":"false","example":null}
+          {"name":"homelab.authelia.enable","type":"boolean","description":"en","hasDefault":true,"default":"false","example":null},
+          {"name":"homelab.pools","type":"attribute set","description":"po","hasDefault":true,"default":"{ }","example":null},
+          {"name":"homelab.snapraid.enable","type":"boolean","description":"se","hasDefault":true,"default":"false","example":null},
+          {"name":"homelab.snapraid.pool","type":"string","description":"sp","hasDefault":true,"default":"media","example":null},
+          {"name":"homelab.snapraid.parityFiles","type":"list of string","description":"pf","hasDefault":true,"default":"[ ]","example":null}
         ]"#;
         Schema::parse(catalog, options).unwrap()
     }
@@ -472,6 +552,52 @@ mod tests {
     /// ⚠️ A generated configuration is resolved on somebody else's machine.
     /// This address was the private forge for every install until one got to
     /// the last screen and died on "Could not connect to server".
+    /// ⚠️ FOUND IN A QEMU REHEARSAL, by the first install ever run with a
+    /// parity disk. Marking a data disk ticks mergerfs-pools and marking a
+    /// parity disk ticks snapraid, but nothing created the pool those two
+    /// need, so snapraid pointed at a pool that did not exist and the whole
+    /// configuration failed to evaluate. The install died before it touched
+    /// a disk, which is the one mercy in it.
+    #[test]
+    fn data_disks_become_a_pool_that_snapraid_can_find() {
+        let s = schema();
+        let mut a = answers(&["acme", "nginx-access", "backup", "mergerfs-pools", "snapraid"]);
+        a.host.data_disks = vec![
+            crate::answers::DataDisk { name: "d1".into(), device: "/dev/disk/by-id/a".into() },
+            crate::answers::DataDisk { name: "d2".into(), device: "/dev/disk/by-id/b".into() },
+            crate::answers::DataDisk { name: "parity".into(), device: "/dev/disk/by-id/c".into() },
+        ];
+        let p = Plan::build(&s, &a, &supplied(), None, &BTreeSet::new(), &BTreeSet::new()).expect("a plan");
+
+        let pool = p.values.get("homelab.pools.media").expect("a pool built from the data disks");
+        assert_eq!(pool["memberDir"], "/mnt/disks", "snapraid reads memberDir");
+        assert_eq!(
+            pool["members"].as_array().expect("members"),
+            &vec![serde_json::json!("d1"), serde_json::json!("d2")],
+            "the parity disk is not a member of the pool it protects"
+        );
+        assert_eq!(
+            p.values.get("homelab.snapraid.parityFiles").expect("parity files"),
+            &serde_json::json!(["/mnt/disks/parity/snapraid.parity"])
+        );
+
+        // And the pool is where the backup goes, instead of the system disk.
+        let repo = p.values.get("homelab.backup.local.repository").expect("a repository");
+        assert_eq!(repo, "/mnt/media/restic", "the restic repo belongs on the pool, not the system disk");
+    }
+
+    /// Parity with nothing to protect is a configuration that cannot work;
+    /// say so here rather than let nix say it in its own words.
+    #[test]
+    fn parity_without_a_data_disk_is_refused() {
+        let s = schema();
+        let mut a = answers(&["acme", "nginx-access", "backup", "mergerfs-pools", "snapraid"]);
+        a.host.data_disks =
+            vec![crate::answers::DataDisk { name: "parity".into(), device: "/dev/disk/by-id/c".into() }];
+        let err = Plan::build(&s, &a, &supplied(), None, &BTreeSet::new(), &BTreeSet::new()).err().expect("refused");
+        assert!(format!("{err:?}").contains("at least one data disk"), "{err:?}");
+    }
+
     #[test]
     fn the_generated_flake_points_somewhere_a_stranger_can_reach() {
         assert!(
