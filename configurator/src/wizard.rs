@@ -1515,15 +1515,31 @@ impl Wizard {
                     if self.domain.iter().any(|f| f.value.trim().is_empty()) {
                         return Err(hard("the domain and the email are both needed"));
                     }
-                    if let Some(r) = self.secrets.iter().find(|r| !r.filled()) {
+                    // ⚠️ ONLY THE CREDENTIALS THIS SCREEN SHOWS. The
+                    // assistant's key is filtered out of this screen's rows
+                    // and belongs to the screen after it, so demanding it
+                    // here was a dead end: Continue refused to move while the
+                    // Skip that would satisfy it lived on a screen the reader
+                    // could no longer reach. Only reachable by going BACK to
+                    // this screen with an assistant already chosen, which is
+                    // exactly what someone changing their mind does.
+                    if let Some(r) = self.secrets.iter().find(|r| !r.filled() && !self.ai_secret(&r.option)) {
                         return Err(hard(&format!("{} is not set: fill it in, or press Skip on it", r.short())));
                     }
-                    if self.secrets.iter().any(|r| matches!(r.verified, Some(Err(_)))) {
+                    if self.secrets.iter().any(|r| !self.ai_secret(&r.option) && matches!(r.verified, Some(Err(_)))) {
                         soft(self, "a value did not verify (the red line); fix it, or go on anyway")?;
                     }
                 }
             }
-            Step::Ai => {}
+            // The assistant's own credential, on the screen that shows it.
+            // Soft, because skipping is a real answer: a machine with its own
+            // models needs no key, and Hermes asks for one on first contact.
+            Step::Ai => {
+                if let Some(r) = self.secrets.iter().find(|r| !r.filled() && self.ai_secret(&r.option)) {
+                    let m = format!("{} is not set: the assistant will ask you for one the first time you talk to it", r.short());
+                    soft(self, &m)?;
+                }
+            }
             Step::Extras => {
                 if let Some((name, _, _)) = self.open_values().iter().find(|(_, v, _)| v.trim().is_empty()).cloned() {
                     return Err(hard(&format!("{name} has no default and needs a value")));
@@ -2134,11 +2150,52 @@ mod tests {
                     json!({"description": name, "enable": "import", "options": [], "requires": [], "vhosts": [], "secrets": []}),
                 );
             }
+            // The assistant, with the credential it asks for — the screen
+            // that owns that credential is the point of one of the tests.
+            m.insert(
+                "hermes-agent".to_string(),
+                json!({"description": "hermes-agent", "enable": "import", "options": [], "requires": [], "vhosts": [],
+                       "secrets": [{"option": "homelab.hermes.environmentFile", "keys": ["OPENAI_API_KEY"], "owner": "root", "source": "supply"}]}),
+            );
             serde_json::Value::Object(m).to_string()
         };
         let schema = Box::leak(Box::new(Schema::parse(&catalog, "[]").expect("a schema")));
         let dir = std::env::temp_dir().join(format!("hl-kit-test-{}", std::process::id()));
         Wizard::new(schema, &dir.join("answers.json"), &dir, vec![], 0)
+    }
+
+    /// ⚠️ A DEAD END FOUND IN A QEMU REHEARSAL, not by any test here. The
+    /// Domain screen demanded every unfilled credential, including the
+    /// assistant's — which is filtered off that screen and belongs to the one
+    /// after it. So Continue refused to move while the Skip that would
+    /// satisfy it sat on a screen the reader could no longer reach, and the
+    /// only way out was to restart the installer. Reached by choosing an
+    /// assistant and then going BACK to Domain, which is what somebody
+    /// changing their mind does.
+    #[test]
+    fn going_back_to_domain_with_an_assistant_is_not_a_dead_end() {
+        let mut w = test_wizard();
+        give_it_disks(&mut w);
+        for f in w.domain.iter_mut() {
+            f.value = "example.com".into();
+        }
+        w.set_ai(true);
+        assert!(
+            w.secrets.iter().any(|r| w.ai_secret(&r.option)),
+            "the assistant should have asked for a credential"
+        );
+
+        // Standing on Domain with the assistant chosen and its key unset.
+        w.step = Step::Domain;
+        w.warned = false;
+        match w.advance_from(Origin::Browser) {
+            Ok(()) => {}
+            Err(b) => assert!(
+                b.soft,
+                "Domain refused to advance over the assistant's key, which has no Skip on this screen: {}",
+                b.message
+            ),
+        }
     }
 
     /// Two disks the roles can be set on, so the storage step has something
