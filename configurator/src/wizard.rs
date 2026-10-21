@@ -1534,10 +1534,22 @@ impl Wizard {
             // The assistant's own credential, on the screen that shows it.
             // Soft, because skipping is a real answer: a machine with its own
             // models needs no key, and Hermes asks for one on first contact.
+            //
+            // ⚠️ AND SAYING THAT IS NOT ENOUGH — IT HAS TO BE RECORDED.
+            // `generate` refuses a must-supply credential that was never
+            // explicitly skipped, so a screen that waved this one through
+            // produced an install that died at the first step, telling the
+            // reader to supply a value the installer had just called
+            // optional. Accepting the warning IS the skip.
             Step::Ai => {
-                if let Some(r) = self.secrets.iter().find(|r| !r.filled() && self.ai_secret(&r.option)) {
-                    let m = format!("{} is not set: the assistant will ask you for one the first time you talk to it", r.short());
+                if let Some(i) = self.secrets.iter().position(|r| !r.filled() && self.ai_secret(&r.option)) {
+                    let m = format!(
+                        "{} is not set: the assistant will ask you for one the first time you talk to it",
+                        self.secrets[i].short()
+                    );
                     soft(self, &m)?;
+                    let option = self.secrets[i].option.clone();
+                    self.skip_secret(&option).map_err(|e| hard(&e))?;
                 }
             }
             Step::Extras => {
@@ -2196,6 +2208,39 @@ mod tests {
                 b.message
             ),
         }
+    }
+
+    /// ⚠️ A SCREEN THAT SAYS "OPTIONAL" MUST LEAVE STATE THAT AGREES.
+    /// Found in a QEMU rehearsal of a build made an hour earlier: the
+    /// assistant screen warned softly that the key could be left unset, the
+    /// reader pressed Continue, and `generate` then refused to run because a
+    /// must-supply credential had never been explicitly skipped. The install
+    /// died at its first step, demanding a value the installer had just
+    /// called optional. Accepting the warning has to BE the skip.
+    #[test]
+    fn walking_past_the_assistants_key_records_it_as_skipped() {
+        let mut w = test_wizard();
+        give_it_disks(&mut w);
+        w.set_ai(true);
+        let option = w
+            .secrets
+            .iter()
+            .find(|r| w.ai_secret(&r.option))
+            .map(|r| r.option.clone())
+            .expect("the assistant asks for a credential");
+        assert!(!w.secrets.iter().any(|r| r.option == option && r.skipped));
+
+        w.step = Step::Ai;
+        w.warned = false;
+        // First Continue warns; it is a soft block.
+        let first = w.advance_from(Origin::Browser);
+        assert!(first.is_err() && first.unwrap_err().soft, "the first Continue should warn");
+        // Second Continue accepts — and that acceptance is the skip.
+        assert!(w.advance_from(Origin::Browser).is_ok(), "the second Continue should go on");
+        assert!(
+            w.secrets.iter().any(|r| r.option == option && r.skipped),
+            "walked past the key without recording the skip: generate will refuse the install"
+        );
     }
 
     /// Two disks the roles can be set on, so the storage step has something
