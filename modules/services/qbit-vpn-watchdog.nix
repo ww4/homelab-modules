@@ -25,6 +25,16 @@
 #     is the wedge — whether it's bound to a STALE IP (IP-change wedge) or to NO IP
 #     at all (never-bound / post-reboot wedge). The two graces keep us out of a
 #     gluetun storm and out of qBit's normal warm-up; a cooldown bounds retries.
+# THIRD VARIANT (2026-10-24) — "connected" but UDP-dead. The same tun0 swap can
+# leave qBit *reporting* connected: libtorrent keeps ONE long-lived UDP socket for
+# DHT + uTP + UDP-tracker announces, and it stays bound to the dead interface, but
+# TCP announces open a fresh socket per announce. So private HTTPS trackers keep
+# seeding, peers stay attached, connection_status reads "connected" — while every
+# UDP send fails EPERM and dht_nodes sits at 0. Public torrents cannot find peers
+# at all. A status-only trigger is blind to this; it ran 14 h logging "healthy"
+# every 60 s. So we also trip on dht_nodes == 0 (guarded: DHT must be enabled,
+# qBit past DHTGRACE, and zero for DHTSTRIKES consecutive polls).
+#
 # Fail-safe: unknowns that mean "can't tell yet" (no gluetun IP line, qBit API down)
 # => do nothing. But an empty qBit address is treated as a wedge ONCE past the
 # startup grace — NOT skipped forever (that hole once hid a wedge for 2 hours).
@@ -40,6 +50,8 @@ let
       SETTLE=120     # gluetun's IP must have held this long before we act
       QGRACE=120     # qBit's own startup grace; empty IP / "firewalled" is normal warm-up until now
       COOLDOWN=300   # min seconds between our own restarts (bounds a failed retry)
+      DHTGRACE=600   # DHT bootstrap is slow; only judge dht_nodes once qBit is this old
+      DHTSTRIKES=3   # consecutive zero-DHT polls before calling the UDP-only wedge
       QBIT="http://127.0.0.1:8085"
       STATE="''${STATE_DIRECTORY:-/var/lib/qbit-vpn-watchdog}"
       LAST="$STATE/last-restart-epoch"
@@ -88,6 +100,7 @@ let
       [ -n "$info" ] || { echo "qBit API unreachable (likely mid-restart); skip"; exit 0; }
       q_ip="$(jq -r '.last_external_address_v4 // ""' <<<"$info" 2>/dev/null || echo "")"
       q_status="$(jq -r '.connection_status // ""' <<<"$info" 2>/dev/null || echo "")"
+      q_dht="$(jq -r '.dht_nodes // -1' <<<"$info" 2>/dev/null || echo -1)"
 
       # qBit startup grace. For the first QGRACE seconds after its container
       # (re)start, an empty external address / "firewalled" is normal warm-up — NOT
@@ -113,9 +126,42 @@ let
       #    confirmed healthy above, so a non-"connected" status is the wedge —
       #    whether qBit is bound to a STALE IP (IP-change wedge) or to NO IP
       #    (never-bound wedge). Only "connected" is healthy.
+      # 3a) THE UDP-ONLY WEDGE (2026-10-24). "connected" is NOT sufficient. When
+      #     gluetun recreates tun0, libtorrent's single long-lived UDP socket stays
+      #     bound to the dead interface: every DHT / uTP / UDP-tracker send fails
+      #     EPERM. But TCP announces open a FRESH socket each time, so private
+      #     HTTPS trackers keep announcing, qBit keeps peers, and connection_status
+      #     still reads "connected" — the wedge is invisible to the check above.
+      #     Observed: 10 torrents stuck in metaDL, 8 stalledDL, every UDP tracker
+      #     "Operation not permitted", dht_nodes=0, for 14 h, while this watchdog
+      #     logged "healthy" every 60 s.
+      #
+      #     dht_nodes is the cleanest UDP-health signal qBit exposes. Guards so it
+      #     cannot false-positive into a restart loop:
+      #       - only when DHT is actually ENABLED (a user who turns DHT off sits at
+      #         0 nodes forever — that is configuration, not a fault);
+      #       - only once qBit is past DHTGRACE (bootstrap genuinely takes minutes);
+      #       - only after DHTSTRIKES consecutive zero polls (rides out a blip).
+      STRIKES="$STATE/dht-zero-strikes"
       if [ "$q_status" = "connected" ]; then
-        echo "healthy: qBit connected (ip=''${q_ip:-none}, gluetun=$g_ip)"
-        exit 0
+        dht_on="$(curl -s --max-time 5 "$QBIT/api/v2/app/preferences" 2>/dev/null \
+                   | jq -r '.dht // false' 2>/dev/null || echo false)"
+        if [ "$dht_on" = "true" ] && [ "$q_dht" -eq 0 ] && [ "$qbit_age" -ge "$DHTGRACE" ]; then
+          strikes=$(( $(cat "$STRIKES" 2>/dev/null || echo 0) + 1 ))
+          echo "$strikes" > "$STRIKES"
+          if [ "$strikes" -lt "$DHTSTRIKES" ]; then
+            echo "qBit connected but dht_nodes=0 (strike $strikes/$DHTSTRIKES) — watching"
+            exit 0
+          fi
+          echo "UDP-ONLY WEDGE: connected (ip=''${q_ip:-none}) but dht_nodes=0 for $strikes polls"
+          q_status="connected/udp-dead"   # fall through to the restart path below
+        else
+          rm -f "$STRIKES"
+          echo "healthy: qBit connected (ip=''${q_ip:-none}, gluetun=$g_ip, dht=$q_dht)"
+          exit 0
+        fi
+      else
+        rm -f "$STRIKES"
       fi
 
       last=0; [ -r "$LAST" ] && last="$(cat "$LAST" 2>/dev/null || echo 0)"
@@ -126,6 +172,7 @@ let
 
       echo "WEDGE: qBit status=$q_status (ip=''${q_ip:-none}) while gluetun settled on $g_ip ''${age}s ago — restarting qBittorrent"
       echo "$now" > "$LAST"
+      rm -f "$STRIKES"
       systemctl restart docker-qbittorrent.service
       notify "qBittorrent auto-healed (VPN wedge)" \
         "gluetun healthy on $g_ip but qBit was $q_status (bound: ''${q_ip:-none}) and had stopped transferring. Restarted it to rebind — recovered without a page." \
