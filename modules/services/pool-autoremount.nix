@@ -90,6 +90,22 @@ let
   readTimeout = 20;     # seconds a mounted member gets to answer a readdir
   alertAfter = 4;       # consecutive failed recoveries (~8 min) before escalating
 
+  # Backoff on a member that will not come back. Below backoffAfter nothing
+  # changes — a USB member that dropped and re-enumerated is the common case
+  # and should recover on the next run. At and beyond it the minimum gap
+  # between ATTEMPTS doubles, because retrying a physically absent disk every
+  # two minutes buys nothing and each attempt blocks mountTimeout seconds.
+  #
+  # Sized from the 2026-10-29 outage: two absent drives drove 177 consecutive
+  # failed recoveries in nine hours, back-to-back (the 2-minute timer refires
+  # the instant a 3-minute run ends), on a box already at its memory ceiling.
+  #
+  # The ramp from backoffAfter, with backoffBaseSec 120: 2m, 4m, 8m, 16m, 32m,
+  # 64m, 2.1h, 4.3h, 8.5h, 17h, then the daily cap from failure 20.
+  backoffAfter = 10;         # failures before the interval starts doubling
+  backoffBaseSec = 120;      # first backed-off gap; matches the timer interval
+  backoffCapSec = 86400;     # never wait longer than a day
+
   # Shared with drive-temps; node_exporter reads *.prom from here.
   textfileDir = "/var/lib/node-exporter-textfile";
 
@@ -250,6 +266,7 @@ let
         unit="$unitPrefix-$d.mount"
         log="$STATE/$pool-$d.remounts"
         fails="$STATE/$pool-$d.failures"
+        attempted="$STATE/$pool-$d.lastattempt"
 
         # --- health gate ---------------------------------------------------
         # A mount entry is NOT proof the filesystem works (see the zombie case
@@ -268,7 +285,7 @@ let
           rc=0
           timeout ${toString readTimeout} ls -A "$mp" > /dev/null 2>&1 || rc=$?
           if [ "$rc" -eq 0 ]; then
-            rm -f "$fails"
+            rm -f "$fails" "$attempted"
             record_health "$pool" "$d" 1
             continue
           fi
@@ -319,6 +336,43 @@ let
           echo "$pool/$d: WARNING — $mp is non-empty while unmounted; stray files may have landed on the ROOT fs and will be shadowed by the remount"
         fi
 
+        # --- backoff gate ----------------------------------------------------
+        # Gates the ATTEMPT only. The health probe above still runs every pass,
+        # and the skip path below still publishes, because:
+        #
+        # ⚠️ record_health is what emits pool_member_healthy, and a member that
+        # stops emitting DISAPPEARS from the gauge rather than reading 0. An
+        # absent series cannot breach a threshold, which is precisely the blind
+        # spot that let this outage run unseen for nine hours. Skipping work
+        # must never skip the measurement.
+        n_fail=0
+        if [ -f "$fails" ]; then n_fail=$(cat "$fails" 2>/dev/null || echo 0); fi
+        if [ "$n_fail" -ge ${toString backoffAfter} ]; then
+          shift_by=$(( n_fail - ${toString backoffAfter} ))
+          [ "$shift_by" -gt 16 ] && shift_by=16    # keep the shift in range
+          delay=$(( ${toString backoffBaseSec} << shift_by ))
+          [ "$delay" -gt ${toString backoffCapSec} ] && delay=${toString backoffCapSec}
+          last=0
+          if [ -f "$attempted" ]; then last=$(cat "$attempted" 2>/dev/null || echo 0); fi
+          waited=$(( now - last ))
+
+          # A device that has reappeared gets an attempt immediately, however
+          # deep the backoff. This is load-bearing rather than an optimisation:
+          # with a daily cap, "someone reseated it and said nothing" would
+          # otherwise wait up to 24 h for the mount, and the mount is the only
+          # thing still missing — nothing re-triggers a nofail fstab entry on
+          # its own once the boot-time job is done.
+          src_fstab=$(findmnt -sn -o SOURCE "$mp" 2>/dev/null || true)
+          if [ -n "$src_fstab" ] && [ -e "$src_fstab" ]; then
+            echo "$pool/$d: backing device $src_fstab is present again — attempting now despite $n_fail prior failures"
+          elif [ "$waited" -lt "$delay" ]; then
+            record_health "$pool" "$d" 0
+            echo "$pool/$d: backing off after $n_fail failed recoveries — next attempt in $(( delay - waited ))s (device ''${src_fstab:-unknown} still absent)"
+            continue
+          fi
+        fi
+        echo "$now" > "$attempted"
+
         echo "$pool/$d: attempting 'systemctl start $unit'"
         nouuid_used=0
         if ! timeout ${toString mountTimeout} systemctl start "$unit"; then
@@ -358,7 +412,7 @@ let
           continue
         fi
 
-        rm -f "$fails"
+        rm -f "$fails" "$attempted"
         record_health "$pool" "$d" 1
         echo "$now" >> "$log"
         count=$(( recent + 1 ))
