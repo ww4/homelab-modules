@@ -47,6 +47,16 @@ let cfg = config.homelab.immich; in
     # https:// URLs in the UI / share links.
     systemd.services.immich-server.environment.IMMICH_TRUSTED_PROXIES = "127.0.0.1";
 
+    # Immich refuses to start against a half-mounted media pool, but each
+    # attempt takes only ~9s, so systemd's default StartLimitIntervalSec=10/
+    # StartLimitBurst=5 never trips on a slow-failing crash — it hot-loops
+    # forever instead of landing in `failed`. StartLimit* live in [Unit],
+    # not [Service].
+    systemd.services.immich-server.unitConfig = {
+      StartLimitIntervalSec = 300;
+      StartLimitBurst = 5;
+    };
+
     services.nginx.virtualHosts."photos.${config.homelab.domain}" = {
       forceSSL = true;
       enableACME = true;
