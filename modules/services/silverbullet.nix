@@ -1,4 +1,5 @@
-# SilverBullet — markdown-native notes/tasks web app at notes.<domain>.
+# SilverBullet — markdown-native notes/tasks web app at <subdomain>.<domain>
+# (default "notes"; set homelab.silverbullet.subdomain to move it).
 #
 # Optionally a TWO-WRITER space: the web UI/PWA and a second Unix user (e.g.
 # an agent) both read and write the same plain .md files with full mutual
@@ -86,6 +87,18 @@ in
       default = null;
       example = "agent";
       description = "Unix user granted full mutual write access to the space; null = single-writer.";
+    };
+    subdomain = lib.mkOption {
+      type = lib.types.str;
+      default = "notes";
+      example = "silverbullet";
+      description = ''
+        Host label for the vhost, as <subdomain>.''${config.homelab.domain}.
+
+        Worth making configurable because "notes" is the name a deployment may
+        want to give to whatever its PRIMARY notes front end is, which need not
+        be SilverBullet. Point this elsewhere to free that name up.
+      '';
     };
   };
 
@@ -245,7 +258,7 @@ in
       '';
     };
 
-    services.nginx.virtualHosts."notes.${config.homelab.domain}" = {
+    services.nginx.virtualHosts."${cfg.subdomain}.${config.homelab.domain}" = {
       forceSSL = true;
       enableACME = true;
       acmeRoot = null;
