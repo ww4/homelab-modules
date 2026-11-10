@@ -25,7 +25,9 @@
 #     POSIX ACLs the mask comes from the create mode's GROUP bits, so
 #     web-UI pages arrive read-only to the second writer — and only the
 #     owner (or root) may setfacl them. Hence the root-run repair timer.
-#   * An hourly autosave git commit is the undo log for the collaboration.
+#   * A periodic autosave git commit is the undo log for the collaboration
+#     (homelab.silverbullet.autosaveInterval; it only commits when something
+#     changed, so the interval is purely a how-much-can-I-lose choice).
 { config, lib, pkgs, ... }:
 
 let
@@ -81,6 +83,20 @@ in
       default = null;
       example = "Home";
       description = "Space page to open on launch (a capture dashboard beats the space map for quick capture).";
+    };
+    autosaveInterval = lib.mkOption {
+      type = lib.types.str;
+      default = "*:05";
+      example = "*:0/10";
+      description = ''
+        systemd OnCalendar expression for the space autosave commit.
+
+        The commit is conditional on there actually being a change, so an
+        idle space produces nothing however often this fires — the cost of a
+        short interval is one `git status` per tick, not a commit per tick.
+        Pick it from how much work you are willing to lose: whatever changed
+        since the last tick is the window that no undo log covers.
+      '';
     };
     secondWriter = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -179,7 +195,9 @@ in
       config.safe.directory = spaceDir;
     };
 
-    # Hourly autosave commit — the undo log for two-writer collaboration.
+    # Autosave commit — the undo log for two-writer collaboration. Only
+    # commits when something changed, so the interval is a recovery-window
+    # choice rather than a cost one (homelab.silverbullet.autosaveInterval).
     # .silverbullet.db* is SilverBullet's derived index, not content.
     systemd.services.silverbullet-autosave = lib.mkIf (writer != null) {
       description = "Autosave git commit of the SilverBullet space";
@@ -208,10 +226,10 @@ in
       '';
     };
     systemd.timers.silverbullet-autosave = lib.mkIf (writer != null) {
-      description = "Hourly SilverBullet space autosave";
+      description = "SilverBullet space autosave (${cfg.autosaveInterval})";
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnCalendar = "*:05";
+        OnCalendar = cfg.autosaveInterval;
         Persistent = true;
       };
     };
