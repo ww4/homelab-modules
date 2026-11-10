@@ -353,6 +353,17 @@ in
     vhosts = [ "notes" ];
     secrets = [ ];
   };
+  notes = {
+    description = "Keep-style card wall over a folder of markdown notes; pairs with silverbullet over the same directory.";
+    memory = 96;
+    enable = "import";
+    options = [ "homelab.domain" "homelab.notes" ];
+    requires = [ "acme" "nginx-access" ];
+    # Same default label as silverbullet on purpose — they serve one folder
+    # two ways. Running both means repointing one subdomain.
+    vhosts = [ "notes" ];
+    secrets = [ ];
+  };
   uptime-kuma = {
     description = "Uptime Kuma status wall-board.";
     memory = 192;

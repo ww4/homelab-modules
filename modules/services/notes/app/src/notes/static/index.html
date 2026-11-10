@@ -1,0 +1,3373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<title>Notes</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+*{box-sizing:border-box}
+mark{background:var(--mark-bg); color:var(--mark-ink); border-radius:2px; padding:0 1px}html,body{margin:0}img{max-width:100%}[hidden]{display:none!important}
+:root{
+  --ground:#eef1f0; --surface:#fdfdfc; --surface-2:#e7ebe9;
+  --ink:#16211f; --ink-soft:#5a6a66; --ink-faint:#8697924d;
+  --line:#d5dcd9; --line-strong:#bfc9c5;
+  --accent:#136b63; --accent-ink:#ffffff; --accent-wash:#136b6314;
+  --brass:#8d620f; --brass-wash:#8d620f17;
+  --mark-bg:#f8e3a4; --mark-ink:#2b2005;
+  --shadow:0 1px 2px #16211f0f, 0 0 0 1px #16211f0a;
+  --shadow-lift:0 4px 14px #16211f1f, 0 0 0 1px #16211f14;
+  --r:10px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#101514; --surface:#19201e; --surface-2:#222a28;
+    --ink:#e4e9e7; --ink-soft:#93a19d; --ink-faint:#93a19d3d;
+    --line:#2a3331; --line-strong:#3a4542;
+    --accent:#55b9ad; --accent-ink:#07211f; --accent-wash:#55b9ad1f;
+    --brass:#d4a13f; --brass-wash:#d4a13f1f;
+    --mark-bg:#6d5518; --mark-ink:#f8ecd0;
+    --shadow:0 1px 2px #0006, 0 0 0 1px #ffffff0d;
+    --shadow-lift:0 6px 18px #0008, 0 0 0 1px #ffffff14;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#101514; --surface:#19201e; --surface-2:#222a28;
+  --ink:#e4e9e7; --ink-soft:#93a19d; --ink-faint:#93a19d3d;
+  --line:#2a3331; --line-strong:#3a4542;
+  --accent:#55b9ad; --accent-ink:#07211f; --accent-wash:#55b9ad1f;
+  --brass:#d4a13f; --brass-wash:#d4a13f1f;
+  --mark-bg:#6d5518; --mark-ink:#f8ecd0;
+  --shadow:0 1px 2px #0006, 0 0 0 1px #ffffff0d;
+  --shadow-lift:0 6px 18px #0008, 0 0 0 1px #ffffff14;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font:400 15px/1.5 "IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  -webkit-text-size-adjust:100%;
+}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+
+/* ---------- chrome ---------- */
+.bar{
+  position:sticky; top:0; z-index:20; background:var(--ground);
+  border-bottom:1px solid var(--line);
+  padding:10px 14px 0;
+}
+.bar-row{display:flex; align-items:center; gap:10px; max-width:1280px; margin:0 auto}
+.brand{
+  font:700 17px/1 Archivo,"Archivo",system-ui,sans-serif; letter-spacing:-.01em;
+  display:flex; align-items:baseline; gap:8px; flex:none;
+}
+.brand b{color:var(--accent)}
+.count{font:500 10px/1 "IBM Plex Mono",ui-monospace,monospace; color:var(--ink-soft); letter-spacing:.06em}
+.search{
+  flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px;
+  background:var(--surface); border:1px solid var(--line); border-radius:999px;
+  padding:0 12px; height:38px; box-shadow:var(--shadow);
+}
+.search svg{flex:none; color:var(--ink-soft)}
+.search input{
+  flex:1; min-width:0; border:0; background:none; color:var(--ink);
+  font:400 15px/1 "IBM Plex Sans",system-ui,sans-serif; outline:none; height:100%;
+}
+.search input::placeholder{color:var(--ink-soft)}
+.iconbtn{
+  flex:none; display:grid; place-items:center; width:38px; height:38px;
+  border:1px solid var(--line); border-radius:999px; background:var(--surface);
+  color:var(--ink-soft); cursor:pointer; box-shadow:var(--shadow);
+}
+.iconbtn:hover{color:var(--ink); border-color:var(--line-strong)}
+.iconbtn[aria-pressed="true"]{background:var(--accent-wash); border-color:var(--accent); color:var(--accent)}
+
+.filters{display:flex; gap:10px; align-items:center; max-width:1280px; margin:0 auto; padding:10px 0}
+.seg{flex:none; display:flex; border:1px solid var(--line); border-radius:999px; background:var(--surface); overflow:hidden}
+.seg button{
+  border:0; background:none; cursor:pointer; color:var(--ink-soft);
+  padding:6px 12px; font:500 11px/1.3 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.05em; text-transform:uppercase; white-space:nowrap;
+}
+.seg button + button{border-left:1px solid var(--line)}
+.filters::before{content:none}
+.filters .chips{border-left:1px solid var(--line); padding-left:10px}
+.seg button:hover{color:var(--ink); background:var(--surface-2)}
+.seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink)}
+/* No scrollbar: show the categories that fit and drop the rest. Search is the
+   way to reach the long tail. */
+.chips{display:flex; gap:6px; min-width:0; flex:1 1 auto; overflow:hidden; flex-wrap:nowrap}
+.chip{
+  flex:none; cursor:pointer; border:1px solid var(--line); background:var(--surface);
+  color:var(--ink-soft); border-radius:999px; padding:5px 11px;
+  font:500 11px/1.3 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.04em;
+  text-transform:uppercase; white-space:nowrap;
+}
+.chip b{font-weight:500; color:var(--ink-faint); margin-left:5px}
+.chip:hover{border-color:var(--line-strong); color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--ink); border-color:var(--ink); color:var(--ground)}
+.chip[aria-pressed="true"] b{color:var(--ground); opacity:.55}
+
+/* ---------- wall ---------- */
+main{max-width:1280px; margin:0 auto; padding:18px 14px 96px}
+.eyebrow{
+  display:flex; align-items:center; gap:9px; margin:4px 0 12px;
+  font:500 10px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink-soft);
+}
+.eyebrow::after{content:""; flex:1; height:1px; background:var(--line)}
+.eyebrow.brass{color:var(--brass)}
+/* Columns are built in JS, not by CSS multicol. Multicol fills column 1 top to
+   bottom before starting column 2, so on a newest-first wall the third column
+   showed 2016 beside 2026 — reading ACROSS a row was meaningless. Cards are
+   now dealt round-robin into these columns, so row 1 is the four newest. */
+.wall{display:flex; align-items:flex-start; gap:14px}
+.col{flex:1 1 0; min-width:0; display:flex; flex-direction:column; gap:14px}
+.section{margin-bottom:26px}
+
+.card{
+  break-inside:avoid; -webkit-column-break-inside:avoid;
+  background:var(--surface); border-radius:var(--r); box-shadow:var(--shadow);
+  margin:0; padding:13px 14px 10px; cursor:pointer; position:relative;
+  transition:box-shadow .14s ease, transform .14s ease;
+}
+.card:hover{box-shadow:var(--shadow-lift)}
+.card:active{transform:scale(.995)}
+.card.pending{box-shadow:var(--shadow), inset 3px 0 0 var(--mark-bg); opacity:.92}
+.card.pending .meta .cat{color:var(--brass)}
+.card.pinned{box-shadow:var(--shadow), inset 3px 0 0 var(--brass)}
+.card.pinned:hover{box-shadow:var(--shadow-lift), inset 3px 0 0 var(--brass)}
+.card.untitled .body{padding-top:2px}
+.card h3{
+  margin:0 26px 7px 0;
+  font:600 15px/1.3 Archivo,system-ui,sans-serif; letter-spacing:-.005em;
+  text-wrap:balance;
+}
+.body{position:relative; max-height:184px; overflow:hidden}
+.body.clipped::after{
+  content:""; position:absolute; inset:auto 0 0; height:40px;
+  background:linear-gradient(to bottom, transparent, var(--surface));
+}
+.body p{margin:0 0 5px; white-space:pre-wrap; overflow-wrap:break-word}
+.body strong{font-weight:600}
+.body code{font:400 .92em/1.4 "IBM Plex Mono",ui-monospace,monospace; background:var(--surface-2); border-radius:4px; padding:1px 4px}
+@media (max-width:720px){.count{display:none}}
+.body .h{margin:9px 0 4px; font:600 11px/1.3 Archivo,system-ui,sans-serif;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft)}
+.body .li{display:flex; gap:7px; margin:0 0 3px; align-items:flex-start}
+.body .li > span{flex:1; min-width:0; overflow-wrap:break-word}
+.body .li::before{content:"\2022"; color:var(--ink-faint); line-height:1.5}
+.body .ck{display:flex; gap:8px; margin:0 0 4px; align-items:flex-start}
+.body .ck span{flex:1; overflow-wrap:break-word}
+.body .ck.done span{color:var(--ink-soft); text-decoration:line-through}
+.box{
+  flex:none; width:15px; height:15px; margin-top:2px; border-radius:3px;
+  border:1.5px solid var(--line-strong); background:none; cursor:pointer;
+  display:grid; place-items:center; color:var(--accent-ink); padding:0;
+}
+.box.on{background:var(--accent); border-color:var(--accent)}
+.more{
+  font:500 10px/1 "IBM Plex Mono",ui-monospace,monospace; color:var(--ink-soft);
+  letter-spacing:.05em; margin:6px 0 0;
+}
+.meta{
+  display:flex; align-items:center; gap:8px; margin-top:9px;
+  padding-top:8px; border-top:1px solid var(--line);
+  font:400 10px/1 "IBM Plex Mono",ui-monospace,monospace; color:var(--ink-soft);
+  letter-spacing:.04em;
+}
+.meta .cat{color:var(--accent); text-transform:uppercase; letter-spacing:.08em; font-weight:500}
+.meta .sp{flex:1}
+.meta .yr{font-variant-numeric:tabular-nums}
+/* On a phone that row is category + author + shared + date and it crowds.
+   The date lives on the note's own grey line next to the filename instead. */
+@media (max-width:700px){.meta .yr{display:none}}
+.pin{
+  position:absolute; top:9px; right:8px; width:26px; height:26px; padding:0;
+  display:grid; place-items:center; border:0; border-radius:7px;
+  background:none; color:var(--ink-faint); cursor:pointer;
+}
+.card:hover .pin, .card.pinned .pin{color:var(--ink-soft)}
+.pin:hover{background:var(--surface-2); color:var(--ink)}
+.card.pinned .pin{color:var(--brass)}
+
+/* search suggestions */
+.sug{
+  position:absolute; left:0; right:0; top:100%; z-index:30; margin-top:6px;
+  background:var(--surface); border:1px solid var(--line); border-radius:12px;
+  box-shadow:var(--shadow-lift); overflow:hidden; max-height:60vh; overflow-y:auto;
+}
+.sug[hidden]{display:none}
+.sug-head{
+  padding:8px 13px 5px; font:500 9.5px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink-soft);
+}
+.sug button{
+  display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+  border:0; background:none; cursor:pointer; color:var(--ink);
+  padding:9px 13px; font:400 14px/1.3 "IBM Plex Sans",system-ui,sans-serif;
+}
+.sug button:hover, .sug button:focus-visible{background:var(--surface-2); outline:none}
+.sug .tag{
+  flex:none; font:500 9.5px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--accent);
+  border:1px solid var(--accent); border-radius:999px; padding:3px 7px;
+}
+.sug .n{margin-left:auto; color:var(--ink-faint); font:400 10px/1 "IBM Plex Mono",monospace}
+.sug .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.search-wrap{position:relative; flex:1 1 auto; min-width:0; display:flex}
+
+/* category chooser: an icon on the editor's bottom row, popping a panel that
+   both lists what exists and accepts a new name */
+.ed-bar{position:relative}
+.catpop{
+  position:absolute; left:8px; bottom:calc(100% + 6px); z-index:50; width:min(290px, calc(100vw - 32px));
+  background:var(--surface); border:1px solid var(--line); border-radius:12px;
+  box-shadow:var(--shadow-lift); overflow:hidden;
+}
+.catpop[hidden]{display:none}
+.catpop input{
+  width:100%; border:0; border-bottom:1px solid var(--line); background:none;
+  color:var(--ink); padding:11px 13px; outline:none;
+  font:500 12px/1.3 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.04em;
+}
+.catpop input:focus{border-bottom-color:var(--accent)}
+.catlist{max-height:240px; overflow-y:auto}
+.catlist button{
+  display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+  border:0; background:none; cursor:pointer; color:var(--ink); padding:8px 13px;
+  font:500 11.5px/1.3 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.catlist button:hover, .catlist button:focus-visible{background:var(--surface-2); outline:none}
+.catlist button[aria-pressed="true"]{color:var(--accent)}
+.catlist button .n{margin-left:auto; color:var(--ink-faint); text-transform:none}
+.catlist .new{color:var(--accent)}
+.cat-now{
+  font:500 9.5px/1 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--ink-soft); padding-left:2px;
+}
+
+/* one dropdown shape, used by the identity menu, the people menu and the
+   delete confirmation — three popovers that behaved differently would be
+   three things to learn */
+.anchor{position:relative; display:inline-flex}
+.menu{
+  position:absolute; z-index:60; min-width:210px;
+  background:var(--surface); border:1px solid var(--line); border-radius:12px;
+  box-shadow:var(--shadow-lift); overflow:hidden; padding:4px 0;
+}
+.menu[hidden]{display:none}
+.menu.below{top:calc(100% + 8px); right:0}
+.menu.above{bottom:calc(100% + 8px); left:0}
+.menu button{
+  display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+  border:0; background:none; cursor:pointer; color:var(--ink); padding:9px 14px;
+  font:500 12px/1.3 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.04em;
+}
+.menu button:hover, .menu button:focus-visible{background:var(--surface-2); outline:none}
+.menu button[aria-pressed="true"]{color:var(--accent)}
+.menu button .n{margin-left:auto; color:var(--ink-faint)}
+.menu .sep{height:1px; background:var(--line); margin:4px 0}
+.menu .head{
+  padding:8px 14px 4px; font:500 9.5px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink-soft);
+}
+.menu .danger{color:var(--brass)}
+.menu input{
+  width:100%; border:0; border-bottom:1px solid var(--line); background:none;
+  color:var(--ink); padding:10px 14px; outline:none; margin-bottom:4px;
+  font:500 12px/1.3 "IBM Plex Mono",ui-monospace,monospace;
+}
+
+/* ---------- phone ----------
+   The chip row and the Mine/Ours/All control are desktop furniture: on a
+   390px screen they eat a third of the first card. Keep's answer is a drawer,
+   and that is the right one — every filter moves there, the wall gets the
+   whole screen, and the actions you actually use at the store (archive, bin,
+   pin) move onto the card itself as gestures. */
+.hamburger{
+  flex:none; display:none; width:38px; height:38px; place-items:center;
+  border:1px solid var(--line); border-radius:999px; background:var(--surface);
+  color:var(--ink-soft); cursor:pointer; box-shadow:var(--shadow);
+}
+.scrim-left{
+  position:fixed; inset:0; z-index:45; background:#0b100f80; display:none;
+  -webkit-backdrop-filter:blur(1px); backdrop-filter:blur(1px);
+}
+.scrim-left.open{display:block}
+.drawer{
+  position:fixed; top:0; bottom:0; left:0; z-index:46; width:min(300px, 84vw);
+  background:var(--surface); border-right:1px solid var(--line);
+  box-shadow:6px 0 28px #0000002e; overflow-y:auto; padding:14px 0 24px;
+  transform:translateX(-102%); transition:transform .18s ease;
+}
+.drawer.open{transform:translateX(0)}
+@media (prefers-reduced-motion:reduce){.drawer{transition:none}}
+.drawer h2{
+  margin:0; padding:10px 18px 6px;
+  font:500 9.5px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.16em; text-transform:uppercase; color:var(--ink-soft);
+}
+.drawer button{
+  display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+  border:0; background:none; cursor:pointer; color:var(--ink);
+  padding:11px 18px; font:500 13px/1.3 Archivo,system-ui,sans-serif;
+}
+.drawer button:hover, .drawer button:focus-visible{background:var(--surface-2); outline:none}
+.drawer button[aria-pressed="true"]{background:var(--accent-wash); color:var(--accent)}
+.drawer button .n{margin-left:auto; color:var(--ink-faint); font:400 11px/1 "IBM Plex Mono",monospace}
+.drawer .sep{height:1px; background:var(--line); margin:8px 0}
+.drawer svg{flex:none}
+
+/* drag to reorder, pinned only */
+.card.lifted{
+  box-shadow:0 10px 26px #00000038, 0 0 0 2px var(--brass);
+  transform:scale(1.03); opacity:.97; position:relative; z-index:5;
+}
+.swipe.lifting{touch-action:none}
+.swipe.ghost .card{opacity:.28}
+
+/* selection mode — long press to enter, then tap to add, like Keep */
+.selbar{
+  position:absolute; inset:0; z-index:22; display:flex; align-items:center; gap:4px;
+  background:var(--ground); padding:10px 14px 0;
+}
+.selbar[hidden]{display:none}
+.selcount{
+  font:600 14px/1 Archivo,system-ui,sans-serif; color:var(--ink);
+  margin-right:6px; min-width:84px;
+}
+.selbar .sp{flex:1}
+.card.sel{box-shadow:0 0 0 2px var(--accent), var(--shadow-lift)}
+.card .tick{
+  position:absolute; top:8px; left:8px; width:21px; height:21px; border-radius:999px;
+  background:var(--accent); color:var(--accent-ink); display:grid; place-items:center;
+  box-shadow:0 0 0 2px var(--surface);
+}
+body.selecting .card{cursor:pointer}
+body.selecting .pin{display:none}
+
+/* swipe + pull-to-refresh */
+.swipe{position:relative; overflow:hidden; border-radius:var(--r)}
+.swipe-bg{
+  position:absolute; inset:0; display:flex; align-items:center;
+  justify-content:space-between; padding:0 22px; border-radius:var(--r);
+  color:#fff; opacity:0;
+}
+.swipe-bg.arch{background:var(--accent)}
+.swipe-bg.del{background:#9a3412}
+.swipe.armed .card{box-shadow:var(--shadow-lift)}
+.swipe.armed .swipe-bg{font-weight:700}
+/* latched: the card sits open where you left it and the exposed track is the
+   button that confirms. Only delete latches — archive acts on release. */
+.swipe.latched .swipe-bg{opacity:1}
+.swipe.latched .card{box-shadow:var(--shadow-lift)}
+.conf{
+  display:inline-flex; align-items:center; gap:7px;
+  padding:9px 15px; border-radius:999px;
+  background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.65);
+  font:700 12px/1 Archivo,system-ui,sans-serif; letter-spacing:.07em;
+  text-transform:uppercase; white-space:nowrap; cursor:pointer;
+}
+.conf:active{background:rgba(255,255,255,.34)}
+.swipe .card{position:relative; z-index:1; transition:transform .16s ease}
+.swipe.dragging .card{transition:none}
+.ptr{
+  position:fixed; left:50%; top:4px; z-index:25; transform:translate(-50%, -48px);
+  width:34px; height:34px; border-radius:999px; background:var(--surface);
+  border:1px solid var(--line); box-shadow:var(--shadow-lift);
+  display:grid; place-items:center; color:var(--accent); pointer-events:none;
+}
+.ptr.spin svg{animation:ptrspin .8s linear infinite}
+@keyframes ptrspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.ptr.spin svg{animation:none}}
+
+@media (max-width:700px){
+  .hamburger{display:grid}
+  .filters{display:none}            /* chips + view toggles live in the drawer */
+  .brand{display:none}              /* the search box gets the width instead */
+  main{padding-top:14px}
+}
+
+/* view toggles live at the end of the chip row */
+.viewchip{
+  flex:none; cursor:pointer; border:1px solid var(--line); background:var(--surface);
+  color:var(--ink-soft); border-radius:999px; padding:5px 11px; display:inline-flex;
+  align-items:center; gap:6px;
+  font:500 11px/1.3 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.04em;
+  text-transform:uppercase; white-space:nowrap;
+}
+.viewchip:hover{border-color:var(--line-strong); color:var(--ink)}
+.viewchip[aria-pressed="true"]{background:var(--ink); border-color:var(--ink); color:var(--ground)}
+
+/* who is on this device */
+.me-btn{
+  flex:none; width:30px; height:30px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--line); background:var(--surface); color:var(--ink);
+  font:600 12px/1 Archivo,system-ui,sans-serif; letter-spacing:.02em;
+  display:grid; place-items:center;
+}
+.me-btn:hover{border-color:var(--accent); color:var(--accent)}
+.me-btn.unset{border-style:dashed; color:var(--ink-soft)}
+.meta .by{color:var(--brass); text-transform:uppercase; letter-spacing:.08em; font-weight:500}
+.meta .shared-mark{display:inline-flex; color:var(--accent)}
+.card.shared{box-shadow:var(--shadow), inset 3px 0 0 var(--accent)}
+.card.shared.pinned{box-shadow:var(--shadow), inset 3px 0 0 var(--brass)}
+
+/* online / offline */
+.net{
+  flex:none; display:grid; place-items:center; width:30px; height:30px;
+  padding:0; border:0; background:none; cursor:pointer;
+  border-radius:999px; color:var(--ink-soft);
+}
+.net:hover{color:var(--accent)}
+.net.off{color:var(--brass); background:var(--brass-wash)}
+/* Fixed, and positioned from the button's own rect: an absolute popover here
+   would resolve against whichever ancestor happens to be positioned. */
+.nettip{
+  position:fixed; z-index:70; max-width:min(260px, calc(100vw - 20px));
+  background:var(--ink); color:var(--ground); border-radius:9px;
+  padding:9px 12px; box-shadow:0 6px 22px #00000040;
+  font:400 12px/1.5 "IBM Plex Sans",system-ui,sans-serif;
+}
+.nettip[hidden]{display:none}
+.nettip b{font-weight:600}
+.nettip .when{
+  display:block; color:#ffffffb0;
+  font:400 11px/1.5 "IBM Plex Mono",ui-monospace,monospace;
+}
+.nettip::before{
+  content:""; position:absolute; top:-5px; right:14px; width:10px; height:10px;
+  background:var(--ink); transform:rotate(45deg); border-radius:2px;
+}
+.more-btn{
+  display:block; width:100%; margin:4px 0 18px; padding:13px 16px;
+  border:1px dashed var(--line-strong); border-radius:var(--r);
+  background:none; color:var(--ink-soft); cursor:pointer;
+  font:500 11px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.08em; text-transform:uppercase;
+}
+.more-btn:hover{border-color:var(--accent); color:var(--accent)}
+.empty{
+  text-align:center; padding:56px 20px; color:var(--ink-soft);
+  font:400 14px/1.6 "IBM Plex Sans",system-ui,sans-serif;
+}
+.empty code{font:400 13px/1 "IBM Plex Mono",monospace; background:var(--surface-2); padding:2px 5px; border-radius:4px}
+
+/* ---------- fab ---------- */
+.fab{
+  position:fixed; right:18px; bottom:18px; z-index:30;
+  height:52px; padding:0 20px 0 17px; display:flex; align-items:center; gap:9px;
+  border:0; border-radius:999px; background:var(--accent); color:var(--accent-ink);
+  font:600 14px/1 Archivo,system-ui,sans-serif; cursor:pointer;
+  box-shadow:0 5px 16px #16211f33;
+}
+.fab:hover{filter:brightness(1.07)}
+
+/* ---------- editor: the card, expanded ---------- */
+.scrim{
+  position:fixed; inset:0; z-index:40; background:#0b100fa6;
+  display:flex; align-items:center; justify-content:center;
+  -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);
+}
+.scrim[hidden]{display:none}
+@media (min-width:700px){.scrim{padding:30px}}
+.sheet{
+  background:var(--surface); width:100%; height:100%;
+  display:flex; flex-direction:column; box-shadow:0 10px 50px #00000059;
+}
+@media (min-width:700px){
+  .sheet{max-width:620px; height:auto; max-height:88vh; border-radius:14px}
+}
+.ed-top{display:flex; align-items:center; gap:4px; padding:8px 8px 4px; flex:none}
+.ed-top input{
+  flex:1; min-width:0; border:0; background:none; color:var(--ink);
+  font:600 18px/1.35 Archivo,system-ui,sans-serif; outline:none; padding:6px 6px;
+}
+.ed-top input::placeholder{color:var(--ink-faint)}
+.ed-scroll{flex:1; overflow-y:auto; padding:2px 12px 10px; -webkit-overflow-scrolling:touch}
+
+/* uniform editable row */
+.row{display:flex; align-items:flex-start; gap:8px; border-radius:7px; padding:1px 2px}
+.row:focus-within{background:var(--accent-wash)}
+.row .grip{
+  flex:none; width:16px; align-self:center; color:var(--ink-faint);
+  display:grid; place-items:center; cursor:grab;
+}
+@media (max-width:700px){.row .grip{display:none}}
+.row .it{resize:none; overflow:hidden;
+  flex:1; min-width:0; border:0; background:none; color:var(--ink); outline:none;
+  font:400 15px/1.55 "IBM Plex Sans",system-ui,sans-serif; padding:4px 0;
+}
+.row.note .it{color:var(--ink-soft); font-style:italic}
+.row.done .it{color:var(--ink-soft); text-decoration:line-through}
+.row.sec .it{
+  font:600 11px/1.5 Archivo,system-ui,sans-serif; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--ink-soft); padding-top:12px;
+}
+.row .x{
+  flex:none; width:26px; height:26px; align-self:center; padding:0; border:0;
+  background:none; color:var(--ink-faint); border-radius:6px; cursor:pointer;
+  display:grid; place-items:center; opacity:0;
+}
+.row:hover .x, .row:focus-within .x{opacity:1}
+@media (pointer:coarse){.row .x{opacity:.55}}
+.row .x:hover{background:var(--surface-2); color:var(--ink)}
+.row .box{margin-top:7px}
+
+.add{
+  display:flex; align-items:center; gap:8px; padding:5px 2px; margin-left:24px;
+  background:none; border:0; cursor:pointer; color:var(--ink-soft);
+  font:400 15px/1.55 "IBM Plex Sans",system-ui,sans-serif; width:calc(100% - 24px);
+  text-align:left; border-radius:7px;
+}
+.add:hover{color:var(--ink); background:var(--surface-2)}
+.ed-raw{
+  width:100%; min-height:300px; resize:vertical; border:1px solid var(--line);
+  border-radius:8px; background:var(--ground); color:var(--ink); padding:11px 12px;
+  outline:none; font:400 13.5px/1.7 "IBM Plex Mono",ui-monospace,monospace; tab-size:2;
+}
+.ed-raw:focus{border-color:var(--accent)}
+
+/* bottom toolbar */
+.ed-bar{
+  flex:none; display:flex; align-items:center; gap:2px; padding:7px 9px;
+  border-top:1px solid var(--line);
+}
+.tool{
+  width:36px; height:36px; display:grid; place-items:center; padding:0;
+  border:0; border-radius:8px; background:none; color:var(--ink-soft); cursor:pointer;
+}
+.tool:hover{background:var(--surface-2); color:var(--ink)}
+.tool[aria-pressed="true"]{background:var(--accent-wash); color:var(--accent)}
+.tool.brass[aria-pressed="true"]{background:var(--brass-wash); color:var(--brass)}
+.tool.share[aria-pressed="true"]{background:var(--accent-wash); color:var(--accent)}
+.ed-bar .sp{flex:1}
+.saved{
+  font:400 10px/1 "IBM Plex Mono",ui-monospace,monospace;
+  color:var(--ink-soft); letter-spacing:.04em; padding-right:6px;
+}
+.ed-bar .cat-now + .saved:not(:empty)::before{content:"·"; margin:0 7px; color:var(--ink-faint)}
+.ed-path{
+  padding:2px 14px 9px; font:400 10px/1.5 "IBM Plex Mono",ui-monospace,monospace;
+  color:var(--ink-faint); overflow-wrap:anywhere; flex:none;
+}
+
+/* sign-in */
+/* Above everything else it can be opened from: the Users sheet (a .scrim at
+   40) and the drawer (46) with its own scrim (45). Two .scrim siblings at the
+   same z-index stack by DOM order, and this one is written first, so without
+   saying so it opens UNDERNEATH the page that opened it. */
+#signinScrim{z-index:55}
+.signin{
+  background:var(--surface); border-radius:var(--r); width:min(420px, calc(100vw - 28px));
+  max-height:calc(100vh - 36px); overflow-y:auto; padding:22px 22px 24px;
+  box-shadow:0 14px 60px #00000055;
+}
+.signin h2{
+  margin:0 0 4px; font:600 20px/1.25 "IBM Plex Sans",system-ui,sans-serif; color:var(--ink);
+}
+.si-sub{
+  margin:0 0 18px; color:var(--ink-soft);
+  font:400 13px/1.5 "IBM Plex Sans",system-ui,sans-serif;
+}
+.si-list{display:flex; flex-direction:column; gap:7px}
+.si-list button{
+  display:flex; align-items:baseline; gap:10px; width:100%; text-align:left;
+  padding:12px 14px; border:1px solid var(--line); border-radius:9px;
+  background:var(--ground); color:var(--ink); cursor:pointer;
+  font:500 15px/1.2 "IBM Plex Sans",system-ui,sans-serif;
+}
+.si-list button:hover{border-color:var(--accent); color:var(--accent)}
+.si-list button .u{
+  margin-left:auto; color:var(--ink-faint);
+  font:400 11px/1 "IBM Plex Mono",ui-monospace,monospace;
+}
+.si-or{
+  display:flex; align-items:center; gap:12px; margin:18px 0 14px;
+  color:var(--ink-faint); font:400 10px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.16em; text-transform:uppercase;
+}
+.si-or::before, .si-or::after{content:""; flex:1; height:1px; background:var(--line)}
+.si-or[hidden]{display:none}
+.si-form{display:flex; flex-direction:column; gap:13px}
+.si-form label{
+  display:flex; flex-direction:column; gap:5px; color:var(--ink-soft);
+  font:500 10px/1 "IBM Plex Mono",ui-monospace,monospace;
+  letter-spacing:.14em; text-transform:uppercase;
+}
+.si-form input{
+  padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+  background:var(--ground); color:var(--ink);
+  font:400 15px/1.3 "IBM Plex Sans",system-ui,sans-serif; letter-spacing:0;
+  text-transform:none;
+}
+.si-form input:focus{outline:none; border-color:var(--accent)}
+.si-form input.bad{border-color:#9a3412}
+.si-opt{color:var(--ink-faint); letter-spacing:.08em}
+.si-hint{
+  color:var(--ink-faint); font:400 10.5px/1.45 "IBM Plex Sans",system-ui,sans-serif;
+  letter-spacing:0; text-transform:none;
+}
+.si-hint.bad{color:#9a3412}
+.si-go{
+  margin-top:3px; padding:12px; border:0; border-radius:9px;
+  background:var(--accent); color:#fff; cursor:pointer;
+  font:600 14px/1 "IBM Plex Sans",system-ui,sans-serif;
+}
+.si-go:disabled{opacity:.45; cursor:default}
+
+/* users */
+.users-title{
+  flex:1; font:600 15px/1.2 "IBM Plex Sans",system-ui,sans-serif; color:var(--ink);
+}
+.u-intro{
+  padding:4px 2px 16px; color:var(--ink-soft);
+  font:400 13px/1.55 "IBM Plex Sans",system-ui,sans-serif; max-width:62ch;
+}
+.u-person{display:flex; align-items:center; gap:12px; padding:14px 0 6px}
+.u-name{
+  flex:1; min-width:0; background:none; border:0; border-bottom:1px solid transparent;
+  padding:4px 2px; color:var(--ink);
+  font:500 15px/1.3 "IBM Plex Sans",system-ui,sans-serif;
+}
+.u-name:hover{border-bottom-color:var(--line)}
+.u-name:focus{outline:none; border-bottom-color:var(--accent)}
+.u-slug{
+  flex:none; color:var(--ink-faint);
+  font:400 10px/1 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.04em;
+}
+.u-ids{margin:0 0 14px 14px; display:flex; flex-direction:column; gap:2px}
+.u-id{
+  display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:3px 0;
+  font:400 11px/1.5 "IBM Plex Mono",ui-monospace,monospace; color:var(--ink-soft);
+}
+.u-id .src{
+  flex:none; padding:1px 6px; border-radius:4px; background:var(--line);
+  color:var(--ink-soft); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
+}
+/* Source chip and identity share the first line; the dropdown drops to the
+   second on a phone. Squeezing them all onto one line broke
+   "sam@example.com" into "sam@e / xample. / com", which is worse. */
+.idline{display:flex; align-items:center; gap:9px; flex:1 1 100%; min-width:0}
+.u-id .who{overflow-wrap:anywhere}
+.u-id select{margin-left:auto}
+.u-detach{
+  margin-left:auto; padding:2px 8px; border:1px solid var(--line); border-radius:6px;
+  background:none; color:var(--ink-faint); cursor:pointer;
+  font:400 10px/1.6 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.04em;
+}
+.u-detach:hover{border-color:#9a3412; color:#9a3412}
+.u-id.muted{color:var(--ink-faint); font-style:italic}
+.u-slug.since{margin-left:auto; padding-left:10px}
+@media (min-width:560px){
+  .idline{flex:1 1 auto}
+  .u-id select{margin-left:0}
+}
+.u-id select{
+  background:none; border:1px solid var(--line); border-radius:6px;
+  color:var(--ink-soft); padding:2px 5px; font:inherit; font-size:10.5px;
+}
+.u-card{border-top:1px solid var(--line)}
+/* An email is short enough to share its line with the remove button; only a
+   long opaque sign-in ever needed a line of its own. */
+.u-card .u-id .idline{flex:1 1 auto}
+.u-card:first-of-type{border-top:0}
+.u-add, .u-addmail{
+  background:none; border:1px dashed var(--line-strong); border-radius:7px;
+  color:var(--ink-soft); cursor:pointer; padding:7px 12px;
+  font:500 11px/1 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.06em;
+}
+.u-add{margin-top:18px; width:100%; padding:11px}
+.u-addmail{align-self:flex-start; margin-top:4px; border-style:dashed; font-size:10px}
+.u-add:hover, .u-addmail:hover{border-color:var(--accent); color:var(--accent)}
+
+/* undo toast */
+.toast{
+  position:fixed; left:16px; bottom:18px; z-index:60; display:flex; align-items:center; gap:14px;
+  background:var(--ink); color:var(--ground); border-radius:9px; padding:11px 12px 11px 15px;
+  box-shadow:0 6px 22px #00000040;
+  font:400 13px/1 "IBM Plex Sans",system-ui,sans-serif;
+}
+.toast[hidden]{display:none}
+.toast button{
+  border:0; background:none; color:var(--accent); cursor:pointer;
+  font:600 13px/1 Archivo,system-ui,sans-serif; letter-spacing:.04em; text-transform:uppercase;
+}
+
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="bar-row">
+    <button class="hamburger" id="menuBtn" aria-label="Menu" aria-expanded="false">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <div class="brand">Notes <span class="count" id="count"></span></div>
+    <div class="search-wrap">
+      <label class="search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Search notes and categories" aria-label="Search notes and categories"
+               autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sug"
+               title="Type words to search, or cat:woodgas to filter to a category">
+      </label>
+      <div class="sug" id="sug" role="listbox" aria-label="Suggestions" hidden></div>
+    </div>
+    <button class="net" id="net" type="button" aria-haspopup="true" aria-expanded="false"
+            title="Sync status" aria-label="Sync status"></button>
+    <div class="nettip" id="netTip" role="status" hidden></div>
+    <span class="anchor">
+      <button class="me-btn unset" id="meBtn" aria-haspopup="true" aria-expanded="false" title="Who's using this device?" aria-label="Who's using this device?">?</button>
+      <div class="menu below" id="meMenu" hidden></div>
+    </span>
+  </div>
+  <div class="filters">
+    <div class="seg" id="who" role="group" aria-label="Whose notes"></div>
+    <div class="chips" id="chips"></div>
+    <button class="viewchip" id="archBtn" aria-pressed="false" title="Show archive" aria-label="Show archive">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7h18v3H3zM5 10v10h14V10M9.5 14h5"/></svg>Archive</button>
+    <button class="viewchip" id="trashBtn" aria-pressed="false" title="Show deleted notes" aria-label="Show deleted notes">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>Trash</button>
+  </div>
+  <div class="selbar" id="selbar" hidden>
+    <button class="iconbtn" id="selClose" aria-label="Leave selection">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <span class="selcount" id="selCount"></span>
+    <span class="sp"></span>
+    <button class="iconbtn" id="selPin" aria-label="Pin or unpin" title="Pin / unpin">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M7 4h10l-1.5 7 2.5 3H5.5L8 11z"/></svg>
+    </button>
+    <button class="iconbtn" id="selShare" aria-label="Add to Ours" title="Add to Ours">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 19a6 6 0 0 1 12 0M18 7v6M21 10h-6"/></svg>
+    </button>
+    <button class="iconbtn" id="selArch" aria-label="Archive" title="Archive">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7h18v3H3zM5 10v10h14V10M9.5 14h5"/></svg>
+    </button>
+    <button class="iconbtn" id="selDel" aria-label="Delete" title="Delete">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="scrim-left" id="drawerScrim"></div>
+<nav class="drawer" id="drawer" aria-label="Filters"></nav>
+<div class="ptr" id="ptr" hidden>
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.9"/><path d="M21 4v5h-5"/></svg>
+</div>
+
+<main>
+  <div id="wall"></div>
+</main>
+
+
+<button class="fab" id="newBtn">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  New note
+</button>
+
+<div class="scrim" id="signinScrim" hidden>
+  <div class="signin" role="dialog" aria-modal="true" aria-labelledby="signinTitle">
+    <h2 id="signinTitle">Who are you?</h2>
+    <p class="si-sub" id="signinSub"></p>
+    <div class="si-list" id="signinList"></div>
+    <div class="si-or" id="signinOr"><span>or</span></div>
+    <form class="si-form" id="signinForm">
+      <label>Username
+        <input id="suUser" autocomplete="username" autocapitalize="none"
+               spellcheck="false" maxlength="32" placeholder="shortname">
+        <span class="si-hint" id="suHint">lowercase letters, digits, - and _. This is what notes record, and it does not change.</span>
+      </label>
+      <label>Display name <span class="si-opt">optional</span>
+        <input id="suName" maxlength="60" placeholder="How your name appears">
+      </label>
+      <label>Email <span class="si-opt">optional</span>
+        <input id="suMail" type="email" autocomplete="email" autocapitalize="none"
+               spellcheck="false" maxlength="120" placeholder="Used to recognise you when signed in elsewhere">
+      </label>
+      <button type="submit" class="si-go" id="suGo">Create account</button>
+    </form>
+  </div>
+</div>
+
+<div class="scrim" id="usersScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Users">
+    <div class="ed-top">
+      <button class="tool" id="usersClose" aria-label="Close" title="Close">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+      </button>
+      <span class="users-title">Users</span>
+    </div>
+    <div class="ed-scroll" id="usersBody"></div>
+    <div class="ed-path" id="usersPath"></div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Edit note">
+    <div class="ed-top">
+      <button class="tool" id="edClose" aria-label="Close and save" title="Close">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+      </button>
+      <input id="edTitle" placeholder="Title (optional)">
+      <button class="tool brass" id="edPin" aria-pressed="false" aria-label="Pin note" title="Pin">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M7 4h10l-1.5 7 2.5 3H5.5L8 11z"/></svg>
+      </button>
+    </div>
+    <div class="ed-scroll" id="edScroll"></div>
+    <div class="ed-path" id="edPath"></div>
+    <div class="ed-bar">
+      <button class="tool" id="edCheck" aria-pressed="false" aria-label="Show checkboxes" title="Show checkboxes">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 7.5h7M14 17.5h7"/></svg>
+      </button>
+      <button class="tool" id="edRaw" aria-pressed="false" aria-label="Show markdown source" title="Markdown source">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6 4 12l5 6M15 6l5 6-5 6"/></svg>
+      </button>
+      <button class="tool brass" id="edArch" aria-pressed="false" aria-label="Archive note" title="Archive">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18v3H3zM5 10v10h14V10M9.5 14h5"/></svg>
+      </button>
+      <span class="anchor">
+        <button class="tool" id="edDel" aria-haspopup="true" aria-expanded="false" aria-label="Delete note" title="Delete">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
+        </button>
+        <div class="menu above" id="delMenu" hidden></div>
+      </span>
+      <button class="tool" id="edCatBtn" aria-label="Category" title="Category" aria-expanded="false">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11V5a2 2 0 0 1 2-2h6l10 10-8 8z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>
+      </button>
+      <span class="cat-now" id="edCatNow"></span>
+      <span class="anchor">
+        <button class="tool share" id="edPeopleBtn" aria-haspopup="true" aria-expanded="false" aria-label="Owner and sharing" title="Owner and sharing">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 6.5v7M22.5 10h-7"/></svg>
+        </button>
+        <div class="menu above" id="peopleMenu" hidden></div>
+      </span>
+      <span class="sp"></span>
+      <span class="cat-now" id="edWhoNow"></span>
+      <span class="saved" id="edSaved"></span>
+      <div class="catpop" id="catpop" hidden>
+        <input id="edCat" placeholder="Type a category, Enter to set" autocomplete="off" spellcheck="false" aria-label="Category">
+        <div class="catlist" id="catlistBox"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden><span id="toastMsg"></span><button id="toastUndo">Undo</button></div>
+
+<script>
+(function(){
+  "use strict";
+  // ---- state: the server is the state. No localStorage, no client cache to
+  // go stale against four other writers of this space (SilverBullet, the
+  // daybook, the agent, a git restore). Every mutation is a request; the
+  // reply is what we render.
+  var NOTES = [], CATS = {}, AUTHORS = {};
+
+  // WHO THIS DEVICE IS, read from the cookie we set — never from the listing
+  // response. The service worker caches /api/notes, so a cached body carries
+  // whatever "me" was true when it was stored: after a reload the PWA got
+  // me:null out of the cache and asked who you were all over again. Identity
+  // does not belong in a cacheable body.
+  //
+  // localStorage is a mirror, not the source: the SERVER reads the cookie when
+  // stamping a note, so the cookie has to exist — but if it is evicted while
+  // the mirror survives, this puts it back instead of forgetting you.
+  function readCookieMe(){
+    var m = (document.cookie || "").match(/(?:^|;\s*)notes_who=([^;]*)/);
+    var v = m ? decodeURIComponent(m[1]).trim().toLowerCase() : "";
+    return /^[a-z][a-z0-9_-]{0,31}$/.test(v) ? v : null;
+  }
+  function writeCookieMe(v){
+    try {
+      document.cookie = "notes_who=" + v + "; path=/; max-age=" + (10 * 365 * 24 * 3600) + "; SameSite=Lax";
+    } catch (e) {}
+    try { localStorage.setItem("notes-who", v); } catch (e) {}
+  }
+  var ME = readCookieMe();
+  if (!ME) {
+    var mirror = null;
+    try { mirror = localStorage.getItem("notes-who"); } catch (e) {}
+    if (mirror && /^[a-z][a-z0-9_-]{0,31}$/.test(mirror)) { writeCookieMe(mirror); ME = mirror; }
+  }
+
+  // Whether the shared space shows up in your own feed. Per device, on by
+  // default — the point of a shared list is that you see it without asking.
+  var SHOW_SHARED = true;
+  try {
+    var pref = localStorage.getItem("notes-show-shared");
+    if (pref !== null) SHOW_SHARED = pref === "1";
+  } catch (e) {}
+
+  function api(method, url, body){
+    return fetch(url, {
+      method: method,
+      headers: body ? {"Content-Type":"application/json"} : undefined,
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function(r){
+      setNet(true);                       // the box answered, whatever it said
+      if (!r.ok) {
+        return r.json().catch(function(){ return {}; }).then(function(j){
+          throw new Error(j.detail || j.error || (r.status + " " + r.statusText));
+        });
+      }
+      return r.json();
+    }, function(err){
+      setNet(false);                      // transport failed: unreachable
+      throw err;
+    });
+  }
+
+  // The wall is sent previews, not bodies, so the SERVER does the matching --
+  // see /api/notes. Searching the preview here would miss hits inside long
+  // notes and look like "no results".
+  var searchT = null, searchSeq = 0, onlyQueued = false, LOADING = true;
+
+  // in: picks a VIEW, by: picks a SCOPE — neither is text to search for, so
+  // both are read here and stripped before the query reaches the server.
+  function applyTokens(raw){
+    var terms = [], ins = [], bys = [];
+    (raw || "").split(/\s+/).forEach(function(t){
+      var low = t.toLowerCase();
+      if (low.indexOf("in:") === 0 && t.length > 3) ins.push(low.slice(3));
+      else if (t) { terms.push(t); if (low.indexOf("by:") === 0) bys.push(low.slice(3)); }
+    });
+
+    onlyQueued = false;
+    ins.forEach(function(k){
+      if (k === "trash") view = "trash";
+      else if (k === "archived" || k === "archive") view = "archive";
+      else if (k === "shared" || k === "ours") { who = "shared"; view = "wall"; }
+      else if (k === "queued" || k === "pending") { onlyQueued = true; view = "wall"; }
+    });
+    if (!ins.length && (view === "trash" || view === "archive")) view = "wall";
+
+    // Searching for someone's notes while scoped to your own can only ever
+    // return nothing, so the scope follows the question being asked.
+    if (bys.length) who = (bys.length === 1 && bys[0] === meName()) ? "mine" : "all";
+
+    el.archBtn.setAttribute("aria-pressed", view === "archive" ? "true" : "false");
+    el.trashBtn.setAttribute("aria-pressed", view === "trash" ? "true" : "false");
+    return terms.join(" ");
+  }
+
+  // When the listing last landed. Kept in localStorage too, so after an
+  // offline start the tip can say how stale the painted snapshot is instead of
+  // claiming the app has never synced.
+  var LAST_SYNC = 0;
+  try { LAST_SYNC = parseInt(localStorage.getItem("notes_last_sync") || "0", 10) || 0; } catch (e) {}
+
+  function applyListing(d){
+    NOTES = d.notes.map(function(n){
+      if (view === "trash") n.trashed = true;
+      return n;
+    });
+    if (d.cats) CATS = d.cats;          // full census, never filtered by q
+    if (d.people) PEOPLE = d.people;    // slug -> label, for faces and bylines
+    if (d.authors) AUTHORS = d.authors;
+    shownCount = PAGE;
+    render();
+  }
+
+  function refresh(){
+    var mine = ++searchSeq;
+    var sent = applyTokens(q);
+    var url = view === "trash"
+      ? "/api/trash"
+      : "/api/notes?me=" + encodeURIComponent(meName()) + "&scope=" + who + "&shared=" + (SHOW_SHARED ? 1 : 0)
+        + (sent ? "&q=" + encodeURIComponent(sent) : "");
+    return api("GET", url).then(function(d){
+      LOADING = false;
+      LAST_SYNC = Date.now();           // the wall and the disk agreed, just now
+      try { localStorage.setItem("notes_last_sync", String(LAST_SYNC)); } catch (e) {}
+      if (mine !== searchSeq) return;   // a newer keystroke already won
+      applyListing(d);
+      // Only the plain wall is worth keeping: a snapshot of a search result
+      // would open the app next time showing someone's old query.
+      if (!q && view === "wall") snapSave(d);
+    });
+  }
+
+  function search(){
+    clearTimeout(searchT);
+    searchT = setTimeout(function(){
+      refresh().catch(function(e){ fail("Search failed", e); });
+    }, 160);
+  }
+
+  // One note's real body, for the editor and for any write that rewrites it.
+  function fullBody(id){
+    return api("GET", "/api/note?id=" + encodeURIComponent(id)).then(function(n){ return n.body; });
+  }
+
+  function fail(what, e){
+    console.error(what, e);
+    toast(what + " — " + ((e && e.message) || "unknown error"), null);
+  }
+
+  // Optimistic: apply locally, then persist. On failure say so and reload the
+  // truth rather than leaving the screen disagreeing with the disk.
+  function persist(n, patch, what){
+    var before = {};
+    for (var k in patch) { before[k] = n[k]; n[k] = patch[k]; }
+    render();
+    var req = {id:n.id};
+    for (var k2 in patch) req[k2] = patch[k2];
+    return api("PUT", "/api/notes", req).then(function(saved){
+      for (var k3 in saved) n[k3] = saved[k3];
+      render();
+      return saved;
+    }).catch(function(e){
+      for (var k4 in before) n[k4] = before[k4];
+      fail(what, e); refresh();
+      throw e;
+    });
+  }
+
+  // Default to the owner's own notes. The agent has written into this space for
+  // months, and on first open the wall was almost entirely agent pages — the
+  // actual notes were buried (decided 2026-11-09).
+  // "wall" | "archive" | "trash". Trash is a real view because delete has
+ // always MOVED a note rather than unlinking it — that only helps if there is
+ // a way to get it back without an agent and a shell (2026-11-09: the owner
+ // deleted a note by accident and could not).
+  var q = "", view = "wall", openId = null, who = "mine";
+  function showArchive(){ return view === "archive"; }
+  var el = {
+    q:document.getElementById("q"), chips:document.getElementById("chips"),
+    who:document.getElementById("who"), sug:document.getElementById("sug"),
+    meBtn:document.getElementById("meBtn"),
+    edCat:document.getElementById("edCat"), catpop:document.getElementById("catpop"),
+    edCatBtn:document.getElementById("edCatBtn"), edCatNow:document.getElementById("edCatNow"),
+    catlistBox:document.getElementById("catlistBox"), net:document.getElementById("net"),
+    edPeopleBtn:document.getElementById("edPeopleBtn"), peopleMenu:document.getElementById("peopleMenu"),
+    delMenu:document.getElementById("delMenu"), meMenu:document.getElementById("meMenu"),
+    trashBtn:document.getElementById("trashBtn"), edWhoNow:document.getElementById("edWhoNow"),
+    menuBtn:document.getElementById("menuBtn"), drawer:document.getElementById("drawer"),
+    selbar:document.getElementById("selbar"), selCount:document.getElementById("selCount"),
+    selClose:document.getElementById("selClose"), selPin:document.getElementById("selPin"),
+    selArch:document.getElementById("selArch"), selDel:document.getElementById("selDel"),
+    selShare:document.getElementById("selShare"),
+    drawerScrim:document.getElementById("drawerScrim"), ptr:document.getElementById("ptr"),
+    wall:document.getElementById("wall"), count:document.getElementById("count"),
+    archBtn:document.getElementById("archBtn"), scrim:document.getElementById("scrim"),
+    edClose:document.getElementById("edClose"), edTitle:document.getElementById("edTitle"),
+    edPin:document.getElementById("edPin"), edScroll:document.getElementById("edScroll"),
+    edPath:document.getElementById("edPath"), edCheck:document.getElementById("edCheck"),
+    edRaw:document.getElementById("edRaw"), edArch:document.getElementById("edArch"),
+    edDel:document.getElementById("edDel"), edSaved:document.getElementById("edSaved"),
+    netTip:document.getElementById("netTip"),
+    signinScrim:document.getElementById("signinScrim"), signinList:document.getElementById("signinList"),
+    signinSub:document.getElementById("signinSub"), signinTitle:document.getElementById("signinTitle"),
+    signinOr:document.getElementById("signinOr"),
+    signinForm:document.getElementById("signinForm"), suUser:document.getElementById("suUser"),
+    suName:document.getElementById("suName"), suMail:document.getElementById("suMail"),
+    suGo:document.getElementById("suGo"), suHint:document.getElementById("suHint"),
+    usersScrim:document.getElementById("usersScrim"), usersBody:document.getElementById("usersBody"),
+    usersClose:document.getElementById("usersClose"), usersPath:document.getElementById("usersPath"),
+    toast:document.getElementById("toast"), toastMsg:document.getElementById("toastMsg"),
+    toastUndo:document.getElementById("toastUndo"), newBtn:document.getElementById("newBtn")
+  };
+  el.q.placeholder = "Search notes";
+
+  function matches(n){
+    if (!inScope(n, who)) return false;
+    if (onlyQueued) return !!n.pending;
+    if (view === "trash") return true;        // the trash view IS its own list
+    if (archivedForMe(n) !== showArchive()) return false;
+    return true;   // text AND category matching happen server-side
+  }
+
+  var INL = /\*\*([^*]+)\*\*|`([^`]+)`|\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]|\[([^\]]+)\]\(([^)]+)\)/g;
+  function inline(text, parent){
+    var last = 0, m;
+    INL.lastIndex = 0;
+    while ((m = INL.exec(text)) !== null) {
+      if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[1] !== undefined) parent.appendChild(node("strong", null, m[1]));
+      else if (m[2] !== undefined) parent.appendChild(node("code", null, m[2]));
+      else if (m[3] !== undefined) parent.appendChild(document.createTextNode(m[4] !== undefined ? m[4] : m[3]));
+      else parent.appendChild(document.createTextNode(m[5]));
+      last = INL.lastIndex;
+    }
+    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+    return parent;
+  }
+
+  // ---- search term highlighting ----
+  // Runs over a finished subtree rather than during construction, so it
+  // composes with the markdown renderer: bold, code and link text all get
+  // highlighted without inline() needing to know about search at all.
+  function terms(){
+    // cat: tokens are filters, not text to look for — highlighting them would
+    // paint nothing and look broken.
+    var t = (q || "").toLowerCase().split(/\s+/).filter(function(x){
+      return x && x.indexOf("cat:") !== 0;
+    });
+    // longest first, so "food lion" marks the longer run before its pieces
+    return t.sort(function(a, b){ return b.length - a.length; });
+  }
+
+  function highlight(root){
+    var ts = terms();
+    if (!ts.length || !root) return root;
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var texts = [], n;
+    while ((n = walker.nextNode())) texts.push(n);
+    texts.forEach(function(tn){
+      var s = tn.nodeValue, low = s.toLowerCase(), out = null, i = 0;
+      while (i < s.length) {
+        var at = -1, len = 0;
+        for (var k = 0; k < ts.length; k++) {
+          var p = low.indexOf(ts[k], i);
+          if (p >= 0 && (at < 0 || p < at || (p === at && ts[k].length > len))) { at = p; len = ts[k].length; }
+        }
+        if (at < 0) break;
+        out = out || document.createDocumentFragment();
+        if (at > i) out.appendChild(document.createTextNode(s.slice(i, at)));
+        var m = document.createElement("mark");
+        m.textContent = s.slice(at, at + len);
+        out.appendChild(m);
+        i = at + len;
+      }
+      if (out) {
+        if (i < s.length) out.appendChild(document.createTextNode(s.slice(i)));
+        tn.parentNode.replaceChild(out, tn);
+      }
+    });
+    return root;
+  }
+
+  function node(tag, cls, text){
+    var d = document.createElement(tag);
+    if (cls) d.className = cls;
+    if (text !== undefined) d.textContent = text;
+    return d;
+  }
+
+  // --- markdown-lite preview: checkboxes, bullets, headings, prose ---
+  function renderBody(n, box){
+    var lines = (n.preview !== undefined ? n.preview : n.body).split("\n"), para = [], nLines = 0;
+    function flush(){
+      if (!para.length) return;
+      box.appendChild(inline(para.join("\n"), node("p", null)));
+      para = [];
+    }
+    lines.forEach(function(line, i){
+      var m;
+      if (/^\s*$/.test(line)) { flush(); return; }
+      nLines++;
+      if ((m = line.match(/^\s*[-*]\s+\[([ xX])\]\s*(.*)$/))) {
+        flush();
+        var done = m[1].toLowerCase() === "x";
+        var row = node("div", "ck" + (done ? " done" : ""));
+        var b = node("button", "box" + (done ? " on" : ""));
+        b.setAttribute("aria-label", (done ? "Uncheck " : "Check ") + m[2]);
+        b.innerHTML = done ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="m5 13 4.5 4.5L19 7"/></svg>' : "";
+        b.addEventListener("click", function(ev){ ev.stopPropagation(); toggleCheck(n, i); });
+        row.appendChild(b); row.appendChild(inline(m[2], node("span", null)));
+        box.appendChild(row);
+      } else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) {
+        flush();
+        var li = node("div", "li");
+        li.appendChild(inline(m[1], node("span", null)));
+        box.appendChild(li);
+      } else if ((m = line.match(/^#{1,4}\s+(.*)$/))) {
+        flush(); box.appendChild(inline(m[1], node("div", "h")));
+      } else {
+        para.push(line.replace(/^\s*\*(.+)\*\s*$/, "$1"));
+      }
+    });
+    flush();
+    return nLines;
+  }
+
+  // A card shows a PREVIEW. Toggling from the card must rewrite the whole
+  // file, so fetch the real body first -- writing back the preview would
+  // silently truncate the note to its first 700 characters.
+  // The preview starts at byte 0, so the line index is the same in both.
+  function toggleCheck(n, idx){
+    fullBody(n.id).then(function(body){
+      var lines = body.split("\n");
+      if (!/\[([ xX])\]/.test(lines[idx] || "")) throw new Error("that line moved — reopen the note");
+      lines[idx] = lines[idx].replace(/\[([ xX])\]/, function(_, c){ return c.toLowerCase() === "x" ? "[ ]" : "[x]"; });
+      return api("PUT", "/api/notes", {id:n.id, body:lines.join("\n")});
+    }).then(function(saved){
+      for (var k in saved) n[k] = saved[k];
+      render();
+    }).catch(function(e){ fail("Couldn't tick that off", e); refresh(); });
+  }
+
+  function card(n){
+    var c = node("div", "card" + (n.shared ? " shared" : "") + (pinnedForMe(n) ? " pinned" : "") + (n.pending ? " pending" : "") + (SEL[n.id] ? " sel" : ""));
+    if (SEL[n.id]) {
+      var tick = node("div", "tick");
+      tick.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="m5 13 4.5 4.5L19 7"/></svg>';
+      c.appendChild(tick);
+    }
+    c.tabIndex = 0;
+    // An untitled note shows no heading at all — an empty h3 would leave a
+    // gap where a title would be, which reads as a rendering fault.
+    if (n.title) c.appendChild(highlight(node("h3", null, n.title)));
+    else c.classList.add("untitled");
+
+    var pin = node("button", "pin");
+    pin.setAttribute("aria-label", (pinnedForMe(n) ? "Unpin " : "Pin ") + (n.title || "note"));
+    pin.setAttribute("title", pinnedForMe(n) ? "Unpin" : "Pin");
+    pin.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="' + (pinnedForMe(n) ? "currentColor" : "none") + '" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 17v5M7 4h10l-1.5 7 2.5 3H5.5L8 11z"/></svg>';
+    pin.addEventListener("click", function(ev){ ev.stopPropagation(); persist(n, {pinned:!pinnedForMe(n)}, "Couldn't pin that").catch(function(){}); });
+    c.appendChild(pin);
+
+    var box = node("div", "body");
+    var nLines = renderBody(n, box);
+    highlight(box);
+    c.appendChild(box);
+
+    var meta = node("div", "meta");
+    meta.appendChild(node("span", "cat", n.pending ? "queued" : n.cat));
+    // Say who wrote it only when that is not you — otherwise every card on
+    // your own wall carries your own name, which is noise.
+    if (!n.pending && n.author !== meName()) meta.appendChild(node("span", "by", nameOf(n.author)));
+    if (n.shared) {
+      var sh = node("span", "shared-mark");
+      sh.setAttribute("title", "In the shared space");
+      sh.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 19a6 6 0 0 1 12 0M18 7v6M21 10h-6"/></svg>';
+      meta.appendChild(sh);
+    }
+    meta.appendChild(node("span", "sp"));
+    meta.appendChild(node("span", "yr", n.date));
+    c.appendChild(meta);
+
+    function act(){
+      if (selMode) { toggleSel(n.id); return; }
+      if (n.pending) { toast("Queued — this note saves when the box is reachable", null); return; }
+      if (n.trashed) { restoreNote(n); return; }
+      open(n.id);
+    }
+    c.addEventListener("click", act);
+    c.addEventListener("keydown", function(ev){ if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); act(); } });
+
+    // Truncation marker decided from the CONTENT, not from layout. This used
+    // to be a per-card requestAnimationFrame that read scrollHeight and then
+    // inserted a node -- read, write, read, write, 545 times -- which is
+    // layout thrash and was a large part of why the wall felt slow.
+    if (n.truncated || nLines > CLIP_LINES) {
+      box.classList.add("clipped");
+      c.insertBefore(node("div", "more", n.lines + " lines — tap to open"), meta);
+    }
+    return c;
+  }
+
+  // ---- back dismisses a layer, not the app ----
+  // In a PWA the system back gesture is the only "back" there is, and without
+  // this it closes the whole app from inside an open note. Each thing that
+  // covers the wall pushes one history entry and takes it back when it closes,
+  // so back means "close this" exactly once.
+  var LAYER = null;
+  function enterLayer(kind){
+    if (LAYER === kind) return;
+    LAYER = kind;
+    try { history.pushState({notesLayer: kind}, ""); } catch (e) {}
+  }
+  function exitLayer(){
+    if (!LAYER) return;
+    LAYER = null;
+    try { history.back(); } catch (e) {}
+  }
+  window.addEventListener("popstate", function(){
+    if (!LAYER) return;                 // not one of ours; let it be
+    var k = LAYER; LAYER = null;
+    if (k === "note") close(true);
+    else if (k === "users") closeUsers(true);
+    else if (k === "signin") closeSignIn(true);
+    else if (k === "drawer") closeDrawer(true);
+    else if (k === "sel") exitSel(true);
+  });
+
+  // ---- selection mode ----
+  // Long press enters it and tap adds, which is how Keep does it — and it is
+  // the only way to act on twenty notes without opening twenty notes.
+  var SEL = {}, selMode = false;
+  function selCount(){ return Object.keys(SEL).length; }
+
+  function enterSel(id){
+    selMode = true; SEL = {}; SEL[id] = 1;
+    document.body.classList.add("selecting");
+    enterLayer("sel");
+    render();
+  }
+  function exitSel(fromHistory){
+    selMode = false; SEL = {};
+    document.body.classList.remove("selecting");
+    if (!fromHistory) exitLayer();
+    render();
+  }
+  function toggleSel(id){
+    if (SEL[id]) delete SEL[id]; else SEL[id] = 1;
+    if (!selCount()) { exitSel(); return; }
+    render();
+  }
+  function selected(){
+    return NOTES.filter(function(n){ return SEL[n.id]; });
+  }
+  function drawSel(){
+    el.selbar.hidden = !selMode;
+    if (!selMode) return;
+    var n = selCount();
+    el.selCount.textContent = n + " selected";
+    var any = selected();
+    var allPinned = any.length && any.every(pinnedForMe);
+    el.selPin.setAttribute("aria-pressed", allPinned ? "true" : "false");
+    el.selPin.title = allPinned ? "Unpin" : "Pin";
+  }
+
+  // One request per note, in order, then a single refresh — a bulk endpoint
+  // would be faster and would also need its own partial-failure story.
+  function bulk(patch, label, undoPatch){
+    var items = selected();
+    if (!items.length) return;
+    var done = 0, failed = 0;
+    items.reduce(function(chain, x){
+      return chain.then(function(){
+        return api("PUT", "/api/notes", Object.assign({id: x.id}, patch))
+          .then(function(){ done++; }).catch(function(){ failed++; });
+      });
+    }, Promise.resolve()).then(function(){
+      exitSel();
+      return refresh();
+    }).then(function(){
+      if (failed) { fail(label + ": " + failed + " of " + items.length + " failed", new Error("partial")); return; }
+      toast(label + " " + done, undoPatch ? function(){
+        items.reduce(function(c, x){
+          return c.then(function(){
+            return api("PUT", "/api/notes", Object.assign({id: x.id}, undoPatch)).catch(function(){});
+          });
+        }, Promise.resolve()).then(refresh);
+      } : null);
+    });
+  }
+
+  el.selClose.addEventListener("click", function(){ exitSel(); });
+  el.selPin.addEventListener("click", function(){
+    var any = selected(), allPinned = any.length && any.every(pinnedForMe);
+    bulk({pinned: !allPinned}, allPinned ? "Unpinned" : "Pinned", {pinned: allPinned});
+  });
+  el.selShare.addEventListener("click", function(){
+    var any = selected(), allShared = any.length && any.every(function(x){ return x.shared; });
+    bulk({shared: !allShared}, allShared ? "Removed from Ours" : "Added to Ours", {shared: allShared});
+  });
+  el.selArch.addEventListener("click", function(){
+    var any = selected(), allArch = any.length && any.every(archivedForMe);
+    bulk({archived: !allArch}, allArch ? "Unarchived" : "Archived", {archived: allArch});
+  });
+  el.selDel.addEventListener("click", function(){
+    var items = selected();
+    if (!items.length) return;
+    var moved = [];
+    items.reduce(function(chain, x){
+      return chain.then(function(){
+        return api("POST", "/api/notes/trash", {id: x.id})
+          .then(function(d){ moved.push(d.trashed); }).catch(function(){});
+      });
+    }, Promise.resolve()).then(function(){
+      exitSel(); return refresh();
+    }).then(function(){
+      toast("Deleted " + moved.length + " — in Trash", function(){
+        moved.reduce(function(c, t){
+          return c.then(function(){
+            return api("POST", "/api/notes/restore", {id: t}).catch(function(){});
+          });
+        }, Promise.resolve()).then(refresh);
+      });
+    });
+  });
+
+  // ---- gestures: the things you do one-handed in a shop ----
+  // Swipe right archives, swipe left bins, long press pins — the Gmail
+  // bindings rather than invented ones. The two directions are deliberately
+  // NOT symmetric: archive acts the moment you let go, delete does not act
+  // until you tap the track. Both leave an undo toast.
+  var PRESS_MS = 500, DECIDE_PX = 12;
+  // The left fifth of the screen is the drawer's, full stop. A 22px edge strip
+  // was too fine a target one-handed: aiming for it and missing swiped the
+  // note underneath instead, which is the opposite of what you wanted.
+  function drawerZone(){ return Math.max(40, window.innerWidth * 0.20); }
+  // Two thirds across the card LATCHES: it stops following your thumb, and it
+  // stays there when you release. Nothing slides off the screen on its own.
+  var LATCH = 0.66;
+  // A fast flick used to put the card at the latch in one frame, so there was
+  // no travel to read — it simply appeared there. The card now has a TOP SPEED
+  // in px per millisecond and your thumb can outrun it; the animation on
+  // release carries the rest at the same rate, so a swipe always looks like a
+  // swipe however hard you throw it.
+  var MAX_PX_MS = 1.1;
+  function glideMs(px){ return Math.max(130, Math.min(380, Math.abs(px) / MAX_PX_MS)); }
+
+  // At most one card sits latched open, and at most one gesture owns a drag.
+  // Both are module-level because the DRAWER has to be able to let go of a
+  // card: a touch near the edge was being picked up by the card and the drawer
+  // at once, so opening the menu archived the note underneath it.
+  var LATCHED = null, SWIPING = null;
+  function unlatchCard(){ var f = LATCHED; LATCHED = null; if (f) f(); }
+  function releaseCard(){ var f = SWIPING; SWIPING = null; if (f) f(); }
+
+  function swipeable(cardEl, n){
+    var wrap = node("div", "swipe");
+    var bg = node("div", "swipe-bg");
+    wrap.appendChild(bg);
+    wrap.appendChild(cardEl);
+    // Not in the bin (a swipe there has no sensible meaning), and not on a
+    // note that has not reached the server yet.
+    if (n.pending || n.trashed || !("ontouchstart" in window) || selMode) return wrap;
+
+    var x0 = 0, y0 = 0, decided = false, dragging = false, lp = null, dx = 0;
+    var pressX = 0, pressY = 0, armed = false, ignore = true, latched = false;
+    var swallow = 0;                      // the tap that cancels must not also open the note
+    var lastT = 0;                        // for the speed clamp
+    function reset(){
+      if (latched) swallow = Date.now() + 500;
+      armed = false; latched = false;
+      if (SWIPING === reset) SWIPING = null;
+      if (LATCHED === reset) LATCHED = null;
+      wrap.classList.remove("dragging", "armed", "latched");
+      cardEl.style.transition = "transform " + glideMs(dx) + "ms cubic-bezier(.25,.55,.35,1)";
+      cardEl.style.transform = ""; bg.style.opacity = 0; bg.textContent = ""; dx = 0;
+    }
+    function cancelPress(){ if (lp) { clearTimeout(lp); lp = null; } }
+
+    // One place that draws the track, so the latched state cannot drift out of
+    // step with the dragging one.
+    function paint(right, strength, confirm){
+      bg.className = "swipe-bg " + (right ? "arch" : "del");
+      bg.textContent = "";
+      var lbl;
+      if (confirm) {
+        lbl = node("span", "conf", "Tap to delete");
+      } else {
+        lbl = node("span", null, right
+          ? (archivedForMe(n) ? "Unarchive" : "Archive") : "Delete");
+        lbl.style.cssText = "font:600 12px/1 Archivo,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase";
+      }
+      if (right) { bg.appendChild(lbl); bg.appendChild(node("span")); }
+      else { bg.appendChild(node("span")); bg.appendChild(lbl); }
+      bg.style.opacity = strength;
+    }
+
+    function doDelete(){
+      cardEl.style.transform = "translateX(" + -wrap.offsetWidth + "px)";
+      wrap.classList.remove("latched");
+      latched = false; if (LATCHED === reset) LATCHED = null;
+      api("POST", "/api/notes/trash", {id: n.id}).then(function(d){
+        return refresh().then(function(){
+          toast("Deleted — it is in Trash", function(){
+            api("POST", "/api/notes/restore", {id: d.trashed}).then(refresh)
+              .catch(function(e){ fail("Couldn't restore that note", e); });
+          });
+        });
+      }).catch(function(e){ fail("Couldn't delete that note", e); reset(); });
+    }
+
+    // The exposed track IS the confirm button. Nothing else on the latched card
+    // deletes it, and a tap anywhere else puts it back (see touchstart).
+    bg.addEventListener("click", function(ev){
+      if (!latched) return;
+      ev.stopPropagation();
+      doDelete();
+    });
+    // While a card sits latched, the sliver of it still on screen is not a
+    // way into the editor — tapping it cancels, and that tap stops there.
+    wrap.addEventListener("click", function(ev){
+      if (bg.contains(ev.target)) return;
+      if (latched || Date.now() < swallow) { ev.preventDefault(); ev.stopPropagation(); }
+    }, true);
+
+    wrap.addEventListener("touchstart", function(ev){
+      ignore = true;                      // until this proves to be a card gesture
+      if (ev.touches.length !== 1) return;
+      // A touch that starts in the drawer zone belongs to the drawer, and while
+      // the drawer is open every touch belongs to closing it. Bailing out here
+      // is not enough on its own — see releaseCard(), which is what stops a
+      // drag that had already started from acting when the menu takes over.
+      if (ev.touches[0].clientX <= drawerZone()) return;
+      if (el.drawer.classList.contains("open")) return;
+      // A latched card is waiting for a verdict: the track confirms (that is
+      // the click handler above), anything else cancels.
+      if (latched) { if (!bg.contains(ev.target)) reset(); return; }
+      unlatchCard();                      // only one card sits open at a time
+      ignore = false;
+      x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY;
+      decided = false; dragging = false; dx = 0;
+      lastT = ev.timeStamp || Date.now();
+      cardEl.style.transition = "";
+      pressX = x0; pressY = y0;
+      lp = setTimeout(function(){
+        lp = null;
+        if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+        // Keep's model: the hold LIFTS the note. Move from here and you are
+        // dragging it; let go without moving and you are selecting it. Only
+        // pinned notes can be dragged, so everything else selects at once.
+        if (pinnedForMe(n) && view === "wall" && !selMode) { lift(wrap, cardEl, n); }
+        else if (selMode) toggleSel(n.id);
+        else enterSel(n.id);
+      }, PRESS_MS);
+    }, {passive: true});
+
+    wrap.addEventListener("touchmove", function(ev){
+      if (ignore || DRAG) return;         // not ours / a lifted note is being reordered
+      var t = ev.touches[0], ax = t.clientX - x0, ay = t.clientY - y0;
+      if (!decided) {
+        if (Math.abs(ax) > DECIDE_PX && Math.abs(ax) > Math.abs(ay)) {
+          decided = true; dragging = true; cancelPress();
+          wrap.classList.add("dragging");
+          SWIPING = reset;                // the drawer can take this back
+        } else if (Math.abs(ay) > DECIDE_PX) {
+          decided = true; cancelPress();        // it is a scroll, let it scroll
+        }
+        return;
+      }
+      if (!dragging) return;
+      ev.preventDefault();
+      var limit = wrap.offsetWidth * LATCH;
+      // Follow the thumb up to the latch, then hold. Past it the card stops
+      // dead however far you keep going — it can never be flung off-screen.
+      var want = Math.abs(ax) <= limit ? ax : (ax > 0 ? limit : -limit);
+      // ...and it only ever CLOSES the gap at the top speed, so a flick is
+      // still something you can watch rather than a jump cut.
+      var now = ev.timeStamp || Date.now();
+      var step = MAX_PX_MS * Math.max(1, Math.min(64, now - lastT));
+      lastT = now;
+      dx = Math.abs(want - dx) <= step ? want : dx + (want > dx ? step : -step);
+      // Armed follows your THUMB, not the lagging card: the gesture you made
+      // is the one that counts, and the card catches up on release.
+      armed = Math.abs(ax) >= limit;
+      wrap.classList.toggle("armed", armed);
+      cardEl.style.transform = "translateX(" + dx + "px)";
+      paint(dx > 0, armed ? 1 : Math.min(0.85, Math.abs(dx) / limit), false);
+    }, {passive: false});
+
+    function finish(){
+      if (DRAG) return;                   // dragEnd owns this gesture
+      cancelPress();
+      if (ignore) return;
+      if (SWIPING === reset) SWIPING = null;
+      if (!dragging) { reset(); return; }
+      var go = armed, right = dx > 0;
+      wrap.classList.remove("armed", "dragging");
+      if (!go) { reset(); return; }       // short of the latch: it springs back
+      if (!right) {
+        // Delete never completes on the swipe alone. The card stays exactly
+        // where the latch stopped it and waits to be confirmed; the undo toast
+        // still follows once it is.
+        latched = true; LATCHED = reset;
+        wrap.classList.add("latched");
+        var rest = -wrap.offsetWidth * LATCH;
+        cardEl.style.transition = "transform " + glideMs(rest - dx) + "ms cubic-bezier(.25,.55,.35,1)";
+        cardEl.style.transform = "translateX(" + rest + "px)";
+        paint(false, 1, true);
+        return;
+      }
+      cardEl.style.transition = "transform " + glideMs(wrap.offsetWidth - dx) + "ms cubic-bezier(.3,.5,.4,1)";
+      cardEl.style.transform = "translateX(" + wrap.offsetWidth + "px)";
+      var was = archivedForMe(n);
+      persist(n, {archived: !was}, "Couldn't archive that")
+        .then(refresh)
+        .then(function(){
+          toast(was ? "Unarchived" : "Archived", function(){
+            persist(n, {archived: was}, "Couldn't undo that").then(refresh).catch(function(){});
+          });
+        }).catch(function(){ reset(); });
+    }
+    wrap.addEventListener("touchend", finish, {passive: true});
+    wrap.addEventListener("touchcancel", function(){
+      if (ignore) return;
+      cancelPress(); reset();
+    }, {passive: true});
+    return wrap;
+  }
+
+  // A latched card is modal in spirit: touch anything else and it goes back.
+  if ("ontouchstart" in window) {
+    document.addEventListener("touchstart", function(ev){
+      if (!LATCHED) return;
+      var w = ev.target && ev.target.closest ? ev.target.closest(".swipe.latched") : null;
+      if (!w) unlatchCard();
+    }, {passive: true});
+  }
+
+  // ---- drag a pinned note to reorder it ----
+  // Scoped to pinned notes (decided 2026-11-09). That also makes the hard part
+  // vanish: the pinned set is small, so a drop RENUMBERS it 10, 20, 30… and
+  // writes only the ones whose number actually changed — no fractional
+  // indexing, no drift, nothing to rebalance later.
+  var DRAG = null;
+
+  function lift(wrap, cardEl, n){
+    DRAG = {wrap: wrap, card: cardEl, note: n, moved: false, x0: 0, y0: 0};
+    wrap.classList.add("lifting");
+    cardEl.classList.add("lifted");
+  }
+
+  function pinnedWraps(){
+    var sec = el.wall.querySelector(".section");
+    return sec ? [].slice.call(sec.querySelectorAll(".swipe")) : [];
+  }
+
+  function dragMove(cx, cy){
+    if (!DRAG) return;
+    DRAG.moved = true;
+    DRAG.card.style.transform = "translate(" + (cx - DRAG.x0) + "px," + (cy - DRAG.y0) + "px) scale(1.03)";
+    // Where would it land? The first sibling whose centre we are past.
+    var wraps = pinnedWraps(), me = wraps.indexOf(DRAG.wrap), target = me;
+    for (var i = 0; i < wraps.length; i++) {
+      if (wraps[i] === DRAG.wrap) continue;
+      var r = wraps[i].getBoundingClientRect();
+      if (cy > r.top && cy < r.bottom && cx > r.left && cx < r.right) { target = i; break; }
+    }
+    DRAG.target = target;
+    wraps.forEach(function(w, i){ w.classList.toggle("ghost", i === target && i !== me); });
+  }
+
+  function dragEnd(){
+    if (!DRAG) return;
+    var d = DRAG; DRAG = null;
+    d.wrap.classList.remove("lifting");
+    d.card.classList.remove("lifted");
+    d.card.style.transform = "";
+    pinnedWraps().forEach(function(w){ w.classList.remove("ghost"); });
+
+    if (!d.moved) {                       // held and released: that is a select
+      if (selMode) toggleSel(d.note.id); else enterSel(d.note.id);
+      return;
+    }
+    if (d.target === undefined) return;
+
+    var pins = NOTES.filter(pinnedForMe).sort(function(a, b){
+      var ao = orderForMe(a), bo = orderForMe(b);
+      if (ao !== bo) return ao - bo;
+      return a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
+    });
+    var from = pins.findIndex(function(x){ return x.id === d.note.id; });
+    if (from < 0 || d.target === from) return;
+    pins.splice(d.target, 0, pins.splice(from, 1)[0]);
+
+    var writes = [];
+    pins.forEach(function(x, i){
+      var want = (i + 1) * 10;
+      if (orderForMe(x) !== want) {
+        x.pin_order = x.pin_order || {};
+        x.pin_order[meName()] = want;          // optimistic, for this viewer
+        writes.push({id: x.id, order: want});
+      }
+    });
+    render();
+    writes.reduce(function(chain, w){
+      return chain.then(function(){ return api("PUT", "/api/notes", w).catch(function(){}); });
+    }, Promise.resolve()).then(refresh).catch(function(e){ fail("Couldn't reorder", e); refresh(); });
+  }
+
+  document.addEventListener("touchmove", function(ev){
+    if (!DRAG) return;
+    ev.preventDefault();
+    dragMove(ev.touches[0].clientX, ev.touches[0].clientY);
+  }, {passive: false});
+  document.addEventListener("touchend", function(){ if (DRAG) dragEnd(); }, {passive: true});
+  document.addEventListener("touchcancel", function(){ if (DRAG) dragEnd(); }, {passive: true});
+
+  // ---- one gesture owns the drawer: open it, and swipe it away ----
+  // Opening from a 22px edge strip meant aiming, and missing it swiped the
+  // note underneath. The whole left quarter now routes here (see drawerZone),
+  // and while the drawer is open ANY leftward swipe closes it, from anywhere —
+  // you should not have to find the drawer again to dismiss it.
+  (function(){
+    if (!("ontouchstart" in window)) return;
+    var W = function(){ return Math.min(300, window.innerWidth * 0.84); };
+    var x0 = 0, y0 = 0, mode = null, decided = false;   // mode: "open" | "close"
+
+    function isOpen(){ return el.drawer.classList.contains("open"); }
+    function track(dx){
+      el.drawer.style.transition = "none";
+      var off = mode === "open" ? Math.min(dx, W()) - W() : Math.max(-W(), Math.min(0, dx));
+      el.drawer.style.transform = "translateX(" + off + "px)";
+      el.drawerScrim.style.opacity = (W() + off) / W();
+    }
+    function settle(open){
+      el.drawer.style.transition = "";
+      el.drawer.style.transform = "";
+      el.drawerScrim.style.opacity = "";
+      if (open) {
+        el.drawer.classList.add("open");
+        el.drawerScrim.classList.add("open");
+        el.menuBtn.setAttribute("aria-expanded", "true");
+        enterLayer("drawer");             // opened by gesture: back still closes it
+      } else {
+        closeDrawer();                    // takes the history entry back with it
+      }
+    }
+
+    document.addEventListener("touchstart", function(ev){
+      mode = null;
+      if (ed || !el.scrim.hidden || usersOpen() || DRAG || ev.touches.length !== 1) return;
+      var t = ev.touches[0];
+      if (isOpen()) { mode = "close"; }
+      else if (t.clientX <= drawerZone()) { mode = "open"; fillDrawer(); }
+      else return;
+      x0 = t.clientX; y0 = t.clientY; decided = false;
+    }, {passive: true});
+
+    document.addEventListener("touchmove", function(ev){
+      if (!mode) return;
+      var t = ev.touches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+      if (!decided) {
+        // Let a vertical drag be a scroll; only commit to the drawer once the
+        // movement is clearly sideways AND in the direction that makes sense.
+        if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) { mode = null; return; }
+        if (mode === "open" && dx < 10) return;
+        if (mode === "close" && dx > -10) return;
+        decided = true;
+        // The drawer now owns this gesture. Whatever the card handler had
+        // started with the same finger is abandoned, unacted — this is the
+        // bug where reaching for the menu archived the note underneath.
+        releaseCard(); unlatchCard();
+        if (mode === "open") { el.drawer.classList.add("open"); el.drawerScrim.classList.add("open"); }
+      }
+      ev.preventDefault();
+      track(dx);
+    }, {passive: false});
+
+    document.addEventListener("touchend", function(ev){
+      if (!mode) return;
+      var m = mode; mode = null;
+      if (!decided) return;
+      var dx = ((ev.changedTouches[0] || {}).clientX || x0) - x0;
+      // Open on a decisive pull; close on any real leftward flick.
+      settle(m === "open" ? dx > W() * 0.4 : dx > -40);
+    }, {passive: true});
+
+    document.addEventListener("touchcancel", function(){
+      if (mode && decided) settle(isOpen() && mode !== "open");
+      mode = null;
+    }, {passive: true});
+  })();
+
+  // ---- pull down to sync ----
+  // Only from the very top, only when nothing is layered over the wall.
+  (function(){
+    if (!("ontouchstart" in window)) return;
+    var y0 = 0, pulling = false, dist = 0, THRESH = 72;
+    function busy(){ return ed || !el.scrim.hidden || usersOpen() || el.drawer.classList.contains("open"); }
+    document.addEventListener("touchstart", function(ev){
+      if (busy() || window.scrollY > 0 || ev.touches.length !== 1) { pulling = false; return; }
+      y0 = ev.touches[0].clientY; pulling = true; dist = 0;
+    }, {passive: true});
+    document.addEventListener("touchmove", function(ev){
+      if (!pulling) return;
+      dist = ev.touches[0].clientY - y0;
+      if (dist <= 0) { el.ptr.hidden = true; return; }
+      if (window.scrollY > 0) { pulling = false; el.ptr.hidden = true; return; }
+      el.ptr.hidden = false;
+      var d = Math.min(dist, 110);
+      el.ptr.style.transform = "translate(-50%," + (d - 48) + "px) rotate(" + (d * 3) + "deg)";
+      el.ptr.style.opacity = Math.min(1, d / THRESH);
+    }, {passive: true});
+    document.addEventListener("touchend", function(){
+      if (!pulling) return;
+      pulling = false;
+      if (dist > THRESH) {
+        el.ptr.classList.add("spin");
+        el.ptr.style.transform = "translate(-50%, 10px)";
+        syncNow().then(function(){
+          el.ptr.classList.remove("spin"); el.ptr.hidden = true;
+        });
+      } else { el.ptr.hidden = true; }
+    }, {passive: true});
+  })();
+
+  function columnCount(){
+    var w = el.wall.clientWidth || window.innerWidth || 1280;
+    if (w < 560) return 1;
+    if (w < 860) return 2;
+    if (w < 1180) return 3;
+    return 4;
+  }
+
+  // Deal round-robin: card i goes to column i % cols. That makes the FIRST ROW
+  // the newest cards reading left to right. CSS multicol filled each column
+  // top to bottom instead, so column 3 held 2016 notes next to 2026 ones.
+  function section(label, items, brass){
+    var s = node("div", "section");
+    s.appendChild(node("div", "eyebrow" + (brass ? " brass" : ""), label));
+    var w = node("div", "wall");
+    var cols = columnCount(), boxes = [];
+    for (var i = 0; i < cols; i++) { boxes.push(node("div", "col")); w.appendChild(boxes[i]); }
+    items.forEach(function(n, i){ boxes[i % cols].appendChild(swipeable(card(n), n)); });
+    s.appendChild(w);
+    return s;
+  }
+
+  // Build the wall a page at a time and grow it as you scroll. Rendering all
+  // 545 cards up front was ~12,600 DOM nodes, and every keystroke rebuilt the
+  // lot: 67 ms per character on a desktop over loopback, far worse on a phone.
+  var PAGE = 60, CLIP_LINES = 9, shownCount = PAGE, io = null;
+
+  // Queued notes render as real cards, marked, so a captured thought is
+  // visibly on the wall rather than sitting invisibly in a database.
+  function pendingCards(){
+    return PENDING.map(function(p){
+      return {
+        id: "pending:" + p.key, title: p.title, preview: p.body,
+        lines: p.body.split("\n").filter(function(l){ return l.trim(); }).length,
+        truncated: p.body.length > 700, cat: "inbox", author: meName(),
+        date: new Date(p.at).toISOString().slice(0, 10),
+        pinned: false, archived: false, pending: true
+      };
+    });
+  }
+
+  function render(){
+    LATCHED = null; SWIPING = null;       // the nodes these point at are about to go
+    var shown = pendingCards().concat(NOTES).filter(matches);
+    // With a query the server returns them RANKED; re-sorting by date here
+    // would throw that away and bury the best match.
+    if (!q) shown.sort(function(a, b){ return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+    var pinned = shown.filter(pinnedForMe).sort(function(a, b){
+      // My manual position wins; anything I never dragged keeps its date
+      // place behind the ones I did.
+      var ao = orderForMe(a), bo = orderForMe(b);
+      if (ao !== bo) return ao - bo;
+      return a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
+    });
+    var rest = shown.filter(function(n){ return !pinnedForMe(n); });
+
+    // Pinned always render in full -- there are a handful, and they are the
+    // ones you came for. The page budget applies to everything else.
+    var budget = Math.max(0, shownCount - pinned.length);
+    var slice = rest.slice(0, budget);
+    var more = rest.length - slice.length;
+
+    if (io) { io.disconnect(); io = null; }
+    el.wall.textContent = "";
+    if (!shown.length) {
+      var em = node("div", "empty");
+      em.appendChild(node("div", null,
+        LOADING ? "Loading…"
+          : view === "trash" ? "Nothing deleted. Notes you delete land here and can be put back."
+          : showArchive() ? "Nothing archived yet."
+          : "No notes match " + (q ? '"' + q + '"' : "that filter") + "."));
+      el.wall.appendChild(em);
+    } else {
+      if (pinned.length) el.wall.appendChild(section("Pinned", pinned, true));
+      if (slice.length) el.wall.appendChild(section(
+        onlyQueued ? "Waiting to sync"
+          : view === "trash" ? "Deleted — tap to put back"
+          : showArchive() ? "Archived"
+          : q ? shown.length + " matching"
+          : pinned.length ? "Everything else" : "All notes", slice, false));
+      if (more > 0) el.wall.appendChild(sentinel(more));
+    }
+    drawSel();
+    el.count.textContent = shown.length === NOTES.length
+      ? NOTES.length + " notes"
+      : shown.length + " / " + NOTES.length;
+    chips();
+    drawWho();
+  }
+
+  // Grows the wall when it scrolls into view; also a real button, so the page
+  // still works if IntersectionObserver is unavailable or never fires.
+  function sentinel(more){
+    var b = node("button", "more-btn", "Show " + Math.min(PAGE, more) + " more  (" + more + " left)");
+    b.addEventListener("click", function(){ shownCount += PAGE; render(); });
+    if (window.IntersectionObserver) {
+      io = new IntersectionObserver(function(es){
+        if (es.some(function(e){ return e.isIntersecting; })) { shownCount += PAGE; render(); }
+      }, {rootMargin: "600px"});
+      io.observe(b);
+    }
+    return b;
+  }
+
+  // ---- search suggestions: categories AND note titles ----
+  // Categories come from the full census so they stay suggestible while the
+  // typed text is narrowing the notes; titles come from whatever the server
+  // last matched.
+  function closeSug(){
+    el.sug.hidden = true;
+    el.q.setAttribute("aria-expanded", "false");
+  }
+
+  function suggest(){
+    var raw = el.q.value;
+    var t = raw.trim().toLowerCase();
+    el.sug.textContent = "";
+    if (!t) { closeSug(); return; }
+
+    // Once you have typed a prefix, you have said what KIND of thing you are
+    // after — so suggest only that kind, and narrow it on what follows the
+    // colon rather than on the whole query.
+    var last = raw.split(/\s+/).pop().toLowerCase();
+    var mode = last.indexOf("cat:") === 0 ? "cat"
+             : last.indexOf("by:") === 0 ? "by"
+             : last.indexOf("in:") === 0 ? "in" : "all";
+    var frag = mode === "cat" ? last.slice(4)
+             : mode === "by" ? last.slice(3)
+             : mode === "in" ? last.slice(3) : t;
+
+    var STATES = [["shared", "the shared space"], ["archived", "archived notes"],
+                  ["trash", "deleted notes"], ["queued", "waiting to sync"]];
+    var states = (mode === "in")
+      ? STATES.filter(function(p){ return !frag || p[0].indexOf(frag) >= 0; })
+      : (mode === "all" && "in:".indexOf(t) === 0) ? STATES : [];
+    var unfiled = NOTES.filter(function(n){ return n.filed === false; }).length;
+    var wantNone = (mode === "cat" && "none".indexOf(frag) === 0) ||
+                   (mode === "all" && t.length > 1 && "uncategorised".indexOf(t) === 0);
+    var cats = (mode === "by" || mode === "in") ? [] :
+      Object.keys(CATS).filter(function(c){ return !frag || c.indexOf(frag) >= 0; })
+        .sort(function(a, b){ return CATS[b] - CATS[a]; }).slice(0, mode === "cat" ? 8 : 5);
+    var people = (mode === "cat" || mode === "in") ? [] :
+      Object.keys(AUTHORS).filter(function(a){ return !frag || a.indexOf(frag) >= 0; })
+        .slice(0, mode === "by" ? 8 : 4);
+    var titles = (mode === "all")
+      ? NOTES.filter(function(n){ return n.title.toLowerCase().indexOf(t) >= 0; }).slice(0, 6)
+      : [];
+    if (!cats.length && !titles.length && !people.length && !states.length && !wantNone) { closeSug(); return; }
+
+    if (wantNone) {
+      el.sug.appendChild(node("div", "sug-head", "Unfiled"));
+      var nb = node("button");
+      nb.setAttribute("role", "option");
+      nb.appendChild(node("span", "tag", "cat:none"));
+      nb.appendChild(node("span", "t", "notes with no category"));
+      if (unfiled) nb.appendChild(node("span", "n", unfiled));
+      nb.addEventListener("click", function(){
+        q = "cat:none"; el.q.value = q + " "; closeSug(); el.q.focus();
+        refresh().catch(function(e){ fail("Couldn't filter", e); });
+      });
+      el.sug.appendChild(nb);
+    }
+
+    if (states.length) {
+      el.sug.appendChild(node("div", "sug-head", "Status — filters with in:"));
+      states.forEach(function(p){
+        var b = node("button");
+        b.setAttribute("role", "option");
+        b.appendChild(highlight(node("span", "tag", p[0])));
+        b.appendChild(node("span", "t", p[1]));
+        b.addEventListener("click", function(){
+          q = "in:" + p[0]; el.q.value = q + " "; closeSug(); el.q.focus();
+          refresh().catch(function(e){ fail("Couldn't filter", e); });
+        });
+        el.sug.appendChild(b);
+      });
+    }
+
+    if (cats.length) {
+      el.sug.appendChild(node("div", "sug-head", "Categories — filters with cat:"));
+      cats.forEach(function(c){
+        var b = node("button");
+        b.setAttribute("role", "option");
+        b.appendChild(highlight(node("span", "tag", c.replace(/-/g, " "))));
+        b.appendChild(node("span", "n", CATS[c]));
+        b.addEventListener("click", function(){ setCat(c); el.q.focus(); });
+        el.sug.appendChild(b);
+      });
+    }
+    if (people.length) {
+      el.sug.appendChild(node("div", "sug-head", "People — filters with by:"));
+      people.forEach(function(p){
+        var b = node("button");
+        b.setAttribute("role", "option");
+        b.appendChild(highlight(node("span", "tag", p)));
+        b.appendChild(node("span", "n", AUTHORS[p]));
+        b.addEventListener("click", function(){
+          q = "by:" + p; el.q.value = q + " "; closeSug(); el.q.focus();
+          refresh().catch(function(e){ fail("Couldn't filter", e); });
+        });
+        el.sug.appendChild(b);
+      });
+    }
+    if (titles.length) {
+      el.sug.appendChild(node("div", "sug-head", "Notes"));
+      titles.forEach(function(n){
+        var b = node("button");
+        b.setAttribute("role", "option");
+        b.appendChild(highlight(node("span", "t", n.title)));
+        b.appendChild(node("span", "n", n.date));
+        b.addEventListener("click", function(){ closeSug(); open(n.id); });
+        el.sug.appendChild(b);
+      });
+    }
+    el.sug.hidden = false;
+    el.q.setAttribute("aria-expanded", "true");
+  }
+
+  // ---- category chooser ----
+  // Lists what exists AND takes a new name, because a chooser that can only
+  // pick from a fixed list is how taxonomies ossify.
+  function closeCatPop(){
+    el.catpop.hidden = true;
+    el.edCatBtn.setAttribute("aria-expanded", "false");
+  }
+
+  // Owner and sharing are one menu because they are one question — "who is
+  // this note for" — and two adjacent person icons were two things to guess at.
+  function fillPeopleMenu(){
+    var now = (ed && ed.note && ed.note.author) || DEFAULT_AUTHOR;
+    var isShared = !!(ed && ed.note && ed.note.shared);
+    el.peopleMenu.textContent = "";
+    el.peopleMenu.appendChild(node("div", "head", "Owner"));
+    // People who exist, and nobody else. Typing a name here used to conjure
+    // one, which made sense when a cookie was the only notion of identity;
+    // now that sign-ins are recorded and named in Users, an owner invented
+    // at this prompt is one nothing can ever resolve to a real person.
+    var names = Object.keys(PEOPLE);
+    Object.keys(AUTHORS).forEach(function(a){
+      if (a !== "claude" && names.indexOf(a) < 0) names.push(a);
+    });
+    if (names.indexOf(DEFAULT_AUTHOR) < 0) names.unshift(DEFAULT_AUTHOR);
+    if (now !== "claude" && names.indexOf(now) < 0) names.push(now);
+    names.forEach(function(p){
+      var b = node("button", null, nameOf(p));
+      b.setAttribute("aria-pressed", p === now ? "true" : "false");
+      if (AUTHORS[p]) b.appendChild(node("span", "n", AUTHORS[p]));
+      b.addEventListener("click", function(){ closeMenus(null); setOwner(p); });
+      el.peopleMenu.appendChild(b);
+    });
+    el.peopleMenu.appendChild(node("div", "sep"));
+    var sh = node("button", null, (isShared ? "\u2713 " : "") + "Share note");
+    sh.setAttribute("aria-pressed", isShared ? "true" : "false");
+    sh.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      if (!ed || !ed.note) return;
+      var n = ed.note, was = !!n.shared;
+      commit().then(function(){
+        return persist(n, {shared:!was}, "Couldn't change sharing");
+      }).then(function(){
+        fillPeopleMenu(); syncBar();
+        toast(was ? "Removed from Ours" : "Added to Ours", function(){
+          persist(n, {shared:was}, "Couldn't undo that").then(syncBar).catch(function(){});
+        });
+      }).catch(function(){});
+    });
+    el.peopleMenu.appendChild(sh);
+  }
+
+  function setOwner(value){
+    if (!ed || !ed.note) return;
+    if (value === (ed.note.author || DEFAULT_AUTHOR)) return;
+    var n = ed.note;
+    persist(n, {author:value}, "Couldn't change who owns this").then(function(){
+      el.edWhoNow.textContent = nameOf(n.author || meName());
+      return refresh();
+    }).catch(function(){});
+  }
+
+  el.edPeopleBtn.addEventListener("click", function(ev){
+    ev.stopPropagation();
+    if (!ed || !ed.note) return;
+    toggleMenu(el.peopleMenu, el.edPeopleBtn, fillPeopleMenu);
+  });
+
+  function drawCatList(){
+    var typed = el.edCat.value.trim().toLowerCase();
+    var now = (ed && ed.note && ed.note.cat) || "";
+    el.catlistBox.textContent = "";
+
+    function row(label, value, count, isNew){
+      var b = node("button", isNew ? "new" : null);
+      b.setAttribute("aria-pressed", value === now ? "true" : "false");
+      b.appendChild(document.createTextNode(label));
+      if (count !== null) b.appendChild(node("span", "n", count));
+      b.addEventListener("click", function(){ setCategory(value); });
+      return b;
+    }
+
+    var keys = Object.keys(CATS).filter(function(c){ return !typed || c.indexOf(typed) >= 0; })
+      .sort(function(a, b){ return CATS[b] - CATS[a] || (a < b ? -1 : 1); });
+    var slug = typed.replace(/[^a-z0-9 _-]+/g, "").trim().replace(/\s+/g, "-");
+    if (slug && keys.indexOf(slug) < 0) el.catlistBox.appendChild(row("+ " + slug, slug, null, true));
+    keys.forEach(function(c){ el.catlistBox.appendChild(row(c.replace(/-/g, " "), c, CATS[c], false)); });
+    if (now) el.catlistBox.appendChild(row("— none —", "", null, false));
+    if (!el.catlistBox.children.length) el.catlistBox.appendChild(node("div", "sug-head", "no match — type to create"));
+  }
+
+  function setCategory(value){
+    if (!ed || !ed.note) return;
+    closeCatPop();
+    if (value === (ed.note.cat || "")) return;
+    var n = ed.note;
+    persist(n, {category:value}, "Couldn't set the category").then(function(){
+      el.edCatNow.textContent = n.cat || "none";
+      return refresh();                 // the census changed
+    }).catch(function(){});
+  }
+
+  // "Mine" needs to know who you are. Without a device identity everyone is
+  // the owner, which is exactly what the 545 notes predating this assume.
+  function meName(){ return ME || DEFAULT_AUTHOR; }
+
+  // "Ours" is a place, not a union. A note is in it because somebody put it
+  // there, exactly like archived — so your own feed is YOUR notes, plus the
+  // shared ones if you want them (you do, by default).
+  // Archived FOR ME. A shared note the other person put away is still on my wall, and
+  // vice versa — archive is "I am done with this", not a claim about anyone
+  // else. A note with no named archiver falls back to the old global flag,
+  // which is what the 764 imported from Keep carry.
+  // Pinned FOR ME, and MY position in the pinned row. A pin means "keep this
+  // at the top for me" — the other person pinning the grocery list should not pin it for
+  // one person, and one person's arrangement of their pinned row is not the other's.
+  function pinnedForMe(n){
+    if (n.pinned_by && n.pinned_by.length) return n.pinned_by.indexOf(meName()) >= 0;
+    return !!n.pinned;
+  }
+  function orderForMe(n){
+    var m = n.pin_order || {};
+    var v = m[meName()];
+    return (v === undefined || v === null) ? Infinity : v;
+  }
+
+  function archivedForMe(n){
+    if (n.archived_by && n.archived_by.length) return n.archived_by.indexOf(meName()) >= 0;
+    return !!n.archived;
+  }
+
+  function inScope(n, scope){
+    if (scope === "all") return true;              // literally everything
+    if (scope === "shared") return !!n.shared;
+    return n.author === meName() || (SHOW_SHARED && !!n.shared);   // "mine"
+  }
+
+  function drawWho(){
+    var opts = [["mine", "Mine"], ["shared", "Ours"], ["all", "All"]];
+    el.who.textContent = "";
+    opts.forEach(function(o){
+      var n = NOTES.filter(function(x){ return inScope(x, o[0]); }).length;
+      var b = node("button", null, o[1]);
+      b.setAttribute("aria-pressed", who === o[0] ? "true" : "false");
+      b.setAttribute("title", n + (n === 1 ? " note" : " notes"));
+      b.addEventListener("click", function(){
+        who = o[0];
+        // A by: token in the box would re-decide the scope on the next
+        // refresh, so picking one by hand drops it.
+        var rest = (q || "").split(/\s+/).filter(function(x){
+          return x && x.toLowerCase().indexOf("by:") !== 0;
+        }).join(" ");
+        if (rest !== q) { q = rest; el.q.value = q ? q + " " : ""; }
+        refresh().catch(function(e){ fail("Couldn't switch", e); });
+      });
+      el.who.appendChild(b);
+    });
+    drawMe();
+  }
+
+  // ---- who is on this device ----
+  // A cookie, not an account. The ask was "I don't want to set up auth or accounts
+  // really... There's no secrets here to protect." It replaces Keep's
+  // add-collaborator dance; the server reads the same cookie when stamping a
+  // new note, so attribution does not depend on the client asking nicely.
+  // One open menu at a time, and clicking the trigger again closes it —
+  // three popovers with three behaviours would be three things to learn.
+  var OPEN_MENU = null;
+  function closeMenus(except){
+    [[el.meMenu, el.meBtn], [el.peopleMenu, el.edPeopleBtn], [el.delMenu, el.edDel]].forEach(function(p){
+      if (p[0] && p[0] !== except) { p[0].hidden = true; if (p[1]) p[1].setAttribute("aria-expanded", "false"); }
+    });
+    if (typeof closeCatPop === "function") closeCatPop();
+    OPEN_MENU = except || null;
+  }
+  function toggleMenu(menu, trigger, fill){
+    var opening = menu.hidden;
+    closeMenus(opening ? menu : null);
+    if (!opening) { menu.hidden = true; trigger.setAttribute("aria-expanded", "false"); return false; }
+    fill();
+    menu.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    return true;
+  }
+  document.addEventListener("click", function(ev){
+    if (!OPEN_MENU) return;
+    if (OPEN_MENU.contains(ev.target)) return;
+    if (ev.target.closest && ev.target.closest(".anchor")) return;
+    closeMenus(null);
+  });
+  document.addEventListener("keydown", function(ev){
+    if (ev.key === "Escape" && OPEN_MENU) { closeMenus(null); }
+  });
+
+  // Who this browser's sign-in belongs to, from /api/whoami. Deliberately
+  // NOT from the listing: that response is cached, and identity in a cached
+  // body is what made the app forget who you were on every reload.
+  var WHOAMI = null;
+
+  // Who an unlabelled note belongs to. This MUST agree with the store's own
+  // default (NOTES_DEFAULT_AUTHOR) — it decides which notes read as archived
+  // and pinned for you, so a client-side literal that drifts from the server
+  // silently shows the wrong wall. Cached so an offline first paint, which
+  // happens before /api/whoami lands, still agrees.
+  var DEFAULT_AUTHOR = "owner";
+  try { DEFAULT_AUTHOR = localStorage.getItem("notes_default_author") || DEFAULT_AUTHOR; } catch (e) {}
+
+  // Choosing an account for this browser. With a proxy in front the sign-in
+  // is not ours to change, so this only matters without one.
+  function setMe(userId){
+    var v = (userId || "").trim().toLowerCase();
+    if (!v) return;
+    if (!(WHOAMI && WHOAMI.fixed)) writeCookieMe(v);
+    ME = v;
+    closeMenus(null);
+    loadWhoami().then(function(){ return refresh(); }).catch(function(){});
+  }
+
+  // ---- the sign-in overlay ----
+  // A browser that has never said who it is gets this, not a popover: on a
+  // fresh load it is the only question worth answering. Dismissable, because
+  // everything works unattributed and a notes app must not hold you hostage.
+  function signinOpen(){ return !el.signinScrim.hidden; }
+
+  // Adding someone from Users is the same form, but it must not claim this
+  // browser's sign-in or switch who you are afterwards.
+  var ADDING_OTHER = false;
+
+  var USERNAME_OK = /^[a-z][a-z0-9_-]{0,31}$/;
+  function checkUsername(){
+    var v = (el.suUser.value || "").trim().toLowerCase();
+    var taken = ((WHOAMI && WHOAMI.users) || []).some(function(u){ return u.username === v; });
+    var ok = USERNAME_OK.test(v) && !taken;
+    el.suUser.classList.toggle("bad", !!v && !ok);
+    el.suHint.classList.toggle("bad", !!v && !ok);
+    el.suHint.textContent = !v
+      ? "Lowercase letters, digits, - and _. This is what notes record, and it does not change."
+      : taken ? "\u201c" + v + "\u201d is taken \u2014 pick another."
+      : !USERNAME_OK.test(v) ? "Start with a letter; then letters, digits, - or _ only."
+      : "Notes will be recorded as \u201c" + v + "\u201d. This does not change later.";
+    el.suGo.disabled = !ok;
+    return ok;
+  }
+
+  function openSignIn(){
+    if (signinOpen()) return;
+    var d = WHOAMI || {};
+    var list = d.users || [];
+    var fixed = !!d.fixed, unknown = !!d.unknown;
+
+    el.signinTitle.textContent = ADDING_OTHER ? "Add someone"
+      : (list.length ? "Who are you?" : "Create an account");
+    el.signinSub.textContent = ADDING_OTHER
+      ? "They choose their own display name later. The username is what their notes are recorded under."
+      : unknown && d.sign_in
+        ? "You are signed in as " + d.sign_in + ", which no account claims yet. Pick yourself to attach it, or make a new account."
+        : list.length
+          ? "Pick an account for this device. Notes you write are recorded under it."
+          : "Nobody has an account here yet. Yours will be the first.";
+
+    el.signinList.textContent = "";
+    list.forEach(function(u){
+      var b = node("button");
+      b.type = "button";
+      b.appendChild(document.createTextNode(u.label));
+      if (u.label !== u.username) b.appendChild(node("span", "u", u.username));
+      b.addEventListener("click", function(){
+        // With a proxy in front, picking an account means "that sign-in is
+        // mine" \u2014 attach it, rather than claiming to be someone else.
+        if (fixed && unknown && d.sign_in) {
+          api("PUT", "/api/users", {username: u.username, add_emails: [d.sign_in]})
+            .then(function(){ closeSignIn(); setMe(u.username); })
+            .catch(function(e){ fail("Couldn't link that sign-in", e); });
+        } else { closeSignIn(); setMe(u.username); }
+      });
+      el.signinList.appendChild(b);
+    });
+    el.signinList.hidden = ADDING_OTHER || !list.length;
+    el.signinOr.hidden = el.signinList.hidden;   // it separates a list from a form
+
+    el.suUser.value = (ADDING_OTHER ? "" : d.suggest_username) || "";
+    el.suName.value = (ADDING_OTHER ? "" : d.suggest_name) || "";
+    el.suMail.value = (!ADDING_OTHER && d.sign_in && d.sign_in.indexOf("@") > 0) ? d.sign_in : "";
+    checkUsername();
+    hideDrawer();                 // modal: nothing it was opened from stays over it
+    el.signinScrim.hidden = false;
+    enterLayer("signin");
+    if (ADDING_OTHER || !list.length) el.suUser.focus();
+  }
+
+  function closeSignIn(fromHistory){
+    if (el.signinScrim.hidden) return;
+    ADDING_OTHER = false;
+    el.signinScrim.hidden = true;
+    if (fromHistory !== true) exitLayer();
+    // The Users sheet may still be open behind this one. It owned the layer
+    // before the dialog took it; give it back, or the next back press exits
+    // the app instead of closing the sheet.
+    if (usersOpen() && !LAYER) LAYER = "users";
+  }
+
+  el.suUser.addEventListener("input", checkUsername);
+  el.signinForm.addEventListener("submit", function(ev){
+    ev.preventDefault();
+    if (!checkUsername()) return;
+    var adding = ADDING_OTHER;
+    var body = {
+      username: (el.suUser.value || "").trim().toLowerCase(),
+      name: (el.suName.value || "").trim(),
+      claim_sign_in: !adding
+    };
+    var mail = (el.suMail.value || "").trim();
+    if (mail) body.emails = [mail];
+    el.suGo.disabled = true;
+    api("POST", "/api/users", body).then(function(d){
+      closeSignIn();
+      if (adding) { reloadUsers(); loadWhoami(); }
+      else setMe(d.user.username);
+    }).catch(function(e){
+      el.suGo.disabled = false;
+      if (/already taken/i.test((e && e.message) || "")) { checkUsername(); el.suUser.focus(); }
+      else fail("Couldn't create that account", e);
+    });
+  });
+  el.signinScrim.addEventListener("click", function(ev){
+    if (ev.target === el.signinScrim) closeSignIn();
+  });
+
+  function loadWhoami(){
+    return api("GET", "/api/whoami").then(function(d){
+      WHOAMI = d;
+      if (d.default_author) {
+        DEFAULT_AUTHOR = d.default_author;
+        try { localStorage.setItem("notes_default_author", DEFAULT_AUTHOR); } catch (e) {}
+      }
+      if (d.users) {
+        PEOPLE = {};
+        d.users.forEach(function(u){ PEOPLE[u.username] = u.label; });
+      }
+      ME = d.me || ME;
+      drawMe();
+      return d;
+    }).catch(function(){ return null; });
+  }
+
+  function drawMe(){
+    el.meBtn.textContent = ME ? ME.charAt(0).toUpperCase() : "?";
+    el.meBtn.className = "me-btn" + (ME ? "" : " unset");
+    el.meBtn.title = ME ? ("This device is " + ME + " — tap to change") : "Who's using this device?";
+  }
+
+  function fillMeMenu(){
+    var unknown = WHOAMI && WHOAMI.unknown;
+    var fixed = WHOAMI && WHOAMI.fixed;
+    var list = (WHOAMI && WHOAMI.users) || [];
+    el.meMenu.textContent = "";
+    el.meMenu.appendChild(node("div", "head",
+      unknown ? "Who are you?" : (fixed ? "Signed in as" : "This device is")));
+    list.forEach(function(u){
+      var b = node("button", null, u.label);
+      b.setAttribute("aria-pressed", ME === u.username ? "true" : "false");
+      b.addEventListener("click", function(){
+        // With a proxy, picking an existing account means "that sign-in is
+        // mine" — attach it, rather than pretending to be somebody else.
+        if (fixed && unknown && WHOAMI.sign_in) {
+          api("PUT", "/api/users", {username: u.username, add_emails: [WHOAMI.sign_in]})
+            .then(function(){ setMe(u.username); })
+            .catch(function(e){ fail("Couldn't link that sign-in", e); });
+        } else { setMe(u.username); }
+      });
+      el.meMenu.appendChild(b);
+    });
+    // No "create an account" here. This menu switches between the people who
+    // exist; making a new one is a different job and it lives in Users. The
+    // one case that needs it without Users — a space with no accounts at all
+    // — never reaches this menu, because the sign-in overlay takes that.
+    if (unknown && WHOAMI.sign_in && fixed) {
+      el.meMenu.appendChild(node("div", "head", "signed in as " + WHOAMI.sign_in));
+    }
+    el.meMenu.appendChild(node("div", "sep"));
+    var sh = node("button", null, (SHOW_SHARED ? "\u2713 " : "") + "show Ours in my feed");
+    sh.setAttribute("aria-pressed", SHOW_SHARED ? "true" : "false");
+    sh.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      SHOW_SHARED = !SHOW_SHARED;
+      try { localStorage.setItem("notes-show-shared", SHOW_SHARED ? "1" : "0"); } catch (e) {}
+      fillMeMenu(); render();
+    });
+    el.meMenu.appendChild(sh);
+    // The only door to Users on a desktop: the drawer that holds it on a
+    // phone is replaced by the chip row above 700px. Here rather than in that
+    // row because it is about people, not a way of filtering notes.
+    el.meMenu.appendChild(node("div", "sep"));
+    var mu = node("button", null, "Users");
+    mu.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      closeMenus(null);
+      openUsers();
+    });
+    el.meMenu.appendChild(mu);
+  }
+
+  function openWhoBar(){ toggleMenu(el.meMenu, el.meBtn, fillMeMenu); }
+  el.meBtn.addEventListener("click", function(ev){ ev.stopPropagation(); openWhoBar(); });
+
+  // The ONE way to filter by category is the cat: token in the search box.
+  // A chip writes that token rather than flipping hidden state, so the chip
+  // and the typed syntax are the same mechanism and clicking one teaches the
+  // other. There is no separate filter variable to drift out of sync.
+  function activeCat(){
+    var m = (q || "").toLowerCase().match(/(?:^|\s)cat:(\S+)/);
+    return m ? m[1] : "";
+  }
+
+  // Picking a category REPLACES the query. Someone searched "wood", clicked the
+  // suggested woodgas category and got "cat:woodgas wood" — the terms typed
+  // typed to FIND the category then narrowed it. Clicking a category means
+  // that category.
+  function setCat(value){
+    q = value ? "cat:" + value : "";
+    el.q.value = q ? q + " " : "";
+    closeSug();
+    refresh().catch(function(e){ fail("Couldn't filter", e); });
+  }
+
+  function chips(){
+    // Counts come from the server's full census, not from NOTES — once a
+    // cat: filter is applied NOTES holds only that category, and chips built
+    // from it would collapse to a single entry.
+    // CATS is now scoped to the current feed by the server, so a chip never
+    // promises notes the wall will not show.
+    var counts = CATS, active = activeCat();
+    var keys = Object.keys(counts).sort(function(a, b){
+      return counts[b] - counts[a] || (a < b ? -1 : 1);
+    });
+    // Measure the viewport, not el.chips: the chip row is content-sized, so
+    // its own clientWidth is whatever the LAST render put in it — a feedback
+    // loop that settles on two chips no matter how wide the window is.
+    var avail = (window.innerWidth || 900) - 300;   // brand + the Mine/Claude/Both control
+    var room = Math.max(2, Math.floor(avail / 150));
+    if (active && keys.indexOf(active) >= room) {       // keep the active one visible
+      keys.splice(room - 1, 0, keys.splice(keys.indexOf(active), 1)[0]);
+    }
+    keys = keys.slice(0, room);
+
+    var total = 0;
+    Object.keys(counts).forEach(function(k){ total += counts[k]; });
+
+    el.chips.textContent = "";
+    function mk(label, value, n){
+      var b = node("button", "chip");
+      b.setAttribute("aria-pressed", active === value ? "true" : "false");
+      b.appendChild(document.createTextNode(label));
+      b.appendChild(node("b", null, n));
+      b.addEventListener("click", function(){ setCat(active === value ? "" : value); });
+      return b;
+    }
+    el.chips.appendChild(mk("All", "", total));
+    keys.forEach(function(k){ el.chips.appendChild(mk(k.replace(/-/g, " "), k, counts[k])); });
+  }
+
+  // --- editor: the card, expanded ---
+  // Blocks are the editing unit. One row per line, uniform: Enter makes the next
+  // row, Backspace on an empty row removes it. Nothing here needs markdown typed.
+  var ed = null, saveT = null, focusIdx = -1, focusEnd = false;
+
+  function parseBlocks(body){
+    var out = [];
+    body.split("\n").forEach(function(line){
+      var m;
+      if (/^\s*$/.test(line)) return;
+      if ((m = line.match(/^#{1,4}\s+(.*)$/))) out.push({t:"sec", x:m[1]});
+      else if ((m = line.match(/^\s*[-*]\s+\[([ xX])\]\s*(.*)$/))) out.push({t:"item", ck:true, done:m[1].toLowerCase() === "x", x:m[2]});
+      else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) out.push({t:"item", ck:false, done:false, x:m[1]});
+      else if ((m = line.match(/^\*(?!\*)(.+)\*\s*$/))) out.push({t:"note", x:m[1]});
+      else out.push({t:"text", x:line});
+    });
+    if (!out.length) out.push({t:"text", x:""});
+    return out;
+  }
+
+  function serialize(blocks){
+    var lines = [];
+    blocks.forEach(function(b, i){
+      if (b.t === "sec") { if (i) lines.push(""); lines.push("## " + b.x); }
+      else if (b.t === "item" && b.ck) lines.push("- [" + (b.done ? "x" : " ") + "] " + b.x);
+      else if (b.t === "item") lines.push("- " + b.x);
+      else if (b.t === "note") lines.push("*" + b.x + "*");
+      else lines.push(b.x);
+    });
+    return lines.join("\n");
+  }
+
+  function bodyNow(){ return ed.raw !== null ? ed.raw : serialize(ed.blocks); }
+  function anyCk(){ return ed.blocks.some(function(b){ return b.t === "item" && b.ck; }); }
+
+  // a section run is the stretch of rows between two headings
+  function runOf(i){
+    var s = i, e = i, B = ed.blocks;
+    while (s > 0 && B[s - 1].t !== "sec") s--;
+    while (e < B.length - 1 && B[e + 1].t !== "sec") e++;
+    return [s, e];
+  }
+  function sink(i){                       // checked -> bottom of its own section
+    var b = ed.blocks.splice(i, 1)[0], r = runOf(i);
+    ed.blocks.splice(r[1], 0, b);
+  }
+  function raise(i){                      // unchecked -> above the checked ones
+    var B = ed.blocks, b = B.splice(i, 1)[0], r = runOf(i), at = r[1] + 1;
+    for (var k = r[0]; k <= r[1]; k++) { if (B[k] && B[k].t === "item" && B[k].done) { at = k; break; } }
+    B.splice(at, 0, b);
+  }
+
+  function touch(){
+    clearTimeout(saveT);
+    el.edSaved.textContent = "";
+    saveT = setTimeout(commit, 350);
+  }
+  function commit(){
+    // Never write while the real body is still in flight: bodyNow() would be
+    // the empty placeholder and would overwrite the note with nothing.
+    if (!ed || ed.busy || ed.loading) return Promise.resolve();
+    var t = el.edTitle.value.trim(), b = bodyNow();
+    if (ed.note && t === ed.note.title && b === ed.base) return Promise.resolve();
+    if (!ed.id && !t && !b.trim()) return Promise.resolve();   // nothing typed yet
+    ed.busy = true;
+    var p = ed.id
+      ? api("PUT", "/api/notes", {id:ed.id, title:t || "Untitled", body:b})
+      : api("POST", "/api/notes", {title:t || "Untitled", body:b});
+    var mine = ed;
+    return p.then(function(saved){
+      // A new note gets its real path from the server; adopt it so the next
+      // keystroke updates rather than creating a second file.
+      if (mine === ed) {
+        ed.id = saved.id; ed.note = saved;
+        el.edPath.textContent = saved.id + (saved.date ? "  ·  edited " + saved.date : "");
+      }
+      var ex = null;
+      for (var i = 0; i < NOTES.length; i++) if (NOTES[i].id === saved.id) ex = NOTES[i];
+      if (ex) { for (var k in saved) ex[k] = saved[k]; } else { NOTES.push(saved); }
+      el.edSaved.textContent = "Saved";
+    }).catch(function(e){
+      // A NEW note with nowhere to go is queued rather than lost. An edit is
+      // not: replaying it later could overwrite someone else's change.
+      if (!mine.id && !ONLINE) {
+        return enqueue(t || "Untitled", b, mine.queueKey).then(function(k){
+          mine.queueKey = k;
+          if (mine === ed) el.edSaved.textContent = "Queued — saves when online";
+          render();
+        });
+      }
+      el.edSaved.textContent = "Not saved";
+      fail("Couldn't save that note", e);
+    }).then(function(){ if (mine === ed) ed.busy = false; });
+  }
+
+  function mkRow(b, i){
+    var row = node("div", "row" + (b.t === "sec" ? " sec" : "") + (b.t === "note" ? " note" : "") + (b.done ? " done" : ""));
+
+    if (b.t === "item" && b.ck) {
+      var cb = node("button", "box" + (b.done ? " on" : ""));
+      cb.setAttribute("aria-label", (b.done ? "Uncheck " : "Check ") + b.x);
+      cb.innerHTML = b.done ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="m5 13 4.5 4.5L19 7"/></svg>' : "";
+      cb.addEventListener("click", function(){
+        b.done = !b.done;
+        if (b.done) sink(i); else raise(i);
+        focusIdx = -1; draw(); touch();
+      });
+      row.appendChild(cb);
+    } else if (b.t === "item") {
+      row.appendChild(node("div", "grip", "•"));
+    } else {
+      row.appendChild(node("div", "grip", ""));
+    }
+
+    var inp = document.createElement("textarea");
+    inp.className = "it"; inp.rows = 1; inp.value = b.x; inp.spellcheck = false;
+    function grow(){ inp.style.height = "auto"; inp.style.height = inp.scrollHeight + "px"; }
+    inp._grow = grow;
+    inp.setAttribute("aria-label", b.t === "sec" ? "Section name" : "Note line");
+    inp.addEventListener("input", function(){ b.x = inp.value; grow(); touch(); });
+    inp.addEventListener("keydown", function(ev){
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        var nb = b.t === "sec" ? {t:"text", x:""} : {t:b.t, ck:b.ck, done:false, x:""};
+        ed.blocks.splice(i + 1, 0, nb);
+        focusIdx = i + 1; focusEnd = false; draw(); touch();
+      } else if (ev.key === "Backspace" && inp.value === "" && ed.blocks.length > 1) {
+        ev.preventDefault();
+        ed.blocks.splice(i, 1);
+        focusIdx = Math.max(0, i - 1); focusEnd = true; draw(); touch();
+      } else if (ev.key === "ArrowUp" && i > 0) {
+        ev.preventDefault(); focusIdx = i - 1; focusEnd = true; focusRow();
+      } else if (ev.key === "ArrowDown" && i < ed.blocks.length - 1) {
+        ev.preventDefault(); focusIdx = i + 1; focusEnd = true; focusRow();
+      }
+    });
+    row.appendChild(inp);
+
+    var x = node("button", "x");
+    x.setAttribute("aria-label", "Delete line");
+    x.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    x.addEventListener("click", function(){
+      ed.blocks.splice(i, 1);
+      if (!ed.blocks.length) ed.blocks.push({t:"text", x:""});
+      focusIdx = -1; draw(); touch();
+    });
+    row.appendChild(x);
+    return row;
+  }
+
+  function focusRow(){
+    if (focusIdx < 0) return;
+    var ins = el.edScroll.querySelectorAll(".it");
+    var t = ins[Math.min(focusIdx, ins.length - 1)];
+    if (!t) return;
+    t.focus();
+    if (focusEnd) t.setSelectionRange(t.value.length, t.value.length);
+  }
+
+  // one "+" per section, so an item lands under Walmart instead of at the bottom
+  function mkAdd(at){
+    while (at > 0 && ed.blocks[at - 1] && ed.blocks[at - 1].t === "item" && ed.blocks[at - 1].done) at--;
+    var add = node("button", "add");
+    add.appendChild(node("span", "grip", "+"));
+    add.appendChild(document.createTextNode(anyCk() ? "List item" : "Line"));
+    add.addEventListener("click", function(){
+      ed.blocks.splice(at, 0, anyCk() ? {t:"item", ck:true, done:false, x:""} : {t:"text", x:""});
+      focusIdx = at; focusEnd = false; draw(); touch();
+    });
+    return add;
+  }
+
+  function draw(){
+    el.edScroll.textContent = "";
+    if (ed.raw !== null) {
+      var ta = document.createElement("textarea");
+      ta.className = "ed-raw"; ta.value = ed.raw; ta.spellcheck = false;
+      ta.setAttribute("aria-label", "Markdown source");
+      ta.addEventListener("input", function(){ ed.raw = ta.value; touch(); });
+      el.edScroll.appendChild(ta);
+      return;
+    }
+    ed.blocks.forEach(function(b, i){
+      el.edScroll.appendChild(mkRow(b, i));
+      var nx = ed.blocks[i + 1];
+      if (!nx || nx.t === "sec") el.edScroll.appendChild(mkAdd(i + 1));
+    });
+    var ta = el.edScroll.querySelectorAll(".it");
+    for (var k = 0; k < ta.length; k++) { if (ta[k]._grow) ta[k]._grow(); }
+    focusRow(); focusIdx = -1; focusEnd = false;
+  }
+
+  function syncBar(){
+    el.edCheck.setAttribute("aria-pressed", ed.raw === null && anyCk() ? "true" : "false");
+    el.edRaw.setAttribute("aria-pressed", ed.raw !== null ? "true" : "false");
+    el.edPin.setAttribute("aria-pressed", ed.note && ed.note.pinned ? "true" : "false");
+    el.edCheck.disabled = ed.raw !== null;
+    // The archive button shows the note's STATE, not just an action: lit when
+    // the note is archived, and the tooltip then offers the way out.
+    var sh = !!(ed.note && ed.note.shared);
+    el.edPeopleBtn.setAttribute("aria-pressed", sh ? "true" : "false");
+    el.edPeopleBtn.setAttribute("title", sh ? "Shared \u2014 owner and sharing" : "Owner and sharing");
+    el.edPeopleBtn.disabled = !ed.note;
+    var arch = !!(ed.note && archivedForMe(ed.note));
+    el.edArch.setAttribute("aria-pressed", arch ? "true" : "false");
+    el.edArch.setAttribute("aria-label", arch ? "Unarchive note" : "Archive note");
+    el.edArch.setAttribute("title", arch ? "Unarchive" : "Archive");
+  }
+
+  function open(id){
+    var n = null;
+    for (var i = 0; i < NOTES.length; i++) if (NOTES[i].id === id) n = NOTES[i];
+    // The wall holds previews, so the editor fetches the real body. Until it
+    // lands the note is NOT editable -- typing into a preview and saving it
+    // would truncate the file.
+    ed = {id:id || null, note:n, base:"", busy:false, loading:!!n, blocks:parseBlocks(""), raw:null};
+    el.edTitle.value = n ? n.title : "";
+    el.edPath.textContent = (n ? n.id : "Inbox/" + new Date().toISOString().slice(0, 10) + "-new-note.md")
+      + (n && n.date ? "  ·  edited " + n.date : "");
+    el.edSaved.textContent = "";   // this one is save STATUS; the date is on the path line
+    el.edCat.value = "";
+    el.edCatNow.textContent = n ? (n.cat || "none") : "";
+    el.edCatBtn.disabled = !n;       // a new note gets its category on first save
+    el.edWhoNow.textContent = n ? nameOf(n.author || meName()) : "";
+    closeMenus(null);
+    el.scrim.hidden = false;
+    enterLayer("note");                 // so the system back gesture closes THIS
+    syncBar();
+    if (!n) { draw(); el.edTitle.focus(); return; }
+
+    el.edScroll.textContent = "";
+    el.edScroll.appendChild(node("div", "empty", "Loading…"));
+    var mine = ed;
+    fullBody(id).then(function(body){
+      if (mine !== ed) return;              // closed or switched while loading
+      ed.base = body; ed.loading = false;
+      ed.blocks = parseBlocks(body);
+      draw();
+    }).catch(function(e){
+      if (mine !== ed) return;
+      el.edScroll.textContent = "";
+      el.edScroll.appendChild(node("div", "empty", "Couldn't load this note — " + ((e && e.message) || "unknown error")));
+      fail("Couldn't open that note", e);
+    });
+  }
+  function close(fromHistory){
+    if (!ed) return;
+    clearTimeout(saveT);
+    commit().then(render);
+    ed = null; el.scrim.hidden = true;
+    if (fromHistory !== true) exitLayer();   // popstate already consumed the entry
+    render();
+  }
+
+  el.edTitle.addEventListener("input", touch);
+
+  // Category is its own write — it is frontmatter, not body text, and it
+  // should land even if nothing else in the note changed.
+  el.edCatBtn.addEventListener("click", function(ev){
+    ev.stopPropagation();
+    if (!ed || !ed.note) return;
+    var opening = el.catpop.hidden;
+    el.catpop.hidden = !opening;
+    el.edCatBtn.setAttribute("aria-expanded", opening ? "true" : "false");
+    if (opening) { el.edCat.value = ""; drawCatList(); el.edCat.focus(); }
+  });
+  el.edCat.addEventListener("input", drawCatList);
+  el.edCat.addEventListener("keydown", function(ev){
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      var first = el.catlistBox.querySelector("button");
+      if (first) first.click();
+    } else if (ev.key === "Escape") {
+      ev.preventDefault(); ev.stopPropagation(); closeCatPop();
+    }
+  });
+  document.addEventListener("click", function(ev){
+    if (!el.catpop.hidden && !el.catpop.contains(ev.target) && ev.target !== el.edCatBtn) closeCatPop();
+  });
+  el.edClose.addEventListener("click", function(){ close(); });
+  el.scrim.addEventListener("click", function(ev){ if (ev.target === el.scrim) close(); });
+  document.addEventListener("keydown", function(ev){ if (ev.key === "Escape" && ed) close(); });
+
+  el.edPin.addEventListener("click", function(){
+    commit().then(function(){
+      if (!ed || !ed.note) return;
+      return persist(ed.note, {pinned:!ed.note.pinned}, "Couldn't pin that").then(syncBar);
+    }).catch(function(){});
+  });
+
+  // Keep's "Show checkboxes", on a corpus that is mostly bare lines
+  el.edCheck.addEventListener("click", function(){
+    var on = anyCk();
+    ed.blocks.forEach(function(b){
+      if (b.t === "sec") return;
+      if (on) { b.t = "text"; b.ck = false; b.done = false; }
+      else { b.t = "item"; b.ck = true; b.done = !!b.done; }
+    });
+    focusIdx = -1; draw(); syncBar(); touch();
+  });
+
+  el.edRaw.addEventListener("click", function(){
+    if (ed.raw === null) ed.raw = serialize(ed.blocks);
+    else { ed.blocks = parseBlocks(ed.raw); ed.raw = null; }
+    focusIdx = -1; draw(); syncBar(); touch();
+  });
+
+  el.edArch.addEventListener("click", function(){
+    commit().then(function(){
+      if (!ed || !ed.note) { close(); return; }
+      var n = ed.note, was = archivedForMe(n);
+      close();
+      return persist(n, {archived:!was}, "Couldn't archive that").then(function(){
+        // Re-read rather than trust the local mutation: the archive view is a
+        // different slice of the same list, and a stale entry there shows up
+        // as "it isn't in the archive until I refresh".
+        return refresh();
+      }).then(function(){
+        toast(was ? "Unarchived" : "Archived", function(){
+          persist(n, {archived:was}, "Couldn't undo that").then(refresh).catch(function(){});
+        });
+      });
+    }).catch(function(){});
+  });
+
+  // Delete MOVES the note to Trash/ on the box, so undo restores a real file
+  // and a mis-tap is recoverable from the space even after the toast is gone.
+  // Confirm, then undo, then the trash view — three chances, because the one
+  // thing a note-taking app must never do is lose a note to a mis-tap.
+  function fillDelMenu(){
+    el.delMenu.textContent = "";
+    el.delMenu.appendChild(node("div", "head", "Delete this note?"));
+    var yes = node("button", "danger", "Delete");
+    yes.addEventListener("click", function(ev){ ev.stopPropagation(); closeMenus(null); doDelete(); });
+    el.delMenu.appendChild(yes);
+    var no = node("button", null, "Cancel");
+    no.addEventListener("click", function(ev){ ev.stopPropagation(); closeMenus(null); });
+    el.delMenu.appendChild(no);
+    el.delMenu.appendChild(node("div", "sep"));
+    el.delMenu.appendChild(node("div", "head", "It moves to Trash"));
+  }
+
+  function doDelete(){
+    commit().then(function(){
+      if (!ed || !ed.id) { close(); return; }
+      var id = ed.id;
+      close();
+      return api("POST", "/api/notes/trash", {id:id}).then(function(d){
+        return refresh().then(function(){
+          toast("Deleted — it is in Trash", function(){
+            api("POST", "/api/notes/restore", {id:d.trashed})
+              .then(refresh)
+              .catch(function(e){ fail("Couldn't restore that note", e); });
+          });
+        });
+      });
+    }).catch(function(e){ fail("Couldn't delete that note", e); });
+  }
+
+  function restoreNote(n){
+    api("POST", "/api/notes/restore", {id:n.id}).then(function(d){
+      return refresh().then(function(){ toast("Put back in " + d.restored.split("/")[0] + "/", null); });
+    }).catch(function(e){ fail("Couldn't put that note back", e); });
+  }
+
+  el.edDel.addEventListener("click", function(ev){
+    ev.stopPropagation();
+    if (!ed) return;
+    toggleMenu(el.delMenu, el.edDel, fillDelMenu);
+  });
+
+  var toastT = null;
+  function toast(msg, undo){
+    clearTimeout(toastT);
+    el.toastMsg.textContent = msg;
+    el.toast.hidden = false;
+    // No undo button on a toast with nothing to undo — "Synced · Undo" offered
+    // to reverse something that never happened.
+    el.toastUndo.hidden = !undo;
+    el.toastUndo.onclick = undo ? function(){ undo(); el.toast.hidden = true; } : null;
+    toastT = setTimeout(function(){ el.toast.hidden = true; }, undo ? 6000 : 2600);
+  }
+
+  el.newBtn.addEventListener("click", function(){ open(null); });
+  function setView(v){
+    var now = (view === v);
+    q = now ? "" : "in:" + (v === "archive" ? "archived" : v);
+    el.q.value = q ? q + " " : "";
+    shownCount = PAGE;
+    refresh().catch(function(e){ fail("Couldn't load that view", e); });
+  }
+  el.archBtn.addEventListener("click", function(){ setView("archive"); });
+  el.trashBtn.addEventListener("click", function(){ setView("trash"); });
+  el.q.addEventListener("input", function(){ q = el.q.value.trim(); suggest(); search(); });
+  el.q.addEventListener("focus", suggest);
+  el.q.addEventListener("keydown", function(ev){
+    if (ev.key === "Escape") { closeSug(); el.q.blur(); }
+    else if (ev.key === "ArrowDown") {
+      var first = el.sug.querySelector("button");
+      if (first) { ev.preventDefault(); first.focus(); }
+    }
+  });
+  document.addEventListener("click", function(ev){
+    if (!el.sug.hidden && !el.sug.contains(ev.target) && ev.target !== el.q) closeSug();
+  });
+
+  // ---- people: a name to show, and a face to go with it ----
+  // PEOPLE maps a person slug to their display name. A slug is what a note
+  // records (archived_by: ana); the name is only ever a label, so anything
+  // missing falls back to the slug rather than to blank.
+  var PEOPLE = {};
+  function nameOf(slug){
+    if (!slug) return "";
+    return (PEOPLE[slug] || "").trim() || slug;
+  }
+  // ---- the drawer: every filter, on a screen with no room for a chip row ----
+  function icon(d){
+    var w = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    w.setAttribute("width","16"); w.setAttribute("height","16");
+    w.setAttribute("viewBox","0 0 24 24"); w.setAttribute("fill","none");
+    w.setAttribute("stroke","currentColor"); w.setAttribute("stroke-width","2");
+    w.setAttribute("stroke-linecap","round"); w.setAttribute("stroke-linejoin","round");
+    var p = document.createElementNS("http://www.w3.org/2000/svg","path");
+    p.setAttribute("d", d); w.appendChild(p); return w;
+  }
+  var ICONS = {
+    notes: "M4 4h16v16H4zM8 9h8M8 13h8M8 17h5",
+    archive: "M3 7h18v3H3zM5 10v10h14V10M9.5 14h5",
+    trash: "M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13",
+    mine: "M12 8a3.4 3.4 0 1 0 0-.1zM5.5 20a6.5 6.5 0 0 1 13 0",
+    ours: "M9 8a3.2 3.2 0 1 0 0-.1zM3 19a6 6 0 0 1 12 0M18 7v6M21 10h-6",
+    all: "M4 6h16M4 12h16M4 18h16",
+    tag: "M3 11V5a2 2 0 0 1 2-2h6l10 10-8 8z",
+    users: "M9 8.5a3.2 3.2 0 1 0 0-.1zM2.5 19.5a6.5 6.5 0 0 1 13 0M16 5.3a3.2 3.2 0 0 1 0 6.4M18 19.5a6.4 6.4 0 0 0-2-4.6"
+  };
+
+  function drawerRow(label, ico, pressed, count, onClick, ownsLayer){
+    var b = node("button");
+    b.setAttribute("aria-pressed", pressed ? "true" : "false");
+    b.appendChild(icon(ICONS[ico] || ICONS.tag));
+    b.appendChild(document.createTextNode(label));
+    if (count !== undefined && count !== null) b.appendChild(node("span", "n", count));
+    b.addEventListener("click", function(){
+      // A row that opens its own layer INHERITS the drawer's history entry.
+      // Popping it here and pushing a new one in the action does not work:
+      // history.back() is asynchronous, so its popstate lands after the new
+      // layer is in place and dismisses it the instant it opens.
+      if (ownsLayer) hideDrawer(); else closeDrawer();
+      onClick();
+    });
+    return b;
+  }
+
+  function fillDrawer(){
+    el.drawer.textContent = "";
+    el.drawer.appendChild(node("h2", null, "Views"));
+    el.drawer.appendChild(drawerRow("Notes", "notes", view === "wall", null, function(){ setView(view); }));
+    el.drawer.appendChild(drawerRow("Archive", "archive", view === "archive", null, function(){ if (view !== "archive") setView("archive"); }));
+    el.drawer.appendChild(drawerRow("Trash", "trash", view === "trash", null, function(){ if (view !== "trash") setView("trash"); }));
+    el.drawer.appendChild(node("div", "sep"));
+    el.drawer.appendChild(node("h2", null, "Whose"));
+    [["mine","Mine","mine"],["shared","Ours","ours"],["all","All","all"]].forEach(function(o){
+      var n = NOTES.filter(function(x){ return inScope(x, o[0]); }).length;
+      el.drawer.appendChild(drawerRow(o[1], o[2], who === o[0], n, function(){
+        who = o[0];
+        var rest = (q || "").split(/\s+/).filter(function(x){ return x && x.toLowerCase().indexOf("by:") !== 0; }).join(" ");
+        if (rest !== q) { q = rest; el.q.value = q ? q + " " : ""; }
+        refresh().catch(function(e){ fail("Couldn't switch", e); });
+      }));
+    });
+    el.drawer.appendChild(node("div", "sep"));
+    el.drawer.appendChild(node("h2", null, "People"));
+    el.drawer.appendChild(drawerRow("Users", "users", usersOpen(), null, openUsers, true));
+    el.drawer.appendChild(node("div", "sep"));
+    el.drawer.appendChild(node("h2", null, "Categories"));
+    var active = activeCat();
+    var keys = Object.keys(CATS).sort(function(a, b){ return CATS[b] - CATS[a] || (a < b ? -1 : 1); });
+    el.drawer.appendChild(drawerRow("All topics", "tag", !active, null, function(){ setCat(""); }));
+    keys.forEach(function(k){
+      el.drawer.appendChild(drawerRow(k.replace(/-/g, " "), "tag", active === k, CATS[k], function(){ setCat(k); }));
+    });
+  }
+
+  // ---- Users: accounts, not identities ----
+  // A view over Notes/People.md, a markdown table in the space. The path is
+  // shown at the bottom on purpose: pretending this is app state would
+  // misrepresent the only promise the project makes.
+  var USERS = null;
+
+  function usersOpen(){ return !el.usersScrim.hidden; }
+
+  function openUsers(){
+    el.usersScrim.hidden = false;
+    if (LAYER === "drawer") LAYER = "users";   // inherited from the drawer row
+    else enterLayer("users");
+    el.usersBody.textContent = "";
+    el.usersBody.appendChild(node("div", "empty", "Loading…"));
+    reloadUsers();
+  }
+
+  function reloadUsers(){
+    return api("GET", "/api/users").then(function(d){
+      USERS = d;
+      PEOPLE = {};
+      d.users.forEach(function(u){ PEOPLE[u.username] = u.label; });
+      drawUsers();
+    }).catch(function(e){
+      el.usersBody.textContent = "";
+      el.usersBody.appendChild(node("div", "empty",
+        "Couldn't load the user list — " + ((e && e.message) || "unknown error")));
+    });
+  }
+
+  function closeUsers(fromHistory){
+    if (el.usersScrim.hidden) return;
+    el.usersScrim.hidden = true;
+    if (fromHistory !== true) exitLayer();
+    render();
+  }
+
+  function saveUser(body){
+    return api("PUT", "/api/users", body)
+      .then(reloadUsers)
+      .catch(function(e){ fail("Couldn't save that", e); });
+  }
+
+  function drawUsers(){
+    var d = USERS;
+    el.usersBody.textContent = "";
+    el.usersPath.textContent = d.file + "  ·  a markdown table you can also edit by hand";
+
+    var intro = node("div", "u-intro");
+    intro.appendChild(document.createTextNode(
+      "Each person has an account. The display name is a label — change it "
+      + "freely, and two people may share one. The username beside it is what "
+      + "notes record, so it is set once and stays. Emails let a sign-in that "
+      + "was authenticated elsewhere be recognised as that account."));
+    el.usersBody.appendChild(intro);
+
+    d.users.forEach(function(u){ el.usersBody.appendChild(userCard(u, d)); });
+
+    var add = node("button", "u-add", "Add someone");
+    add.addEventListener("click", function(){
+      // The same form as signing in, so there is one place that explains what
+      // a username is and one place that checks it is free.
+      WHOAMI = WHOAMI || {};
+      WHOAMI.users = d.users;
+      WHOAMI.suggest_username = "";
+      WHOAMI.suggest_name = "";
+      ADDING_OTHER = true;
+      openSignIn();
+    });
+    el.usersBody.appendChild(add);
+  }
+
+  function userCard(u, d){
+    var box = node("div", "u-card");
+
+    var row = node("div", "u-person");
+    var inp = node("input", "u-name");
+    inp.value = u.name || "";
+    inp.placeholder = u.username;
+    inp.setAttribute("aria-label", "Display name for " + u.username);
+    inp.addEventListener("change", function(){ saveUser({username: u.username, name: inp.value}); });
+    row.appendChild(inp);
+    row.appendChild(node("span", "u-slug", u.username + (u.username === d.me ? " · you" : "")));
+    box.appendChild(row);
+
+    var mails = node("div", "u-ids");
+    u.emails.forEach(function(e){
+      var line = node("div", "u-id");
+      var head = node("span", "idline");
+      head.appendChild(node("span", "src", "email"));
+      head.appendChild(node("span", "who", e));
+      line.appendChild(head);
+      var off = node("button", "u-detach", "remove");
+      off.setAttribute("title", "Stop recognising " + e + " as " + u.username);
+      off.addEventListener("click", function(){
+        saveUser({username: u.username, remove_emails: [e]});
+      });
+      line.appendChild(off);
+      mails.appendChild(line);
+    });
+    var addMail = node("button", "u-addmail",
+      u.emails.length ? "add another email" : "add an email for sign-in");
+    addMail.addEventListener("click", function(){
+      var e = window.prompt("Email that signs in as " + (u.name || u.username) + ":", "");
+      if (e) saveUser({username: u.username, add_emails: [e]});
+    });
+    mails.appendChild(addMail);
+    box.appendChild(mails);
+    return box;
+  }
+
+  el.usersClose.addEventListener("click", function(){ closeUsers(); });
+  el.usersScrim.addEventListener("click", function(ev){
+    if (ev.target === el.usersScrim) closeUsers();
+  });
+
+  function openDrawer(){
+    fillDrawer();
+    el.drawer.classList.add("open");
+    el.drawerScrim.classList.add("open");
+    el.menuBtn.setAttribute("aria-expanded", "true");
+    // The drawer covers the wall, so back must close it rather than leave the
+    // app — it was the one layer that never pushed a history entry.
+    enterLayer("drawer");
+  }
+  // Visual only: the caller keeps the drawer's history entry. Used when the
+  // thing being opened is itself a layer — see openUsers.
+  function hideDrawer(){
+    el.drawer.classList.remove("open");
+    el.drawerScrim.classList.remove("open");
+    el.drawer.style.transform = "";
+    el.menuBtn.setAttribute("aria-expanded", "false");
+  }
+  function closeDrawer(fromHistory){
+    hideDrawer();
+    if (fromHistory !== true) exitLayer();
+  }
+  el.menuBtn.addEventListener("click", function(){
+    if (el.drawer.classList.contains("open")) closeDrawer(); else openDrawer();
+  });
+  el.drawerScrim.addEventListener("click", function(){ closeDrawer(); });
+  document.addEventListener("keydown", function(ev){
+    if (ev.key === "Escape" && el.drawer.classList.contains("open")) closeDrawer();
+  });
+
+  // ---- keyboard ----
+  // Ctrl/Cmd-F, -N and -S are taken over deliberately: the browser's own Find
+  // only searches the ~60 cards currently in the DOM, which on a 586-note wall
+  // is a worse answer than this page's own search, delivered confidently.
+  document.addEventListener("keydown", function(ev){
+    var mod = ev.ctrlKey || ev.metaKey;
+    if (!mod || ev.altKey) return;
+    var k = (ev.key || "").toLowerCase();
+    if (k === "f") {
+      ev.preventDefault();
+      el.q.focus(); el.q.select(); suggest();
+    } else if (k === "n") {
+      ev.preventDefault();
+      if (!ed) open(null);
+    } else if (k === "s") {
+      ev.preventDefault();
+      syncNow();
+    }
+  });
+
+  // Ctrl-S means "flush whatever is pending and re-read", which is the honest
+  // meaning of save here: edits already autosave, so the useful work is making
+  // sure nothing is in flight and the wall matches the disk.
+  function syncNow(){
+    var p = ed ? commit() : Promise.resolve();
+    return p.then(refresh).then(function(){
+      setNet(true);
+      toast(ed ? "Saved" : "Synced", null);
+    }).catch(function(e){ fail("Sync failed", e); });
+  }
+
+  // ---- service worker ----
+  // Unregister anything that is not ours FIRST. This origin ran SilverBullet's
+  // PWA until 2026-11-09 and its worker still owns browsers that opened it —
+  // serving a dead shell on every normal refresh. (The server also replies at
+  // its old /service_worker.js with a self-destructing worker, because a
+  // poisoned browser never gets far enough to run this.)
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function (rs) {
+      return Promise.all(rs.map(function (r) {
+        var src = (r.active && r.active.scriptURL) || (r.installing && r.installing.scriptURL) || "";
+        if (src && src.indexOf("/sw.js") < 0) return r.unregister();
+      }));
+    }).then(function () {
+      return navigator.serviceWorker.register("/sw.js", {scope: "/"});
+    }).catch(function (e) { console.warn("service worker:", e); });
+  }
+
+  // ---- outbox: capture a NEW note with no connection ----
+  // Deliberately creates only. A create cannot conflict — the server picks a
+  // fresh filename — whereas replaying an EDIT can land on a file that one of
+  // the other three writers of this space changed underneath it, and that
+  // needs a precondition and a real conflict answer, not a queue.
+  var DB = null, PENDING = [];
+
+  function db(){
+    if (DB) return Promise.resolve(DB);
+    return new Promise(function(res, rej){
+      if (!window.indexedDB) { rej(new Error("no indexedDB")); return; }
+      var rq = indexedDB.open("notes-outbox", 2);
+      rq.onupgradeneeded = function(){
+        var d = rq.result;
+        if (!d.objectStoreNames.contains("queue")) d.createObjectStore("queue", {autoIncrement:true});
+        // The last listing we successfully loaded. The app owns its offline
+        // copy rather than relying on HTTP cache semantics: "if we have ever
+        // loaded the app before it should have something to start with and
+        // then sync from there" (decided 2026-11-09).
+        if (!d.objectStoreNames.contains("snap")) d.createObjectStore("snap");
+      };
+      rq.onsuccess = function(){ DB = rq.result; res(DB); };
+      rq.onerror = function(){ rej(rq.error); };
+    });
+  }
+
+  function tx(mode, fn){
+    return db().then(function(d){
+      return new Promise(function(res, rej){
+        var t = d.transaction("queue", mode), store = t.objectStore("queue"), out;
+        out = fn(store);
+        t.oncomplete = function(){ res(out && out.result !== undefined ? out.result : out); };
+        t.onerror = function(){ rej(t.error); };
+      });
+    });
+  }
+
+  // An editor session owns ONE queue entry. Without the key, the debounced
+  // autosave queues the note and then closing queues it again — the same
+  // thought lands twice, which is exactly the failure a capture tool must not
+  // have.
+  function snapSave(d){
+    return db().then(function(dbh){
+      return new Promise(function(res){
+        var t = dbh.transaction("snap", "readwrite");
+        t.objectStore("snap").put({at: Date.now(), data: d}, "listing");
+        t.oncomplete = function(){ res(); };
+        t.onerror = function(){ res(); };
+      });
+    }).catch(function(){});
+  }
+
+  function snapLoad(){
+    return db().then(function(dbh){
+      return new Promise(function(res){
+        var rq = dbh.transaction("snap").objectStore("snap").get("listing");
+        rq.onsuccess = function(){ res(rq.result || null); };
+        rq.onerror = function(){ res(null); };
+      });
+    }).catch(function(){ return null; });
+  }
+
+  function enqueue(title, body, key){
+    var rec = {title:title, body:body, at:Date.now()};
+    return tx("readwrite", function(s){
+      return key === undefined || key === null ? s.add(rec) : s.put(rec, key);
+    }).then(function(k){
+      return loadPending().then(function(){ return k; });
+    });
+  }
+
+  function loadPending(){
+    return db().then(function(d){
+      return new Promise(function(res, rej){
+        var out = [], cur = d.transaction("queue").objectStore("queue").openCursor();
+        cur.onsuccess = function(){
+          var c = cur.result;
+          if (!c) { PENDING = out; res(out); return; }
+          out.push({key:c.key, title:c.value.title, body:c.value.body, at:c.value.at});
+          c.continue();
+        };
+        cur.onerror = function(){ rej(cur.error); };
+      });
+    }).catch(function(){ PENDING = []; return []; });
+  }
+
+  var draining = false;
+  function drain(){
+    if (draining) return Promise.resolve();
+    draining = true;
+    return loadPending().then(function(items){
+      // Oldest first, and stop at the first failure so order is preserved and
+      // nothing is dropped on a flaky link.
+      return items.reduce(function(chain, it){
+        return chain.then(function(ok){
+          if (!ok) return false;
+          return api("POST", "/api/notes", {title:it.title, body:it.body})
+            .then(function(){ return tx("readwrite", function(s){ s.delete(it.key); }); })
+            .then(function(){ return true; })
+            .catch(function(){ return false; });
+        });
+      }, Promise.resolve(true));
+    }).then(function(){
+      return loadPending();
+    }).then(function(left){
+      draining = false;
+      if (left.length === 0) return refresh();
+      render();
+    }).catch(function(){ draining = false; });
+  }
+
+  // ---- online / offline ----
+  // navigator.onLine only knows about the link, not whether THIS box is
+  // reachable, so a failed request also flips it — and a success flips it back.
+  var ONLINE = true;
+  function setNet(up){
+    if (up === ONLINE) { if (el.netTip && !el.netTip.hidden) showNetTip(); return; }
+    ONLINE = up;
+    if (el.netTip && !el.netTip.hidden) setTimeout(showNetTip, 0);
+    el.net.className = "net" + (up ? "" : " off");
+    el.net.title = up ? "Online — changes save as you type" : "Offline — changes are NOT being saved";
+    el.net.innerHTML = up
+      ? '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 6.5 19z"/><path d="m9.5 14.5 2 2 3.5-4"/></svg>'
+      : '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 6.5 19z"/><path d="M3 3l18 18"/></svg>';
+  }
+  // ---- tapping the cloud says what it means ----
+  // The icon alone only ever said online/offline, and `title` is a desktop
+  // affordance: a phone has no hover, so on the device this matters most the
+  // tooltip could not be read at all.
+  function whenText(t){
+    if (!t) return "never — nothing has loaded from the box yet";
+    var d = new Date(t), now = new Date();
+    var clock = d.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+    var secs = Math.round((now - d) / 1000);
+    if (secs < 45) return "just now";
+    if (d.toDateString() !== now.toDateString()) {
+      return d.toLocaleDateString([], {month: "short", day: "numeric"}) + " at " + clock;
+    }
+    if (secs < 3600) return Math.round(secs / 60) + " min ago, at " + clock;
+    return clock;
+  }
+  function netTipText(){
+    var queued = (typeof pendingCards === "function" ? pendingCards().length : 0);
+    var head = !ONLINE ? "Offline"
+      : queued ? queued + (queued === 1 ? " note waiting to save" : " notes waiting to save")
+      : "Synced";
+    // Only say more when the headline leaves something unanswered. "Synced"
+    // does not: explaining it just made the tip wordy.
+    var tail = !ONLINE && queued
+      ? "They go up when the box is reachable."
+      : !ONLINE ? "Showing what loaded last. New notes are saved on this device."
+      : "";
+    return [head, tail, "Last synced " + whenText(LAST_SYNC)];
+  }
+  function showNetTip(){
+    var parts = netTipText();
+    el.netTip.textContent = "";
+    el.netTip.appendChild(node("b", null, parts[0]));
+    if (parts[1]) el.netTip.appendChild(document.createTextNode(" — " + parts[1]));
+    el.netTip.appendChild(node("span", "when", parts[2]));
+    el.netTip.hidden = false;
+    var r = el.net.getBoundingClientRect(), w = el.netTip.offsetWidth;
+    el.netTip.style.top = Math.round(r.bottom + 9) + "px";
+    el.netTip.style.left = Math.round(Math.max(10,
+      Math.min(window.innerWidth - w - 10, r.right - w + 8))) + "px";
+    el.net.setAttribute("aria-expanded", "true");
+  }
+  function hideNetTip(){
+    el.netTip.hidden = true;
+    el.net.setAttribute("aria-expanded", "false");
+  }
+  el.net.addEventListener("click", function(ev){
+    ev.stopPropagation();
+    if (el.netTip.hidden) { closeMenus(null); showNetTip(); } else hideNetTip();
+  });
+  document.addEventListener("click", function(){ if (!el.netTip.hidden) hideNetTip(); });
+  document.addEventListener("keydown", function(ev){
+    if (ev.key === "Escape" && !el.netTip.hidden) hideNetTip();
+  });
+
+  ONLINE = false; setNet(true);                       // paint the initial state
+  window.addEventListener("online", function(){ setNet(true); drain(); });
+  window.addEventListener("offline", function(){ setNet(false); });
+
+  // Column count is width-derived, so a rotation or a resize has to re-deal.
+  var rsT = null;
+  window.addEventListener("resize", function(){
+    clearTimeout(rsT);
+    rsT = setTimeout(function(){ if (!ed) render(); }, 150);
+  });
+
+  el.wall.appendChild(node("div", "empty", "Loading notes…"));
+  loadPending().then(drain);
+
+  // Paint whatever we had last time BEFORE waiting on the network. A fresh
+  // reload used to sit blank for as long as the listing took — and on a bad
+  // link, indefinitely. Now the wall is there instantly and the network just
+  // updates it.
+  snapLoad().then(function(snap){
+    if (snap && snap.data && !NOTES.length) {
+      applyListing(snap.data);
+      setNet(ONLINE);
+    }
+  }).catch(function(){});
+
+  refresh().then(function(){
+    // A browser that has never said who it is, or a sign-in no account
+    // claims, gets the OVERLAY rather than a popover tucked under an icon:
+    // on a fresh load it is the only question worth answering. Everything
+    // still works without answering — notes go to the default author, which
+    // is what every note written before accounts existed did.
+    loadWhoami().then(function(d){
+      if (!d) return;
+      if (!d.me || d.unknown) openSignIn();
+    });
+    // No adaptive default any more: "Mine" already includes the shared space,
+    // so a second person sees the household's notes from their first visit
+    // without being switched to a different view behind their back.
+  }).catch(function(e){
+    el.wall.textContent = "";
+    var em = node("div", "empty");
+    em.appendChild(node("div", null, "Couldn't reach the notes service."));
+    em.appendChild(node("div", null, (e && e.message) || ""));
+    el.wall.appendChild(em);
+  });
+})();
+</script>
+</body>
+</html>

@@ -53,6 +53,19 @@
     deployDriftWatch = { enable = true; repoUrl = "https://git.example.com/me/flakes.git"; };
     mirrorDriftWatch.pairs = [ { name = "media"; source = "/mnt/media"; mirror = "/mnt/mirror"; } ];
 
+    # Two notes front ends over one folder, which is the pairing the modules
+    # are written for — and the configuration that catches their shared
+    # default vhost label.
+    silverbullet.subdomain = "silverbullet";
+    notes = {
+      defaultAuthor = "operator";
+      # Exercise the proxy-auth branch: it adds environment variables that
+      # the default configuration never sets.
+      trustProxyAuth = true;
+      authUserHeader = "X-authentik-username";
+      authNameHeader = "X-authentik-name";
+    };
+
     arrStack = { vpnProvider = "mullvad"; vpnEnvFile = "/run/secrets/vpn"; };
     arrMissingSweep.apiEnvFile = "/run/secrets/arr-api";
     aurral.envFile = "/run/secrets/aurral";
