@@ -1,4 +1,4 @@
-"""Reading and writing the card subset of the SilverBullet space.
+"""Reading and writing the card subset of a folder of markdown notes.
 
 Two rules shape everything here:
 
@@ -284,7 +284,7 @@ def write(
     if pinned is not None:
         # A PIN IS PERSONAL, for the same reason archiving is: it means "keep
         # this at the top FOR ME", which is not a claim about anyone else. On a
-        # shared grocery list the owner pinning it used to pin it for the other person too.
+        # shared list, one person pinning it used to pin it for the other too.
         act = _actor(actor)
         now = list(current.pinned_by)
         if current.pinned and not now:
@@ -344,7 +344,7 @@ def write(
     if author is not None:
         # Reassigning WHOSE note this is. Deliberately separate from writing
         # the body: an edit never changes authorship -- the other person adding a line to
-        # the grocery list does not take it over -- so the only way ownership
+        # a shared list does not take it over -- so the only way ownership
         # moves is somebody saying so.
         who = re.sub(r"[^a-z0-9_-]+", "", author.strip().lower())[:32]
         fm = _fm_set(fm, "author", who if who and who != HUMAN else None)
@@ -470,7 +470,7 @@ def _word(hay: str, term: str) -> bool:
 
 
 # A term long enough that matching the FRONT of a category name is meaningful.
-# "wood" -> woodgas is a real intent; "gas" -> gasket-anything is not, and a
+# "hand" -> handsaw is a real intent; "saw" -> sawdust-anything is not, and a
 # 3-letter prefix would drag whole categories in by accident.
 CAT_PREFIX_MIN = 4
 
@@ -478,7 +478,7 @@ CAT_PREFIX_MIN = 4
 def split_query(query: str | None) -> tuple[list[str], list[str], list[str]]:
     """Split a raw query into (cat: filters, by: filters, ordinary terms).
 
-    ``cat:woodgas truck`` means "inside the woodgas category, anything about
+    ``cat:handsaw blade`` means "inside the handsaw category, anything about
     trucks", and ``by:ana`` narrows to what the other person wrote -- the prefixed parts
     are filters, the rest is the usual ranked OR.
     """
@@ -501,7 +501,7 @@ def _cat_terms(note: Note, needles: list[str]) -> set[str]:
     The ask was "if the category name is a high grade match for the search term you
     should pull in the whole category." So a term that names a category counts
     as satisfied for every note in it, even one whose text never says the word
-    -- searching woodgas should return the woodgas notes, not just the ones
+    -- searching handsaw should return the handsaw notes, not just the ones
     that happen to spell it out.
     """
     cat = (note.cat or "").lower()
@@ -640,7 +640,7 @@ def listing(space: Path, query: str | None = None) -> list[Note]:
     # ANY term, substring, ranked -- which is what Keep does, and what the owner
     # expects from it. Two earlier attempts were both wrong:
     #   literal phrase : "wood gas" found nothing, because no note contains
-    #                    that exact run -- they say "woodgas", or have "wood"
+    #                    that exact run -- they say "handsaw", or have "hand"
     #                    on one line and "gas" on another;
     #   AND of terms   : still missed notes that say only "wood", or only
     #                    "gas", which Keep returns.

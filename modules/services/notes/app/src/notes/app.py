@@ -1,7 +1,7 @@
 """HTTP API + the single-page front end.
 
 Unauthenticated by design, exactly like the SilverBullet vhost it sits beside:
-the perimeter is the nginx source-gate (Tailscale/LAN) plus the tailnet ACL,
+the perimeter is whatever gates the vhost in front of it (see the README),
 and adding a login here would reintroduce the friction that made the notes
 app go unused in the first place (decided 2026-07-09).
 
@@ -14,7 +14,7 @@ archives and pins notes, so authentication and attribution are one thing
 instead of two stacked on each other.
 
 Note ids travel in the request BODY rather than the URL path. An id is a
-space-relative path like ``Keep/2017-03-04 Bring from the cabin.md`` — spaces,
+space-relative path like ``Keep/2017-03-04 Camping kit.md`` — spaces,
 unicode and slashes in a path segment make URL-encoded ids a source of
 mismatched-decoding bugs, and nothing here needs REST-shaped URLs.
 """

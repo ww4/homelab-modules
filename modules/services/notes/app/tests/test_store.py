@@ -1,8 +1,9 @@
-"""Store behaviour, with the real shapes found in the space.
+"""Store behaviour, across the shapes a real folder actually contains.
 
-The fixtures below are trimmed copies of actual pages: a Keep-import note with
-hand-written frontmatter, a sectioned checklist with no frontmatter and no h1,
-and a plain bare-lines note (which is what most of the 556 Keep pages are).
+The fixtures are invented, but their SHAPES are not: an imported note with
+hand-written frontmatter and a provenance line, a sectioned checklist with
+neither frontmatter nor an h1, and a note that is nothing but bare lines —
+which is what most imported notes turn out to be.
 """
 
 from pathlib import Path
@@ -13,28 +14,28 @@ from notes import paths, store
 
 KEEP_NOTE = """---
 date: 2017-03-04
-category: logistics
+category: reference
 source: Keep.json
 tags: keep-import
 ---
 
-# Bring from the cabin
+# Camping kit
 
 *Google Keep, 2017-03-04 · archived*
 
-Exercise mat
-Monitor
-Spices
+Sleeping bag
+Lantern
+Cocoa
 """
 
-GROCERY = """## Walmart
-- [ ] Bread
+GROCERY = """## Hardware store
+- [ ] Sandpaper
 
-## Kroger
+## Garden centre
 
-## Frankfort house
-*(pantry/storage at dad's — grab on the next visit)*
-- [ ] Diapers
+## Workshop
+*(what is already on the shelf — check before buying)*
+- [ ] Twine
 """
 
 
@@ -44,7 +45,7 @@ def space(tmp_path):
     (tmp_path / "Notes").mkdir()
     (tmp_path / "Inbox" / "Log").mkdir(parents=True)
     (tmp_path / "Journal").mkdir()
-    (tmp_path / "Keep" / "2017-03-04 Bring from the cabin.md").write_text(KEEP_NOTE)
+    (tmp_path / "Keep" / "2017-03-04 Camping kit.md").write_text(KEEP_NOTE)
     (tmp_path / "Grocery List.md").write_text(GROCERY)
     (tmp_path / "Inbox" / "Log" / "2026-11.md").write_text("# log\nnot a card\n")
     (tmp_path / "Journal" / "2026-11-08.md").write_text("# day\n")
@@ -52,19 +53,19 @@ def space(tmp_path):
 
 
 def test_reads_frontmatter_title_and_date(space):
-    n = store.read(space, "Keep/2017-03-04 Bring from the cabin.md")
-    assert n.title == "Bring from the cabin"
+    n = store.read(space, "Keep/2017-03-04 Camping kit.md")
+    assert n.title == "Camping kit"
     assert n.date == "2017-03-04"
-    assert n.cat == "logistics"
+    assert n.cat == "reference"
     assert n.pinned is False and n.archived is False
-    assert n.body.splitlines()[-3:] == ["Exercise mat", "Monitor", "Spices"]
+    assert n.body.splitlines()[-3:] == ["Sleeping bag", "Lantern", "Cocoa"]
     assert not n.body.startswith("# ")
 
 
 def test_title_falls_back_to_filename_without_the_date(space):
-    (space / "Keep" / "2015-10-14 website file notes.md").write_text("a\nb\n")
-    n = store.read(space, "Keep/2015-10-14 website file notes.md")
-    assert n.title == "website file notes"
+    (space / "Keep" / "2015-10-14 scanner settings.md").write_text("a\nb\n")
+    n = store.read(space, "Keep/2015-10-14 scanner settings.md")
+    assert n.title == "scanner settings"
     assert n.had_h1 is False
 
 
@@ -74,32 +75,32 @@ def test_no_frontmatter_no_h1_survives_a_write(space):
     store.write(space, "Grocery List.md", pinned=True)
     after = (space / "Grocery List.md").read_text()
     assert after.startswith("---\npinned_by: sam\n---\n")
-    assert "## Walmart" in after and "## Frankfort house" in after
+    assert "## Hardware store" in after and "## Workshop" in after
     assert "# Grocery List" not in after          # no invented heading
     assert before.strip() in after                # body untouched
 
 
 def test_unknown_frontmatter_keys_are_preserved_verbatim(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     store.write(space, rel, pinned=True)
     text = (space / rel).read_text()
-    for line in ("date: 2017-03-04", "category: logistics",
+    for line in ("date: 2017-03-04", "category: reference",
                  "source: Keep.json", "tags: keep-import"):
         assert line in text, line
     assert "pinned_by: sam" in text
 
 
 def test_unpinning_drops_the_key_rather_than_writing_false(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     store.write(space, rel, pinned=True)
     store.write(space, rel, pinned=False)
     text = (space / rel).read_text()
     assert "pinned" not in text
-    assert "category: logistics" in text
+    assert "category: reference" in text
 
 
 def test_body_round_trips_without_drift(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     first = store.read(space, rel)
     store.write(space, rel, body=first.body)
     second = store.read(space, rel)
@@ -109,19 +110,19 @@ def test_body_round_trips_without_drift(space):
 
 def test_checkbox_edits_land_in_the_file(space):
     store.write(space, "Grocery List.md",
-                body=GROCERY.replace("- [ ] Bread", "- [x] Bread"))
-    assert "- [x] Bread" in (space / "Grocery List.md").read_text()
+                body=GROCERY.replace("- [ ] Sandpaper", "- [x] Sandpaper"))
+    assert "- [x] Sandpaper" in (space / "Grocery List.md").read_text()
 
 
 def test_retitling_a_note_without_an_h1_adds_one(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
-    store.write(space, rel, title="Bring from KY")
-    assert (space / rel).read_text().count("# Bring from KY") == 1
+    rel = "Keep/2017-03-04 Camping kit.md"
+    store.write(space, rel, title="Camping kit v2")
+    assert (space / rel).read_text().count("# Camping kit v2") == 1
 
 
 def test_create_lands_in_inbox_and_is_unique(space):
-    a = store.create(space, "paint list", "blue pearl")
-    b = store.create(space, "paint list", "white")
+    a = store.create(space, "shelf plan", "blue pearl")
+    b = store.create(space, "shelf plan", "white")
     assert a.id.startswith("Inbox/") and a.id.endswith(".md")
     assert a.id != b.id
     assert store.read(space, a.id).body == "blue pearl"
@@ -134,7 +135,7 @@ def test_create_slug_strips_path_characters(space):
 
 
 def test_trash_moves_and_restore_returns(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     trashed = store.trash(space, rel)
     assert not (space / rel).exists()
     assert (space / trashed).exists()
@@ -144,7 +145,7 @@ def test_trash_moves_and_restore_returns(space):
 
 
 def test_restore_refuses_to_clobber(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     trashed = store.trash(space, rel)
     (space / rel).write_text("something else\n")
     with pytest.raises(paths.PathError):
@@ -153,7 +154,7 @@ def test_restore_refuses_to_clobber(space):
 
 def test_listing_excludes_the_agents_pages(space):
     ids = {n.id for n in store.listing(space)}
-    assert "Keep/2017-03-04 Bring from the cabin.md" in ids
+    assert "Keep/2017-03-04 Camping kit.md" in ids
     assert "Grocery List.md" in ids
     assert not any(i.startswith("Journal/") for i in ids)
     assert not any(i.startswith("Inbox/Log") for i in ids)
@@ -165,12 +166,12 @@ def test_atomic_write_leaves_no_temp_files(space):
 
 
 # --- authorship -------------------------------------------------------------
-# Only the agent's own notes carry the key; unlabelled means the owner's. The
+# Only a second writer's notes carry the key; unlabelled means the default. The
 # default wall filter depends on this, so a silent flip either way is a bug
 # that hides the default author's notes or buries them again.
 
 def test_unlabelled_notes_are_the_default_author(space):
-    assert store.read(space, "Keep/2017-03-04 Bring from the cabin.md").author == "sam"
+    assert store.read(space, "Keep/2017-03-04 Camping kit.md").author == "sam"
     assert store.read(space, "Grocery List.md").author == "sam"
 
 
@@ -187,9 +188,9 @@ def test_author_is_case_and_space_insensitive(space):
 
 
 def test_author_survives_an_unrelated_write(space):
-    """Pinning an agent note must not quietly re-attribute it to the owner."""
+    """Pinning someone else's note must not quietly re-attribute it."""
     rel = "Notes/agent page.md"
-    (space / rel).write_text("---\nauthor: claude\ncategory: homelab\n---\n\nbody\n")
+    (space / rel).write_text("---\nauthor: claude\ncategory: tools\n---\n\nbody\n")
     store.write(space, rel, pinned=True)
     n = store.read(space, rel)
     assert n.author == "claude" and n.pinned is True
@@ -208,7 +209,7 @@ def test_notes_created_here_use_the_default_author(space):
 # never mistaken for the note, and search still sees the whole text.
 
 def test_summary_carries_a_preview_not_the_body(space):
-    n = store.read(space, "Keep/2017-03-04 Bring from the cabin.md").summary()
+    n = store.read(space, "Keep/2017-03-04 Camping kit.md").summary()
     assert "body" not in n
     assert n["preview"].startswith("*Google Keep")
     assert n["lines"] == 4 and n["truncated"] is False
@@ -237,8 +238,8 @@ def test_search_finds_text_past_the_preview(space):
 
 
 def test_search_matches_titles_and_is_case_insensitive(space):
-    hits = [n.id for n in store.listing(space, "BRING FROM the cabin")]
-    assert "Keep/2017-03-04 Bring from the cabin.md" in hits
+    hits = [n.id for n in store.listing(space, "CAMPING kit")]
+    assert "Keep/2017-03-04 Camping kit.md" in hits
 
 
 def test_empty_query_lists_everything(space):
@@ -253,18 +254,18 @@ def test_cache_notices_a_write_by_another_party(space):
     this service must show up on the next listing — a stale card here would be
     the service quietly disagreeing with the disk.
     """
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
-    assert store.listing(space, "Spices")
+    rel = "Keep/2017-03-04 Camping kit.md"
+    assert store.listing(space, "Cocoa")
     # somebody else rewrites the file
-    (space / rel).write_text(KEEP_NOTE.replace("Spices", "Cardamom"))
+    (space / rel).write_text(KEEP_NOTE.replace("Cocoa", "Coffee"))
     titles = {n.id: n.body for n in store.listing(space)}
-    assert "Cardamom" in titles[rel] and "Spices" not in titles[rel]
-    assert store.listing(space, "Cardamom")
-    assert not store.listing(space, "Spices")
+    assert "Coffee" in titles[rel] and "Cocoa" not in titles[rel]
+    assert store.listing(space, "Coffee")
+    assert not store.listing(space, "Cocoa")
 
 
 def test_cache_drops_entries_for_deleted_files(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     assert any(n.id == rel for n in store.listing(space))
     store.trash(space, rel)
     assert not any(n.id == rel for n in store.listing(space))
@@ -273,14 +274,14 @@ def test_cache_drops_entries_for_deleted_files(space):
 # --- categories --------------------------------------------------------------
 
 def test_category_can_be_set_and_is_slugged(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
-    n = store.write(space, rel, category="House Project")
-    assert n.cat == "house-project"
-    assert "category: house-project" in (space / rel).read_text()
+    rel = "Keep/2017-03-04 Camping kit.md"
+    n = store.write(space, rel, category="Garden Beds")
+    assert n.cat == "garden-beds"
+    assert "category: garden-beds" in (space / rel).read_text()
 
 
 def test_setting_a_category_replaces_rather_than_duplicates(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     store.write(space, rel, category="travel")
     store.write(space, rel, category="packing")
     text = (space / rel).read_text()
@@ -288,7 +289,7 @@ def test_setting_a_category_replaces_rather_than_duplicates(space):
 
 
 def test_empty_category_clears_the_key(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     store.write(space, rel, category="")
     assert "category:" not in (space / rel).read_text()
     # falls back to the directory default rather than an empty string
@@ -297,7 +298,7 @@ def test_empty_category_clears_the_key(space):
 
 def test_category_cannot_smuggle_frontmatter(space):
     """A newline here would inject arbitrary keys into the file."""
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     store.write(space, rel, category="x\nauthor: sam\npinned: true")
     text = (space / rel).read_text()
     assert "author: sam" not in text
@@ -307,57 +308,57 @@ def test_category_cannot_smuggle_frontmatter(space):
 
 def test_census_counts_every_category_unfiltered(space):
     c = store.census(space)
-    assert c["logistics"] >= 1 and c["list"] >= 1
+    assert c["reference"] >= 1 and c["list"] >= 1
     assert sum(c.values()) == len(store.listing(space))
     counts = list(c.values())
     assert counts == sorted(counts, reverse=True)   # busiest first
 
 
 def test_search_returns_any_term_ranked_like_keep(space):
-    """Keep's semantics, which is what the owner expects from this box.
+    """Keep's semantics, which is what people coming from it expect.
 
-    Searching "wood gas" must return the note that says "woodgas", the one
-    that only says "wood", and the one that only says "gas" -- and rank the
+    Searching "hand saw" must return the note that says "handsaw", the one
+    that only says "hand", and the one that only says "saw" -- and rank the
     note matching both terms above the ones matching one.
     """
-    (space / "Notes/both.md").write_text("# chunker\n\nwood chips feed the gas producer\n")
-    (space / "Notes/woodonly.md").write_text("# shed\n\nstack the wood outside\n")
-    (space / "Notes/gasonly.md").write_text("# truck\n\ncheck the gas gauge\n")
-    (space / "Notes/joined.md").write_text("# rig\n\nwoodgas conversion notes\n")
-    ids = [n.id for n in store.listing(space, "wood gas")]
-    for rel in ("Notes/both.md", "Notes/woodonly.md", "Notes/gasonly.md", "Notes/joined.md"):
+    (space / "Notes/both.md").write_text("# bench\n\nhand tools beside the saw horse\n")
+    (space / "Notes/handonly.md").write_text("# shelf\n\nkeep it close at hand\n")
+    (space / "Notes/sawonly.md").write_text("# shop\n\ncheck the saw blade\n")
+    (space / "Notes/joined.md").write_text("# kit\n\nhandsaw restoration notes\n")
+    ids = [n.id for n in store.listing(space, "hand saw")]
+    for rel in ("Notes/both.md", "Notes/handonly.md", "Notes/sawonly.md", "Notes/joined.md"):
         assert rel in ids, rel
-    # "woodgas" contains BOTH terms as substrings, so it ties with the note
+    # "handsaw" contains BOTH terms as substrings, so it ties with the note
     # that spells them separately — both must outrank the single-term notes.
     two = {"Notes/both.md", "Notes/joined.md"}
-    one = {"Notes/woodonly.md", "Notes/gasonly.md"}
+    one = {"Notes/handonly.md", "Notes/sawonly.md"}
     assert set(ids[:2]) == two
     assert max(ids.index(i) for i in two) < min(ids.index(i) for i in one)
 
 
 def test_search_matches_inside_a_word(space):
     """Keep highlighted "lion" inside "million" — substring, not whole word."""
-    (space / "Notes/solar.md").write_text("# solar heat storage\n\n20,000 kwh = 68 million BTUs\n")
-    assert "Notes/solar.md" in [n.id for n in store.listing(space, "lion")]
+    (space / "Notes/big.md").write_text("# big numbers\n\n20,000 rows = 1.2 million cells\n")
+    assert "Notes/big.md" in [n.id for n in store.listing(space, "lion")]
 
 
 def test_title_hits_outrank_body_hits(space):
-    (space / "Notes/titled.md").write_text("# gasifier rebuild\n\nnothing else\n")
-    (space / "Notes/bodied.md").write_text("# shed\n\nthe gasifier is outside\n")
-    ids = [n.id for n in store.listing(space, "gasifier")]
+    (space / "Notes/titled.md").write_text("# jointer rebuild\n\nnothing else\n")
+    (space / "Notes/bodied.md").write_text("# shelf\n\nthe jointer is outside\n")
+    ids = [n.id for n in store.listing(space, "jointer")]
     assert ids.index("Notes/titled.md") < ids.index("Notes/bodied.md")
 
 
 def test_a_term_matching_nothing_does_not_exclude_others(space):
-    (space / "Notes/w.md").write_text("# shed\n\nwood\n")
-    assert "Notes/w.md" in [n.id for n in store.listing(space, "wood zzzznope")]
+    (space / "Notes/w.md").write_text("# shelf\n\nhand\n")
+    assert "Notes/w.md" in [n.id for n in store.listing(space, "hand zzzznope")]
 
 
 def test_whole_word_hits_rank_above_in_word_hits(space):
-    """"gas" matches gasket and gasoline too; those belong below the real ones."""
-    (space / "Notes/real.md").write_text("# trailer\n\ncheck the gas level\n")
-    (space / "Notes/inword.md").write_text("# trailer\n\nreplace the head gasket\n")
-    ids = [n.id for n in store.listing(space, "gas")]
+    """"saw" matches sawdust and sawhorse too; those belong below the real ones."""
+    (space / "Notes/real.md").write_text("# bin\n\ncheck the saw level\n")
+    (space / "Notes/inword.md").write_text("# bin\n\nreplace the sawdust gasket\n")
+    ids = [n.id for n in store.listing(space, "saw")]
     assert "Notes/inword.md" in ids          # still found
     assert ids.index("Notes/real.md") < ids.index("Notes/inword.md")
 
@@ -365,46 +366,46 @@ def test_whole_word_hits_rank_above_in_word_hits(space):
 # --- searching by category ---------------------------------------------------
 
 def test_category_name_pulls_in_the_whole_category(space):
-    """A note in the woodgas category counts as a hit for "woodgas" even if
-    its text never says the word — the owner: "if the category name is a high
-    grade match for the search term you should pull in the whole category"."""
-    rel = "Notes/chunker.md"
-    (space / rel).write_text("---\ncategory: woodgas\n---\n\n# chunker\n\nspare tire mount\n")
-    ids = [n.id for n in store.listing(space, "woodgas")]
+    """A note in the handsaw category counts as a hit for "handsaw" even if
+    its text never says the word: if the category name is a high-grade match
+    for the search term, the whole category is a hit."""
+    rel = "Notes/bench.md"
+    (space / rel).write_text("---\ncategory: handsaw\n---\n\n# bench\n\nspare blade mount\n")
+    ids = [n.id for n in store.listing(space, "handsaw")]
     assert rel in ids
 
 
 def test_a_four_letter_prefix_of_a_category_counts(space):
-    rel = "Notes/chunker.md"
-    (space / rel).write_text("---\ncategory: woodgas\n---\n\n# chunker\n\nspare tire mount\n")
-    assert rel in [n.id for n in store.listing(space, "wood")]
+    rel = "Notes/bench.md"
+    (space / rel).write_text("---\ncategory: handsaw\n---\n\n# bench\n\nspare blade mount\n")
+    assert rel in [n.id for n in store.listing(space, "hand")]
 
 
 def test_a_short_prefix_does_not_drag_a_category_in(space):
-    """"gas" must not pull every woodgas note; three letters is too loose."""
-    rel = "Notes/chunker.md"
-    (space / rel).write_text("---\ncategory: woodgas\n---\n\n# chunker\n\nspare tire mount\n")
-    assert rel not in [n.id for n in store.listing(space, "gas")]
+    """"saw" must not pull every handsaw note; three letters is too loose."""
+    rel = "Notes/bench.md"
+    (space / rel).write_text("---\ncategory: handsaw\n---\n\n# bench\n\nspare blade mount\n")
+    assert rel not in [n.id for n in store.listing(space, "saw")]
 
 
 def test_a_hyphenated_category_matches_either_word(space):
     rel = "Notes/shed.md"
-    (space / rel).write_text("---\ncategory: house-project\n---\n\n# shed\n\nnothing relevant\n")
-    assert rel in [n.id for n in store.listing(space, "house")]
-    assert rel in [n.id for n in store.listing(space, "project")]
+    (space / rel).write_text("---\ncategory: garden-beds\n---\n\n# shelf\n\nnothing relevant\n")
+    assert rel in [n.id for n in store.listing(space, "garden")]
+    assert rel in [n.id for n in store.listing(space, "beds")]
 
 
 def test_cat_prefix_filters_hard(space):
-    (space / "Notes/a.md").write_text("---\ncategory: woodgas\n---\n\n# a\n\ntruck parts\n")
-    (space / "Notes/b.md").write_text("---\ncategory: travel\n---\n\n# b\n\ntruck parts\n")
-    assert [n.id for n in store.listing(space, "cat:woodgas")] == ["Notes/a.md"]
+    (space / "Notes/a.md").write_text("---\ncategory: handsaw\n---\n\n# a\n\nblade parts\n")
+    (space / "Notes/b.md").write_text("---\ncategory: recipes\n---\n\n# b\n\nblade parts\n")
+    assert [n.id for n in store.listing(space, "cat:handsaw")] == ["Notes/a.md"]
     # the filter composes with ordinary terms
-    assert [n.id for n in store.listing(space, "cat:woodgas truck")] == ["Notes/a.md"]
-    assert store.listing(space, "cat:woodgas unicorn") == []
+    assert [n.id for n in store.listing(space, "cat:handsaw blade")] == ["Notes/a.md"]
+    assert store.listing(space, "cat:handsaw unicorn") == []
 
 
 def test_split_query_separates_filters_from_terms(space):
-    assert store.split_query("cat:woodgas truck parts") == (["woodgas"], [], ["truck", "parts"])
+    assert store.split_query("cat:handsaw blade parts") == (["handsaw"], [], ["blade", "parts"])
     assert store.split_query("plain words") == ([], [], ["plain", "words"])
     assert store.split_query("cat:") == ([], [], ["cat:"])   # not a filter, just text
     assert store.split_query(None) == ([], [], [])
@@ -412,7 +413,7 @@ def test_split_query_separates_filters_from_terms(space):
 
 # --- who wrote it ------------------------------------------------------------
 # Attribution between two people who trust each other, not authentication.
-# the owner: "There's no secrets here to protect."
+# There are no secrets here to protect; this is attribution, not access.
 
 def test_create_stamps_a_named_author(space):
     n = store.create(space, "milk", "2%", author="ana")
@@ -421,7 +422,7 @@ def test_create_stamps_a_named_author(space):
 
 
 def test_create_without_a_device_identity_stays_unlabelled(space):
-    """545 notes predate this; unlabelled must keep reading as the owner."""
+    """Notes predating authorship must keep reading as the default author."""
     n = store.create(space, "milk", "2%")
     assert n.author == "sam"
     assert "author:" not in (space / n.id).read_text()
@@ -449,7 +450,7 @@ def test_by_composes_with_terms_and_categories(space):
 
 
 def test_split_query_separates_all_three(space):
-    assert store.split_query("cat:woodgas by:ana truck") == (["woodgas"], ["ana"], ["truck"])
+    assert store.split_query("cat:handsaw by:ana truck") == (["handsaw"], ["ana"], ["truck"])
     assert store.split_query("by:") == ([], [], ["by:"])
 
 
@@ -473,7 +474,7 @@ def test_ownership_can_be_reassigned(space):
 
 
 def test_editing_a_note_never_changes_its_owner(space):
-    """Ana adding a line to the owner's grocery list must not take it over."""
+    """Ana adding a line to someone else's list must not take it over."""
     n = store.create(space, "list", "bread", author="sam")
     store.write(space, n.id, body="bread\nmilk")
     assert store.read(space, n.id).author == "sam"
@@ -492,7 +493,7 @@ def test_reassigned_author_is_slugged(space):
 
 # --- the shared space --------------------------------------------------------
 # "Ours" is a place a note is put, like archived -- not a computed union of
-# everyone's notes. the owner, 2026-11-09: "I don't want 'ours' to be a mashup of
+# everyone's notes: "ours" is not a mashup of
 # every human note. I want that to be a shared space we can intentionally add
 # things to, like 'archived'."
 
@@ -544,12 +545,12 @@ def test_summary_carries_shared(space):
 
 def test_trash_is_listable_and_restorable(space):
     """Deleting moves; the trash view is how that becomes recoverable by hand."""
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     assert store.trash_listing(space) == []
     trashed = store.trash(space, rel)
     listed = store.trash_listing(space)
     assert [n.id for n in listed] == [trashed]
-    assert "Spices" in listed[0].body            # content survived the move
+    assert "Cocoa" in listed[0].body            # content survived the move
     store.restore(space, trashed)
     assert store.trash_listing(space) == []
 
@@ -559,10 +560,10 @@ def test_trash_listing_is_empty_without_the_directory(space):
 
 
 def test_trashed_notes_stay_out_of_the_normal_listing(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
+    rel = "Keep/2017-03-04 Camping kit.md"
     store.trash(space, rel)
     assert not any(n.id.startswith("Trash/") for n in store.listing(space))
-    assert not store.listing(space, "Spices")
+    assert not store.listing(space, "Cocoa")
 
 
 # --- the census follows the feed --------------------------------------------
@@ -571,7 +572,7 @@ def test_trashed_notes_stay_out_of_the_normal_listing(space):
 
 def test_census_scoped_to_mine_counts_only_my_notes(space):
     store.create(space, "theirs", "x", author="ana")
-    store.write(space, "Keep/2017-03-04 Bring from the cabin.md", category="travel")
+    store.write(space, "Keep/2017-03-04 Camping kit.md", category="travel")
     mine = store.census(space, scope="mine", me="sam", show_shared=False)
     theirs = store.census(space, scope="mine", me="ana", show_shared=False)
     assert theirs == {"inbox": 1}
@@ -633,8 +634,8 @@ def test_giving_an_untitled_note_a_title_writes_a_heading(space):
 
 
 def test_a_normal_filename_still_yields_a_title(space):
-    n = store.read(space, "Keep/2017-03-04 Bring from the cabin.md")
-    assert n.title == "Bring from the cabin"
+    n = store.read(space, "Keep/2017-03-04 Camping kit.md")
+    assert n.title == "Camping kit"
 
 
 def test_a_new_note_with_no_title_gets_no_heading(space):
@@ -650,8 +651,8 @@ def test_a_new_note_with_no_title_gets_no_heading(space):
 # "was it actually filed" bit, "uncategorised" cannot be asked for at all.
 
 def test_filed_distinguishes_chosen_from_inherited(space):
-    rel = "Keep/2017-03-04 Bring from the cabin.md"
-    assert store.read(space, rel).filed is True          # has category: logistics
+    rel = "Keep/2017-03-04 Camping kit.md"
+    assert store.read(space, rel).filed is True          # has category: reference
     (space / "Keep/loose.md").write_text("# loose\n\nnothing\n")
     loose = store.read(space, "Keep/loose.md")
     assert loose.filed is False
@@ -662,7 +663,7 @@ def test_cat_none_finds_only_unfiled_notes(space):
     (space / "Keep/loose.md").write_text("# loose\n\nnothing\n")
     ids = [n.id for n in store.listing(space, "cat:none")]
     assert "Keep/loose.md" in ids
-    assert "Keep/2017-03-04 Bring from the cabin.md" not in ids
+    assert "Keep/2017-03-04 Camping kit.md" not in ids
 
 
 def test_cat_none_composes_with_terms(space):
@@ -673,7 +674,7 @@ def test_cat_none_composes_with_terms(space):
 
 def test_filing_a_note_moves_it_out_of_cat_none(space):
     (space / "Keep/loose.md").write_text("# loose\n\nnothing\n")
-    store.write(space, "Keep/loose.md", category="logistics")
+    store.write(space, "Keep/loose.md", category="reference")
     assert "Keep/loose.md" not in [n.id for n in store.listing(space, "cat:none")]
     assert store.read(space, "Keep/loose.md").filed is True
 
@@ -738,7 +739,7 @@ def test_trash_is_global_and_that_is_deliberate(space):
     assert (space / trashed).exists()           # and recoverable by anyone
 
 # --- pins and their order are personal ---------------------------------------
-# the owner asked whether pins are individual "as they should be". They were not:
+# Pins must be individual, the same way archiving is. They were not at first:
 # a pin was one flag on the one file, so pinning a SHARED note pinned it for
 # the other person too — and a manual order would have rearranged both rows.
 

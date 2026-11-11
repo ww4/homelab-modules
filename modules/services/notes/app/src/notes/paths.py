@@ -1,7 +1,7 @@
 """Path scoping — the security boundary of this service.
 
-Notes is unauthenticated (Tailscale/LAN source-gate only, like SilverBullet
-itself), and it takes a note id straight from the client. That id is a
+Notes is unauthenticated: whatever reverse proxy sits in front of it is the
+perimeter. It takes a note id straight from the client, and that id is a
 space-relative path, so every request is a path-traversal attempt waiting to
 happen. Everything that turns client input into a filesystem path goes through
 ``resolve`` here, and ``tests/test_paths.py`` is the corpus that keeps it

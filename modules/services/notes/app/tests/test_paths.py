@@ -14,11 +14,11 @@ from notes import paths
 
 # --- things that must be reachable -----------------------------------------
 IN_SCOPE = [
-    "Keep/2017-03-04 Bring from the cabin.md",
-    "Keep/2013-05-14 Argos list.md",
-    "Notes/paint list — girls room.md",
-    "Notes/bl-corp v2 af_heart/bl-corp v2 af_heart.md",
-    "Inbox/2026-10-27-k-family-farms.md",
+    "Keep/2017-03-04 Camping kit.md",
+    "Keep/2013-05-14 packing list.md",
+    "Notes/shelf plan — back room.md",
+    "Notes/kit v2 rev_a/kit v2 rev_a.md",
+    "Inbox/2026-10-27-site-visit.md",
     "Grocery List.md",
 ]
 
@@ -26,11 +26,11 @@ IN_SCOPE = [
 OUT_OF_SCOPE = [
     # traversal, plain and encoded-after-decode
     "../../etc/passwd",
-    "../flakes/secrets.yaml",
+    "../config/secrets.yaml",
     "Keep/../../etc/shadow.md",
     "Keep/../Journal/Day/2026-11-08.md",
     "Keep/subdir/../../../root/.ssh/id_ed25519.md",
-    "./../../var/lib/tailscale/tailscaled.state.md",
+    "./../../var/lib/someservice/state.md",
     # absolute paths
     "/etc/passwd",
     "/var/lib/silverbullet/Keep/x.md",
@@ -38,8 +38,8 @@ OUT_OF_SCOPE = [
     "Journal/Day/2026-11-08.md",
     "Areas/Newsdesk/2026-11-07-longread.md",
     "System/Agent Queue.md",
-    "Library/mrmugame/Silversearch/silversearch.plug.js",
-    "Projects/Side Business.md",
+    "Library/third-party/search/search.plug.js",
+    "Projects/Roadmap.md",
     "CONFIG.md",
     "CONVENTIONS.md",
     # the capture log is a record, not a card
