@@ -1,7 +1,7 @@
 # The homelab.* option set — the single interface between this library and a
 # consumer's flake. Implementations read these; the consumer's flake sets them.
 # Grown as modules are parameterized; never given personal defaults.
-{ config, lib, ... }:
+{ config, lib, pkgs, ... }:
 
 {
   options.homelab = {
@@ -67,6 +67,19 @@
     };
 
     nextcloud = {
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = pkgs.nextcloud33;
+        defaultText = lib.literalExpression "pkgs.nextcloud33";
+        description = ''
+          Nextcloud server package. Pin this explicitly in the consumer: a change
+          to the default is a MAJOR Nextcloud upgrade, which migrates the database
+          on first start and cannot be rolled back by switching generations (the
+          older major refuses to run against the newer schema). Majors must be
+          stepped one at a time (32 -> 33 -> 34), never skipped. nextcloud32 is
+          flagged EOL in nixos-26.05 and refuses to evaluate on current revs.
+        '';
+      };
       adminPasswordFile = lib.mkOption {
         type = lib.types.str;
         description = "Initial admin password file (sops; owner = nextcloud).";
