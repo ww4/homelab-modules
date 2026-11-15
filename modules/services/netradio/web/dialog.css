@@ -1,0 +1,57 @@
+/* The in-page question, and the new-build strip. Loaded by both pages; the
+ * markup is ask-panel.html.
+ *
+ * Palette from tokens.css. Sized off the same viewport query the remote uses,
+ * because the only thing that ever differs between the two pages is how big a
+ * finger is.
+ */
+
+.ask-wrap {
+  position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .72);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 0;
+}
+.ask {
+  width: 100%; max-width: 460px; background: var(--panel);
+  border-radius: 18px 18px 0 0;
+  padding: 1.1rem 1.15rem calc(1.2rem + var(--sab, 0px));
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, .5);
+}
+.ask h4 { margin: 0 0 .5rem; font-size: 1.05rem; }
+.ask p { margin: 0 0 1.1rem; color: var(--muted); font-size: .9rem; line-height: 1.5; }
+
+.ask-acts { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; }
+.ask-acts button, .newbuild button {
+  border: 1px solid var(--line-2); border-radius: 12px; padding: .7rem .6rem;
+  font-size: .9rem; cursor: pointer; background: var(--panel-2); color: var(--fg);
+  min-height: 2.8rem;
+}
+.ask-acts .ghost:hover, .newbuild .ghost:hover { border-color: #55504a; }
+/* The accent is spent on the one button that changes the room. */
+.ask-acts .go, .newbuild .go { background: var(--accent); border-color: var(--accent); color: #1a0f08; font-weight: 600; }
+
+/* Not a modal: nothing is wrong, and nothing should have to be answered to
+   carry on listening. Above the transport bar, out of the way of it. */
+.newbuild {
+  position: fixed; z-index: 55; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--bar, 64px) + .8rem + var(--sab, 0px));
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  max-width: min(92vw, 34rem);
+  background: var(--panel-2); border: 1px solid var(--line-2);
+  border-radius: 2rem; padding: .45rem .5rem .45rem 1rem;
+  box-shadow: 0 .4rem 1.4rem rgba(0, 0, 0, .45);
+  font-size: .84rem;
+}
+.newbuild span { color: var(--fg); }
+.newbuild button { min-height: 2.1rem; padding: .35rem .8rem; border-radius: 1.4rem; font-size: .8rem; }
+
+@media (min-width: 600px) {
+  .ask-wrap { align-items: center; }
+  .ask { border-radius: 14px; }
+  .ask-acts button { min-height: 2.2rem; padding: .45rem .6rem; border-radius: .45rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ask { animation: ask-in .14s ease-out; }
+  @keyframes ask-in { from { transform: translateY(8px); opacity: .6; } to { transform: none; opacity: 1; } }
+}

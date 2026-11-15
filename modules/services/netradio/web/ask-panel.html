@@ -1,0 +1,35 @@
+<!-- Two small things the page needs to say, mounted by BOTH pages.
+
+     Shared for the same reason the remote is: the last time markup lived in
+     two files it drifted until the phone was missing a feature entirely. `app`
+     is the mounting page; the state and the methods stay on it.
+
+     1. A QUESTION, in the page. This replaced window.confirm(), which worked
+        but is a browser chrome dialog: "that should be an in-page modal not a
+        browser modal, those are ugly" (2026-11-02).
+
+     2. A NEW BUILD. An open tab keeps the JavaScript it loaded, and this page
+        is built never to reload — that is what keeps the stream alive across a
+        view change. So a deploy is invisible to a tab that is already open,
+        and a change that shipped correctly looks like it did not. Not a modal:
+        nothing is wrong, and nobody should have to answer it to carry on
+        listening. -->
+
+<div class="ask-wrap" v-if="app.ask" @click.self="app.askAnswer(false)">
+  <section class="ask" role="alertdialog" aria-modal="true" aria-labelledby="ask-title">
+    <h4 id="ask-title">{{ app.ask.title }}</h4>
+    <p>{{ app.ask.body }}</p>
+    <div class="ask-acts">
+      <!-- The safe answer is first and is the one a fumbled press lands on;
+           the one that takes the room is the one you have to mean. -->
+      <button class="ghost" ref="no" @click="app.askAnswer(false)">{{ app.ask.cancel }}</button>
+      <button class="go" @click="app.askAnswer(true)">{{ app.ask.confirm }}</button>
+    </div>
+  </section>
+</div>
+
+<div class="newbuild" v-if="app.updateReady">
+  <span>A newer version of this page is ready.</span>
+  <button class="go" @click="app.reloadForUpdate()">Reload</button>
+  <button class="ghost" @click="app.updateReady = false">Not now</button>
+</div>

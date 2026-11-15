@@ -1,0 +1,198 @@
+/* Library radio — the admin.
+ *
+ * Everything below the first block is scoped under `.adminpanel`, because the
+ * admin is no longer a page of its own: the desktop player mounts it as a view,
+ * so this stylesheet and desktop.css now share a document. Both had a `.card`,
+ * a `.head`, a `.body`, a `.row` and a `.tag`, and unscoped they would quietly
+ * restyle each other (2026-09-29).
+ *
+ * The palette and the shapes are tokens.css, same as the player: they are one
+ * product. Desktop first. On a narrow screen everything stacks — enough to fix
+ * a typo from a phone, not a phone design.
+ */
+
+/* ---- the standalone page at /admin/ -------------------------------------- */
+body { min-height: 100vh; }
+
+.solobar {
+  display: flex; align-items: baseline; gap: 1rem;
+  padding: .8rem 1.6rem; border-bottom: 1px solid var(--line); background: #121110;
+}
+.solobar .brand { font-weight: 700; }
+.solobar .brand span { color: var(--accent); }
+.solobar .back { color: var(--muted); text-decoration: none; font-size: .84rem; }
+.solobar .back:hover { color: var(--accent); }
+
+/* ---- the panel ----------------------------------------------------------- */
+.adminpanel { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; }
+
+/* ---- the tab strip ------------------------------------------------------- */
+.adminpanel .atabs {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  padding: .7rem 1.6rem; border-bottom: 1px solid var(--line);
+  background: #121110; position: sticky; top: 0; z-index: 5;
+}
+.adminpanel .atabs nav { display: flex; gap: .15rem; }
+.adminpanel .atabs nav button {
+  display: flex; align-items: baseline; gap: .45rem;
+  padding: .4rem .8rem; border: 0; border-radius: .45rem;
+  background: transparent; color: var(--muted); font-size: .92rem;
+}
+.adminpanel .atabs nav button:hover { background: var(--panel); color: var(--fg); }
+.adminpanel .atabs nav button.on { background: var(--panel-2); color: var(--fg); }
+.adminpanel .atabs nav button .n { font-size: .74rem; color: var(--dim); }
+.adminpanel .atabs .grow { flex: 1; }
+.adminpanel .apply {
+  padding: .42rem .8rem; border: 1px solid var(--accent-2); border-radius: .45rem;
+  background: transparent; color: var(--accent); font-size: .86rem; font-weight: 600;
+}
+.adminpanel .apply:hover { background: var(--accent); color: #17120e; }
+.adminpanel .stamp { color: var(--dim); font-size: .72rem; margin: 0; }
+.adminpanel .stamp b { color: var(--warn); font-weight: 500; }
+
+/* ---- the pane ------------------------------------------------------------ */
+.adminpanel .apane { padding: 1.3rem 1.6rem 3rem; min-width: 0; }
+.adminpanel .lede-wrap { margin-bottom: 1rem; }
+.adminpanel h2 { font-size: 1.25rem; font-weight: 600; margin: 0 0 .25rem; letter-spacing: -.01em; }
+.adminpanel .lede { color: var(--muted); font-size: .88rem; margin: 0; max-width: 72ch; }
+.adminpanel h6.sect { margin: 1.3rem 0 .2rem; font-size: .67rem; letter-spacing: .12em;
+                      text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+.adminpanel .aflash {
+  position: fixed; right: 1.2rem; bottom: 1.2rem; z-index: 40; max-width: 30rem;
+  padding: .6rem 1rem; border-radius: .45rem; font-size: .88rem;
+  background: var(--panel-2); border: 1px solid var(--line-2);
+  box-shadow: 0 .6rem 1.6rem #0009;
+}
+.adminpanel .aflash.err { border-color: var(--bad); color: #ffd9d2; }
+
+/* ---- cards --------------------------------------------------------------- */
+.adminpanel .card {
+  border: 1px solid var(--line); border-radius: .55rem; background: var(--panel);
+  margin-bottom: .55rem; overflow: hidden;
+}
+.adminpanel .card.open { border-color: var(--line-2); }
+.adminpanel .card > .head {
+  display: flex; align-items: center; gap: .7rem; width: 100%; text-align: left;
+  padding: .6rem .8rem; background: transparent; border: 0;
+}
+.adminpanel .card > button.head:hover { background: #ffffff06; }
+.adminpanel .chev { color: var(--dim); transition: transform .12s; }
+.adminpanel .card.open .chev { transform: rotate(90deg); }
+.adminpanel .head .grow { flex: 1; min-width: 0; }
+.adminpanel .head strong { font-weight: 600; }
+.adminpanel .head small { display: block; color: var(--muted); font-size: .76rem; }
+.adminpanel .body { padding: .2rem .8rem 1rem; border-top: 1px solid var(--line); }
+
+/* ---- forms --------------------------------------------------------------- */
+.adminpanel label { display: block; margin: .7rem 0 0; font-size: .82rem; color: var(--muted); }
+.adminpanel label > .hint { color: var(--dim); }
+.adminpanel input[type=text], .adminpanel input:not([type]), .adminpanel input[type=time],
+.adminpanel input[type=number], .adminpanel select, .adminpanel textarea {
+  display: block; width: 100%; margin-top: .25rem;
+  padding: .4rem .55rem; border: 1px solid var(--line-2); border-radius: .35rem;
+  background: #171615; color: var(--fg); font-size: .9rem;
+}
+.adminpanel textarea { resize: vertical; min-height: 4.2rem; }
+.adminpanel textarea.code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .8rem; min-height: 9rem; }
+.adminpanel select { appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 1rem center, right .72rem center;
+  background-size: .3rem .3rem, .3rem .3rem; background-repeat: no-repeat; }
+
+.adminpanel .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0 1rem; }
+.adminpanel .switches { display: flex; gap: 1.2rem; margin-top: .8rem; flex-wrap: wrap; }
+.adminpanel .switches label { display: flex; align-items: center; gap: .45rem; margin: 0; color: var(--fg); font-size: .88rem; }
+.adminpanel .switches input { width: auto; margin: 0; accent-color: var(--accent); }
+
+.adminpanel .actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+.adminpanel .actions small { color: var(--muted); }
+.adminpanel button.go, .adminpanel button.flat, .adminpanel button.danger {
+  padding: .42rem .9rem; border-radius: .4rem; font-size: .88rem; border: 1px solid transparent;
+}
+.adminpanel button.go { background: var(--accent); color: #17120e; font-weight: 600; }
+.adminpanel button.go:hover { background: var(--accent-2); color: #fff; }
+.adminpanel button.flat { background: var(--panel-2); border-color: var(--line-2); color: var(--fg); }
+.adminpanel button.flat:hover { border-color: #55504a; }
+.adminpanel button.danger { background: transparent; border-color: var(--line-2); color: var(--bad); }
+.adminpanel button.danger:hover { border-color: var(--bad); }
+
+.adminpanel details { margin-top: .9rem; }
+.adminpanel summary { cursor: pointer; color: var(--muted); font-size: .84rem; }
+.adminpanel summary:hover { color: var(--fg); }
+
+/* ---- tags ---------------------------------------------------------------- */
+.adminpanel .tags { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin-top: .25rem; }
+.adminpanel .tags input { width: auto; flex: 1 1 7rem; margin: 0; }
+.adminpanel .tag {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .12rem .45rem; border-radius: 2rem; font-size: .74rem;
+  background: var(--panel-2); border: 1px solid var(--line-2); color: var(--muted);
+}
+.adminpanel .tag button { border: 0; background: transparent; color: var(--dim); padding: 0; line-height: 1; }
+.adminpanel .tag button:hover { color: var(--bad); }
+.adminpanel .tag.lib { background: #5cc36b1f; border-color: #5cc36b55; color: var(--live); }
+
+.adminpanel .status-ok, .adminpanel .status-ready { color: var(--live); }
+.adminpanel .status-building, .adminpanel .status-pending { color: var(--warn); }
+.adminpanel .status-error, .adminpanel .status-failed { color: var(--bad); }
+
+/* ---- the stations split --------------------------------------------------- */
+.adminpanel .split { display: grid; grid-template-columns: 15rem 1fr; gap: 1.2rem; align-items: start; }
+.adminpanel .picker { border-right: 1px solid var(--line); padding-right: .8rem; }
+.adminpanel .picker h6 { margin: .9rem .2rem .3rem; font-size: .67rem; letter-spacing: .12em;
+                         text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.adminpanel .picker h6:first-child { margin-top: 0; }
+.adminpanel .picker button {
+  display: block; width: 100%; text-align: left; padding: .35rem .5rem;
+  border: 0; border-radius: .4rem; background: transparent; color: var(--fg); font-size: .88rem;
+}
+.adminpanel .picker button:hover { background: var(--panel); }
+.adminpanel .picker button.on { background: var(--panel-2); color: var(--accent); }
+.adminpanel .picker button small { display: block; color: var(--muted); font-size: .72rem; }
+
+/* Flex, not auto-fit grid: with seven controls an auto-fit track list gave the
+   last one (Minutes) almost no width and wrapped the remove button onto a line
+   of its own. Each control asks for a sensible minimum and wraps as a whole. */
+.adminpanel .slot {
+  display: flex; flex-wrap: wrap; gap: .1rem .7rem; align-items: flex-end;
+  padding: .6rem .7rem; margin-top: .5rem;
+  border: 1px solid var(--line); border-radius: .45rem; background: #ffffff05;
+}
+.adminpanel .slot label { margin-top: .3rem; flex: 1 1 9rem; min-width: 7.5rem; }
+.adminpanel .slot label.days { flex: 1 1 11rem; }
+.adminpanel .slot label:has(input[type=number]) { flex: 0 1 7rem; }
+.adminpanel .slot .x { flex: 0 0 auto; align-self: flex-end; margin-bottom: .1rem;
+                       padding: .42rem .6rem; border: 1px solid var(--line-2);
+                       border-radius: .35rem; background: transparent; color: var(--dim); }
+.adminpanel .slot .x:hover { color: var(--bad); border-color: var(--bad); }
+.adminpanel .days .picks { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .3rem; }
+.adminpanel .days .picks label { display: flex; align-items: center; gap: .25rem; margin: 0; color: var(--fg); font-size: .8rem; }
+.adminpanel .days .picks input { width: auto; margin: 0; accent-color: var(--accent); }
+
+/* ---- tables (Pandora) ----------------------------------------------------- */
+.adminpanel .tablewrap { overflow-x: auto; }
+.adminpanel table { border-collapse: collapse; width: 100%; font-size: .88rem; min-width: 34rem; }
+.adminpanel th, .adminpanel td { text-align: left; padding: .4rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.adminpanel th { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.adminpanel td small { color: var(--muted); }
+.adminpanel tbody tr:hover { background: #ffffff05; }
+
+.adminpanel .note { color: var(--muted); font-size: .84rem; max-width: 74ch; }
+.adminpanel .answer {
+  white-space: pre-wrap; background: #171615; border: 1px solid var(--line);
+  border-radius: .35rem; padding: .6rem .7rem; font-size: .78rem; color: var(--muted);
+  max-height: 22rem; overflow: auto;
+}
+.adminpanel code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .82rem; color: var(--muted); }
+
+/* ---- narrow: enough to fix a typo from a phone ---------------------------- */
+@media (max-width: 800px) {
+  .solobar { padding: .7rem .8rem; }
+  .adminpanel .atabs { padding: .6rem .8rem; }
+  .adminpanel .stamp { display: none; }
+  .adminpanel .apane { padding: 1rem .8rem 3rem; }
+  .adminpanel .split { grid-template-columns: 1fr; }
+  .adminpanel .picker { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 .8rem; }
+}

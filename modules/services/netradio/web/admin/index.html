@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#151413">
+<title>Library radio — admin</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="admin.css">
+
+<!-- The admin on its own, for a bookmark and for the phone's ⚙ link. The
+     markup and the logic both live beside this file and are shared with the
+     desktop player, which mounts the same component as a view — so reaching
+     the admin from the player is no longer a navigation and the music keeps
+     playing (2026-09-29). This page is the thin half. -->
+
+<div id="app" v-cloak>
+  <header class="solobar">
+    <span class="brand">Library <span>radio</span></span>
+    <a class="back" href="../">&larr; back to the radio</a>
+  </header>
+  <admin-panel></admin-panel>
+</div>
+
+<script src="../vendor/vue.global.prod.js"></script>
+<script src="admin.js"></script>
+<script>
+  Vue.createApp({ components: { "admin-panel": window.adminPanel("panel.html", "") } }).mount("#app");
+</script>
+</html>

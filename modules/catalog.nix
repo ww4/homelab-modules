@@ -353,6 +353,24 @@ in
     vhosts = [ "notes" ];
     secrets = [ ];
   };
+  netradio = {
+    description = "Radio stations from your own music library: Icecast + Liquidsoap on demand, a DJ that sequences and talks, a phone/desktop player, and optional receiver, speaker and TV-remote control.";
+    # Liquidsoap holds every station's script resident (~350 MiB measured with
+    # 30 stations, most of them idle); the DJ, admin and speaker services are
+    # small Python daemons. An encoder only runs while somebody is listening.
+    memory = 512;
+    enable = "homelab.netradio.enable";
+    options = [ "homelab.netradio" ];
+    requires = [ "acme" "nginx-access" ];
+    # Takes a full name (homelab.netradio.domain) rather than a label under
+    # homelab.domain, because the vTuner stand-in answers for names that are
+    # not ours at all.
+    vhosts = [ ];
+    secrets = [
+      (file "homelab.netradio.jellyfin.keyFile" [ "<a bare Jellyfin API key, or JELLYFIN_API_KEY=...>" ] "netradio" "first-boot")
+      (file "homelab.netradio.lastfmEnvFile" [ "LASTFM_API_KEY" ] "netradio" "supply")
+    ];
+  };
   notes = {
     description = "Keep-style card wall over a folder of markdown notes; pairs with silverbullet over the same directory.";
     memory = 96;

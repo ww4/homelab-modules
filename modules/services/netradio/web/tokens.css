@@ -1,0 +1,47 @@
+/* The netradio palette and the handful of base rules every page wants.
+ *
+ * Shared so the pages cannot drift apart: the desktop player and the admin
+ * page are the same product and should not be two people's idea of it. Layout
+ * stays in each page's own stylesheet — only what is genuinely common is here.
+ *
+ * The phone remote (remote.css) predates this and keeps its own copy of the
+ * same values. It is a separate design at a separate size, and moving it is a
+ * change worth making on its own rather than as a side effect.
+ */
+
+:root {
+  --bg: #151413;          /* the ground */
+  --panel: #1f1e1c;       /* a raised surface */
+  --panel-2: #2a2826;     /* a selected surface */
+  --line: #35322f;        /* a divider */
+  --line-2: #423c36;      /* a divider meant to be noticed */
+  --fg: #f3e9dc;          /* text */
+  --muted: #9b948b;       /* secondary text */
+  --dim: #6e6760;         /* tertiary text */
+  --accent: #d9743f;      /* the thing you are meant to press */
+  --accent-2: #b5542a;
+  --live: #5cc36b;        /* on air */
+  --warn: #d9b03f;
+  --bad: #d9533f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+[v-cloak] { display: none; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

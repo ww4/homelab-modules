@@ -1,0 +1,253 @@
+<!-- The admin, as one component's markup.
+
+     Fetched at runtime by whoever mounts it, so this stays a real HTML file
+     rather than a template string in JavaScript — the page has no build step
+     and this file is the only copy. Two hosts mount it:
+
+       /             the desktop player, as a view beside the wall. No
+                     navigation happens, so the <audio> element is never torn
+                     down and the music keeps playing (2026-09-29).
+       /admin/       on its own, for a bookmark and for the phone's ⚙ link.
+
+     Everything is scoped under .adminpanel: this markup and the player's share
+     a document now, and both had a .card, a .head, a .row and a .tag. -->
+
+<div class="adminpanel">
+
+  <!-- ===== the tab strip ================================================= -->
+  <header class="atabs">
+    <nav>
+      <button v-for="t in tabs" :key="t.id" :class="{on: tab === t.id}" @click="tab = t.id">
+        {{ t.title }}<span class="n">{{ t.count }}</span>
+      </button>
+    </nav>
+    <span class="grow"></span>
+    <p class="stamp">
+      {{ state.now }}
+      <template v-if="(state.pending_requests || []).length">
+        <b>· {{ state.pending_requests.length }} request(s) waiting for the box</b>
+      </template>
+    </p>
+    <button class="apply" @click="apply" title="Rescan the library, and restart the encoders only if the station list changed">Apply now</button>
+  </header>
+
+  <main class="apane">
+
+    <!-- ===== Feeds ====================================================== -->
+    <template v-if="tab === 'feeds'">
+      <header class="lede-wrap">
+        <h2>Feeds</h2>
+        <p class="lede">A feed is a title and a description. Add one and the agent reads the
+          description and builds the rule from what the library actually holds; edit the rule by
+          hand at any time. A listenable feed becomes a station of its own.</p>
+      </header>
+
+      <div v-for="[id, f] in feedList" :key="id" class="card" :class="{open: openId === id}">
+        <button class="head" @click="openId = openId === id ? null : id">
+          <span class="chev">›</span>
+          <span class="grow">
+            <strong>{{ f.title }}</strong>
+            <small><span :class="'status-' + f.status">{{ f.status }}</span> ·
+              {{ f.count || 0 }} tracks<span v-if="f.listenable"> · listenable</span> ·
+              <code>{{ id }}</code></small>
+          </span>
+          <span class="tags"><span v-for="t in (f.family || [])" :key="t" class="tag">{{ t }}</span></span>
+        </button>
+
+        <div v-if="openId === id" class="body">
+          <label>Title <input v-model="edit.title"></label>
+          <label>Description <textarea v-model="edit.description" rows="3"></textarea></label>
+
+          <p v-if="f.note" class="note" style="margin-top:.8rem">
+            <strong>What the agent found:</strong> {{ f.note }}
+            <button class="flat" style="padding:.1rem .5rem;font-size:.78rem" @click="showAnswer(id)">full answer</button>
+          </p>
+          <pre v-if="answers[id]" class="answer">{{ answers[id] }}</pre>
+
+          <label>Fits
+            <tag-input v-model="edit.family" :suggestions="state.families" placeholder="add a family…"></tag-input>
+          </label>
+
+          <div class="switches">
+            <label><input type="checkbox" v-model="edit.listenable"> listenable</label>
+            <label><input type="checkbox" v-model="edit.shellac"> include shellac</label>
+          </div>
+
+          <details>
+            <summary>Rule — what the description compiled to; editable</summary>
+            <textarea class="code" v-model="edit.rule" spellcheck="false"></textarea>
+          </details>
+
+          <div class="actions">
+            <button class="go" @click="saveFeed(id)">Save</button>
+            <button class="flat" @click="compileFeed(id)">Rebuild rule from description</button>
+            <button class="danger" @click="deleteFeed(id)">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" :class="{open: openId === '+'}">
+        <button class="head" @click="openId = openId === '+' ? null : '+'">
+          <span class="chev">›</span><span class="grow"><strong>Add a feed</strong></span>
+        </button>
+        <div v-if="openId === '+'" class="body">
+          <label>Title <input v-model="add.title" placeholder="Western Swing"></label>
+          <label>Description
+            <textarea v-model="add.description" rows="3"
+                      placeholder="Describe it the way you would to a friend — artists, era, instruments, what it isn't."></textarea></label>
+          <label>Fits <span class="hint">(optional; the agent fills it in if empty)</span>
+            <tag-input v-model="add.family" :suggestions="state.families"></tag-input></label>
+          <div class="switches">
+            <label><input type="checkbox" v-model="add.listenable"> listenable</label>
+            <label><input type="checkbox" v-model="add.shellac"> include shellac</label>
+          </div>
+          <div class="actions"><button class="go" @click="addFeed">Add feed</button></div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ===== Stations =================================================== -->
+    <template v-else-if="tab === 'stations'">
+      <header class="lede-wrap">
+        <h2>Stations</h2>
+        <p class="lede">What each station plays, and when. A slot plays a feed, an artist (with
+          similar artists we own mixed in), or <em>auto</em> — the DJ picks a compatible feed or
+          artist for the day, a different one each time.</p>
+      </header>
+
+      <div class="split">
+        <aside class="picker">
+          <h6>Curated</h6>
+          <button v-for="st in curated" :key="st.mount" :class="{on: sel === st.mount}" @click="select(st)">
+            {{ st.name }}<small>{{ slotCount(st.mount) }} slot(s)</small></button>
+          <h6>Specialty</h6>
+          <button v-for="st in specialty" :key="st.mount" :class="{on: sel === st.mount}" @click="select(st)">
+            {{ st.name }}<small>{{ (state.feeds[st.feed] || {}).count || 0 }} tracks</small></button>
+        </aside>
+
+        <div v-if="selected" class="card open">
+          <div class="head">
+            <span class="grow">
+              <strong>{{ selected.name }}</strong>
+              <small>{{ selected.kind }} · <code>{{ selected.mount }}</code><span v-if="selected.feed"> · feed {{ selected.feed }}</span></small>
+            </span>
+            <span class="tags"><span v-for="t in (selected.family || [])" :key="t" class="tag">{{ t }}</span></span>
+          </div>
+
+          <div class="body">
+            <div class="row">
+              <label>Name <input v-model="edit.name"></label>
+              <label v-if="selected.kind !== 'specialty'">Family <span class="hint">— what the schedule may offer it</span>
+                <tag-input v-model="edit.family" :suggestions="state.families"></tag-input></label>
+              <label>DJ break every <span class="hint">— songs; 0 = never, or a range like 3-4</span>
+                <input v-model="edit.breaks_every" placeholder="3-4"></label>
+              <label v-if="selected.kind !== 'specialty'">Excursion <span class="hint">— % of picks from neighbouring genres; default 10</span>
+                <input v-model="edit.excursion" placeholder="10" inputmode="numeric"></label>
+            </div>
+
+            <template v-if="selected.kind !== 'specialty'">
+              <details>
+                <summary>Base rule — what it plays outside segments</summary>
+                <textarea class="code" v-model="edit.base" spellcheck="false"></textarea>
+              </details>
+
+              <h6 class="sect">Schedule</h6>
+              <p class="note">Only feeds and artists that fit this station are offered. The DJ
+                announces the day's schedule at breaks.</p>
+
+              <div v-for="(s, i) in slotsOf(selected.mount)" :key="s._k" class="slot">
+                <label>Name <input v-model="s.name" placeholder="as announced"></label>
+                <label>Kind
+                  <select v-model="s.kind">
+                    <option value="feed">feed</option>
+                    <option value="artist">artist spotlight</option>
+                    <option value="auto">auto (DJ picks)</option>
+                  </select></label>
+                <label v-if="s.kind === 'feed'">Feed
+                  <select v-model="s.feed">
+                    <option v-for="f in (options[selected.mount] || {feeds: []}).feeds" :key="f.id" :value="f.id">{{ f.title }} ({{ f.count }})</option>
+                  </select></label>
+                <label v-else-if="s.kind === 'artist'">Artist
+                  <select v-model="s.artist">
+                    <option v-for="a in (options[selected.mount] || {artists: []}).artists" :key="a.name" :value="a.name">{{ a.name }} ({{ a.tracks }})</option>
+                  </select></label>
+                <label v-else>Pick
+                  <select v-model="s.like">
+                    <option value="artist">a different artist each time</option>
+                    <option value="feed">a different feed each time</option>
+                  </select></label>
+                <label class="days">Days
+                  <select v-model="s.dayspec">
+                    <option value="daily">daily</option>
+                    <option value="weekdays">weekdays</option>
+                    <option value="weekends">weekends</option>
+                    <option value="custom">days…</option>
+                  </select>
+                  <span v-if="s.dayspec === 'custom'" class="picks">
+                    <label v-for="d in days" :key="d"><input type="checkbox" :value="d" v-model="s.customDays">{{ d }}</label>
+                  </span></label>
+                <label>Start <input type="time" v-model="s.start"></label>
+                <label>Minutes <input type="number" min="15" max="720" step="15" v-model.number="s.minutes"></label>
+                <button class="x" @click="removeSlot(selected.mount, i)" title="Remove this slot" aria-label="Remove this slot">✕</button>
+              </div>
+
+              <p v-if="!slotsOf(selected.mount).length" class="note" style="margin-top:.7rem">
+                No segments — the base rule all day.</p>
+              <p v-if="(state.today[selected.mount] || []).length" class="note" style="margin-top:.7rem">
+                <strong>Today:</strong>&nbsp;
+                <span v-for="t in state.today[selected.mount]" :key="t.start">{{ t.start }}–{{ t.end }} {{ t.name }}<span v-if="t.kind === 'artist'"> (spotlight)</span> · </span>
+              </p>
+            </template>
+            <p v-else class="note">A specialty station plays its feed and nothing else. Edit the
+              feed on the Feeds tab.</p>
+
+            <div class="actions">
+              <button class="go" @click="saveStation">Save</button>
+              <button class="flat" v-if="selected.kind !== 'specialty'" @click="addSlot(selected.mount)">Add slot</button>
+              <small>{{ scheduleMsg }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ===== Heard on Pandora =========================================== -->
+    <template v-else>
+      <header class="lede-wrap">
+        <h2>Heard on Pandora</h2>
+        <p class="lede">Every track a Pandora station plays on the receiver for 20 seconds or more
+          is written down here. <span class="tag lib">in library</span> means the scanner already
+          has that artist.</p>
+      </header>
+
+      <p v-if="!pandora.plays" class="note">Nothing logged yet — play a Pandora station on the receiver.</p>
+
+      <div v-for="(st, name) in pandora.stations" :key="name" class="card open">
+        <div class="head">
+          <span class="grow"><strong>{{ name }}</strong>
+            <small>{{ st.plays }} plays · {{ st.artists.length }} artists</small></span>
+        </div>
+        <div class="body">
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>artist</th><th>plays</th><th>👍</th><th></th><th>heard</th></tr></thead>
+              <tbody>
+                <tr v-for="a in st.artists" :key="a.name">
+                  <td>{{ a.name }}</td>
+                  <td>{{ a.plays }}</td>
+                  <td>{{ a.thumbs || '' }}</td>
+                  <td><span v-if="a.in_library" class="tag lib">in library</span></td>
+                  <td><small>{{ a.tracks.slice(0, 4).join(' · ') }}<span v-if="a.tracks.length > 4"> · …</span></small></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note" style="margin-top:.8rem">Not in the library yet:
+            <code>{{ st.artists.filter(a => !a.in_library).map(a => a.name).join(', ') || '—' }}</code></p>
+        </div>
+      </div>
+    </template>
+  </main>
+
+  <p v-if="flash" class="aflash" :class="{err: flashErr}">{{ flash }}</p>
+</div>
