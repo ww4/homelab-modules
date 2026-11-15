@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#151413">
+<title>Library radio</title>
+<script>try { if (location.search.includes("view=desktop")) localStorage.setItem("radio.view", "desktop"); } catch (e) {}</script>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="desktop.css">
+<link rel="stylesheet" href="remote-panel.css">
+<link rel="stylesheet" href="dialog.css">
+<!-- the admin, mounted here as a view rather than navigated to, so the
+     stream is never torn down. Its rules are scoped under .adminpanel. -->
+<link rel="stylesheet" href="admin/admin.css">
+
+<div id="app" v-cloak>
+  <!-- There is no "escape to the phone view" banner any more. It existed
+       because this page had no narrow layout and told you to leave instead
+       (2026-09-28). It has one now, so narrowing the window re-lays the page
+       out where it stands: no navigation, nothing reloaded, and the stream in
+       the <audio> element untouched (2026-09-29). -->
+
+  <div class="app" :class="{'no-aside': view !== 'station', narrow: narrow, sheet: drawer}">
+
+    <!-- On a narrow screen the rail is an off-canvas sheet; this dismisses it
+         by tapping beside it. -->
+    <button class="scrim" v-if="narrow && drawer" @click="drawer = false" aria-label="Close the station list"></button>
+
+  <!-- ===== left rail: where it plays, then what plays ====================== -->
+  <nav class="rail">
+    <div class="brand"><button class="home" @click="view = 'wall'">Library <b>radio</b></button></div>
+
+    <div class="zones">
+      <button v-for="z in zones" :key="z.id" class="zone" :class="{on: target === z.id}"
+              :disabled="z.dead" @click="target = z.id">
+        <span class="dot" :class="{live: z.live}"></span>
+        <span class="txt"><span>{{ z.name }}</span><small>{{ z.sub }}</small></span>
+      </button>
+      <!-- The television. A row, not a button: a station cannot be sent to
+           it, and something that looks selectable and is not is worse than
+           something plainly informational (2026-10-19). -->
+      <div class="zone info" v-if="tvZone()">
+        <span class="dot" :class="{live: tvZone().live}"></span>
+        <span class="txt"><span>{{ tvZone().name }}</span><small>{{ tvZone().sub }}</small></span>
+      </div>
+      <div class="railtools">
+        <button v-if="site.hasRoom" @click="openRemote" :disabled="!site.hasRoom">Remote</button>
+        <button v-if="site.hasRoom" @click="view = 'sources'; pollReceiver()"
+                :disabled="target !== 'room'" title="The receiver's own inputs and menus">Sources</button>
+        <button v-if="canResume()" @click="resumeRoom" title="Put the receiver back on the last station">Resume</button>
+      </div>
+    </div>
+
+    <div class="search">
+      <input type="search" v-model="query" @input="searchDebounced"
+             :placeholder="feedbackMount ? 'Request a song…' : 'Start a station to request'"
+             autocomplete="off" aria-label="Request a song">
+      <ul class="results" v-if="results.length">
+        <li v-for="r in results" :key="r.path">
+          <button @click="request(r)"><strong>{{ r.title }}</strong><small>{{ r.artist }} · {{ r.album }}</small></button>
+        </li>
+      </ul>
+      <p class="hint" v-else-if="query.length > 1">nothing in the library matches</p>
+    </div>
+
+    <div class="nav">
+      <template v-for="group in groups" :key="group.kind">
+        <h6>{{ group.title }}</h6>
+        <button v-for="s in group.stations" :key="group.kind + s.name" class="item"
+                :class="{playing: isPlaying(s)}" @click="openStation(s)">
+          <span class="mos" :class="{one: tileCovers(s).length === 1}">
+            <template v-if="tileCovers(s).length >= 4"><img v-for="c in tileCovers(s).slice(0, 4)" :key="c" :src="thumb(c, 80)" loading="lazy" alt="" @error="imgError(c, $event)"></template>
+            <img v-else-if="tileCovers(s).length" :src="thumb(tileCovers(s)[0], 120)" loading="lazy" alt="" @error="imgError(tileCovers(s)[0], $event)">
+            <span v-else class="ini">{{ initials(s.name) }}</span>
+          </span>
+          <span class="nm">{{ s.name }}</span>
+          <span class="ct">{{ shortCount(s.mount) }}</span>
+        </button>
+      </template>
+      <p class="hint" v-if="scanning">The library scan is still running — stations appear when it finishes.</p>
+    </div>
+    <div class="railfoot">
+      <a href="./?view=remote">Phone view</a>
+      <button class="lnk" @click="view = 'admin'">Admin</button>
+      <a href="now/stations.m3u" title="For a radio app">M3U</a>
+      <a href="now/stations.pls" title="For a radio app">PLS</a>
+      <a href="now/stations-lo.m3u" title="96 kbps, for cellular">96k</a>
+      <button class="lnk" :class="{on: notify}" @click="askNotify"
+              :title="notifyState === 'denied' ? 'Blocked — allow notifications for this site in your browser settings' : 'A notice when the track changes'">
+        {{ notify ? 'Notices on' : 'Notify' }}</button>
+    </div>
+  </nav>
+
+  <!-- ===== the wall: every station, and what it last played ================ -->
+  <main class="wall" v-if="view === 'wall'">
+    <template v-for="group in groups" :key="group.kind">
+      <h5>{{ group.title }}</h5>
+      <div class="grid">
+        <div v-for="s in group.stations" :key="group.kind + s.name" class="card"
+             :class="{playing: isPlaying(s)}" role="button" tabindex="0"
+             @click="openStation(s)" @keydown.enter="openStation(s)">
+          <span class="mos" :class="{one: tileCovers(s).length === 1}">
+            <template v-if="tileCovers(s).length >= 4"><img v-for="c in tileCovers(s).slice(0, 4)" :key="c" :src="thumb(c, 240)" loading="lazy" alt="" @error="imgError(c, $event)"></template>
+            <img v-else-if="tileCovers(s).length" :src="thumb(tileCovers(s)[0], 480)" loading="lazy" alt="" @error="imgError(tileCovers(s)[0], $event)">
+            <span v-else class="ini">{{ initials(s.name) }}</span>
+          </span>
+          <span class="badge" v-if="isUp(s.mount)">on air</span>
+          <button class="play" @click.stop="isPlaying(s) ? stopTarget() : playTarget(s)"
+                  :title="isPlaying(s) ? 'Stop' : ('Play on ' + targetName)"
+                  :aria-label="isPlaying(s) ? 'Stop' : ('Play on ' + targetName)">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <template v-if="isPlaying(s)"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></template>
+              <path v-else d="M6 4l14 8-14 8z"></path>
+            </svg>
+          </button>
+          <div class="meta">
+            <div class="nm">{{ s.name }}</div>
+            <div class="ct">{{ countOf(s.mount) || (s.kind === 'quick' ? 'internet stream' : '') }}</div>
+            <div class="onair" :class="{quiet: !lastOf(s.mount)}">
+              <template v-if="lastOf(s.mount)">
+                <b>{{ lastOf(s.mount).title }}</b><small>{{ lastOf(s.mount).artist }}</small>
+              </template>
+              <template v-else>nothing played yet</template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </main>
+
+  <!-- ===== one station: the listening screen =============================== -->
+  <section class="now" v-else-if="view === 'station'">
+    <div class="wash" :style="washStyle"></div>
+    <div class="mos cover" :class="{one: heroCovers.length === 1}">
+      <template v-if="artOk()"><img :src="art" alt="" @error="artError"></template>
+      <template v-else-if="heroCovers.length >= 4"><img v-for="c in heroCovers.slice(0, 4)" :key="c" :src="thumb(c, 400)" alt="" @error="imgError(c, $event)"></template>
+      <img v-else-if="heroCovers.length" :src="thumb(heroCovers[0], 700)" alt="" @error="imgError(heroCovers[0], $event)">
+      <span v-else class="ini">{{ initials(openStationName) }}</span>
+    </div>
+    <div class="stn">{{ openStationName }}</div>
+    <div class="trk">{{ viewTitle || '—' }}</div>
+    <div class="by">{{ viewArtist }}</div>
+    <div class="sub">{{ countOf(openMount) }}<span v-if="listenersOf(openMount)"> · {{ listenersOf(openMount) }} listening</span></div>
+
+    <div class="acts" v-if="canActHere">
+      <button @click="skip" title="Skip — and play less of this">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l9 7-9 7z" fill="currentColor" stroke="none"></path><path d="M17 5v14"></path></svg>Skip</button>
+      <button class="heart" :class="{on: hearted}" @click="toggleHeart"
+              :title="hearted ? 'Remove the heart' : 'Heart this — play it more often'">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.5-7-9.5A3.8 3.8 0 0 1 12 7a3.8 3.8 0 0 1 7 3.5C19 15.5 12 20 12 20z"></path></svg>{{ hearted ? 'Hearted' : 'Heart' }}</button>
+      <button @click="dislike('track')" title="Never play this track again">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3H6.5a2 2 0 0 0-2 1.6L3 11.5V13a2 2 0 0 0 2 2h5l-1 4.5a1.5 1.5 0 0 0 2.8 1L15 13zM17 3h4v10h-4z"></path></svg>Never</button>
+      <button @click="focusSearch" title="Request a song">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="M15.5 15.5L20 20"></path></svg>Request</button>
+    </div>
+    <!-- Browsing a station you are NOT listening to: the actions would act on
+         the wrong track, so the only thing offered is starting it.
+
+         TWO buttons, because one of them used to lie. It read "Play here" and
+         started the station on whatever output was selected — its own tooltip
+         said "Play on <target>", which is the tell. "Here" is read as "in my
+         browser", and from a phone outside the house that press took the
+         living room off a film (2026-11-02). Naming the destination on
+         the button is a better fix than any warning, because it removes the
+         ambiguity instead of catching it. The warning stays for a fumble. -->
+    <div class="acts" v-else-if="openStationObj.mount">
+      <button @click="playHere(openStationObj)" title="Play in this browser">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4l14 8-14 8z" fill="currentColor" stroke="none"></path></svg>Play here</button>
+      <button v-if="target !== 'here'" @click="playTarget(openStationObj)"
+              :title="'Start this station on ' + targetName">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4l14 8-14 8z" fill="currentColor" stroke="none"></path></svg>Play on {{ targetName }}</button>
+    </div>
+    <div class="tech">{{ techLine }}</div>
+  </section>
+
+  <!-- ===== the receiver's own inputs, tuner and menus ====================== -->
+  <!-- ===== the admin, in this page rather than a page of its own ==========
+       Inside the chain, ahead of the v-else: a v-else-if AFTER the catch-all
+       has no branch to attach to, and Vue fails to compile the whole root
+       template — the page renders as raw mustaches (2026-09-29). -->
+  <admin-panel v-else-if="view === 'admin'" base="admin/"></admin-panel>
+
+  <main class="sources" v-else>
+    <h5>Input</h5>
+    <div class="chips">
+      <button v-for="i in inputs" :key="i.param || i.name" class="chip"
+              :class="{on: receiver.input === (i.param || i.name)}"
+              @click="selectInput(i.param || i.name)">{{ i.title || i.param || i.name }}</button>
+    </div>
+
+    <template v-if="receiver.input === 'TUNER' && receiver.tuner">
+      <h5>Tuner</h5>
+      <div class="dial">
+        <div class="freq">{{ freqText }}<small>{{ receiver.tuner.band === 'FM' ? 'MHz' : 'kHz' }}</small></div>
+        <div class="flags">
+          <span :class="{on: receiver.tuner.tuned}">tuned</span>
+          <span :class="{on: receiver.tuner.stereo}">stereo</span>
+        </div>
+        <div class="chips">
+          <button class="chip" :class="{on: receiver.tuner.band === 'FM'}" @click="band('FM')">FM</button>
+          <button class="chip" :class="{on: receiver.tuner.band === 'AM'}" @click="band('AM')">AM</button>
+          <button class="chip" @click="seek(false)">◀◀ seek</button>
+          <button class="chip" @click="tuneStep(-1)">−</button>
+          <button class="chip" @click="tuneStep(1)">+</button>
+          <button class="chip" @click="seek(true)">seek ▶▶</button>
+        </div>
+      </div>
+      <h5>Presets</h5>
+      <div class="chips" v-if="presets.length">
+        <button v-for="p in presets" :key="p.number" class="chip"
+                :class="{on: String(receiver.tuner.preset) === String(p.number)}"
+                @click="tunerPreset(p.number)">{{ p.text }}</button>
+      </div>
+      <p class="hint" v-else>No presets stored — hold MEMORY on the front panel to save one.</p>
+    </template>
+
+    <template v-if="menuSource">
+      <h5>{{ menuSource === 'SERVER' ? 'Media server' : menuSource === 'Pandora' ? 'Pandora' : 'Menu' }}
+        <span v-if="menu.name">· {{ menu.name }}</span></h5>
+      <div class="menu">
+        <button class="row" v-if="menu.layer > 1" @click="menuBack">‹ back</button>
+        <button class="row" v-for="l in menu.lines" :key="l.line"
+                v-show="l.attribute !== 'Unselectable'" @click="menuSelect(l.line)">
+          <span>{{ l.text }}</span><span class="chev" v-if="l.attribute === 'Container'">›</span></button>
+        <div class="pager" v-if="menu.max_line > 8">
+          <button @click="menuPage(false)" :disabled="menu.current_line <= 1">‹ prev</button>
+          <span>{{ menu.current_line }}–{{ Math.min(menu.current_line + 7, menu.max_line) }} of {{ menu.max_line }}</span>
+          <button @click="menuPage(true)" :disabled="menu.current_line + 8 > menu.max_line">next ›</button>
+        </div>
+      </div>
+    </template>
+    <p class="hint" v-if="!receiver.on">The receiver is in standby — power it on from the transport bar.</p>
+  </main>
+
+  <!-- ===== right column: what just played, what's queued, and why ========== -->
+  <aside class="aside" v-if="view === 'station'">
+    <!-- On a radio the history panel is what the queue panel is in an on-demand
+         player: same real estate, opposite time direction, and it answers the
+         question listeners actually have ("what was that two songs ago"). -->
+    <div class="tabs">
+      <button :class="{on: qtab === 'played'}" @click="qtab = 'played'">Just played</button>
+      <button :class="{on: qtab === 'next'}" @click="qtab = 'next'">Up next</button>
+    </div>
+
+    <ol class="q" v-if="qtab === 'played'">
+      <li v-for="(h, i) in viewHistory.slice(0, 12)" :key="i"
+          :class="{break: h.kind === 'break', 'now-row': i === 0}">
+        <span class="i">{{ i === 0 ? '▶' : i }}</span>
+        <span class="t"><b>{{ rowTitle(h) }}</b><small v-if="rowSub(h)">{{ rowSub(h) }}</small></span>
+      </li>
+      <li class="empty" v-if="!viewHistory.length">nothing yet</li>
+    </ol>
+
+    <ol class="q" v-else>
+      <li v-for="(n, i) in (viewNext.next || [])" :key="i"
+          :class="{break: n.kind === 'break'}">
+        <span class="i">{{ i + 1 }}</span>
+        <span class="t"><b>{{ rowTitle(n) }}</b><small>{{ n.request ? 'request' : rowSub(n) }}</small></span>
+      </li>
+      <li class="empty" v-if="!(viewNext.next || []).length">the DJ has not queued anything yet</li>
+    </ol>
+
+    <p class="dj" v-if="viewNext.last_break">DJ: “{{ viewNext.last_break }}”</p>
+
+    <h6>Station</h6>
+    <ol class="chain">
+      <li v-for="(w, i) in stationFacts" :key="i"><b>{{ w.head }}</b><span>{{ w.sub }}</span></li>
+    </ol>
+  </aside>
+
+  <!-- ===== the transport bar, common to every view ========================= -->
+  <div class="bar">
+    <div class="bnow">
+      <button class="sheetbtn" v-if="narrow" @click="drawer = !drawer" :aria-expanded="String(drawer)" aria-label="Stations and outputs">☰</button>
+      <span class="mos" :class="{one: barCovers.length === 1}">
+        <template v-if="barCovers.length >= 4"><img v-for="c in barCovers.slice(0, 4)" :key="c" :src="thumb(c, 100)" alt="" @error="imgError(c, $event)"></template>
+        <img v-else-if="barCovers.length" :src="thumb(barCovers[0], 160)" alt="" @error="imgError(barCovers[0], $event)">
+        <span v-else class="ini">{{ initials(nowStation) }}</span>
+      </span>
+      <div class="txt">
+        <b>{{ nowLine1 || (nowStation ? nowStation : 'Nothing playing') }}</b>
+        <small>{{ barSub }}</small>
+      </div>
+      <button v-if="canDJ" class="bheart" :class="{on: hearted}" @click="toggleHeart"
+              :title="hearted ? 'Remove the heart' : 'Heart this'" aria-label="Heart">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.5-7-9.5A3.8 3.8 0 0 1 12 7a3.8 3.8 0 0 1 7 3.5C19 15.5 12 20 12 20z"></path></svg></button>
+    </div>
+
+    <div class="tport">
+      <button v-if="target === 'room'" @click="power(!receiver.on)" :class="{on: receiver.on}"
+              :title="receiver.on ? 'Standby' : 'Power on'" aria-label="Power">
+        <svg viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"><path d="M12 3v8"></path><path d="M6.3 6.3a8 8 0 1 0 11.4 0"></path></svg></button>
+      <button class="main" @click="anythingPlaying ? stopTarget() : resumePlay()"
+              :title="anythingPlaying ? 'Stop' : 'Play'" :aria-label="anythingPlaying ? 'Stop' : 'Play'">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect v-if="anythingPlaying" x="6" y="6" width="12" height="12" rx="1.5"></rect>
+          <path v-else d="M7 4l13 8-13 8z"></path>
+        </svg></button>
+      <button @click="skip" :disabled="!canDJ" title="Skip — and play less of this" aria-label="Skip">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l9 7-9 7z"></path><rect x="16" y="5" width="3" height="14" rx="1"></rect></svg></button>
+    </div>
+
+    <div class="bright">
+      <span class="busy" v-if="busy">{{ busy }}</span>
+      <canvas ref="viz" width="240" height="60" v-show="target === 'here' && current"></canvas>
+      <div class="vol">
+        <button class="bheart" :class="{on: isMuted}" @click="toggleMute" aria-label="Mute" style="width:30px;height:30px">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"></path><path v-if="!isMuted" d="M16 8.5a5 5 0 0 1 0 7"></path><path v-else d="M16 9l5 6M21 9l-5 6"></path></svg></button>
+        <input type="range" min="0" :max="volumeMax" step="1" v-model.number="volDraft"
+               @input="volDragging = true" @change="volDragging = false; setLevel(volDraft)" aria-label="Volume">
+        <span class="lvl">{{ volDraft }}</span>
+      </div>
+      <!-- The rain bed. Its own stream and its own level, so it is this
+           listener's choice rather than the station's. -->
+      <div class="bed" v-if="site.bedMount && target === 'here'" :class="{on: bedOn}">
+        <button class="bedtoggle" :class="{on: bedOn}" @click="bedToggle"
+                :title="bedOn ? 'Turn the rain off' : 'Play a bed of rain underneath'"
+                aria-label="Rain bed">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 15a4 4 0 0 1 .5-8 5.5 5.5 0 0 1 10.4 1.6A3.5 3.5 0 0 1 17.5 15z"></path><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"></path></svg>
+        </button>
+        <input v-if="bedOn" type="range" min="0" max="100" step="1" :value="bedVol"
+               @input="bedSet($event.target.value)" aria-label="Rain level" title="How loud the rain sits under the music">
+      </div>
+      <div class="qual" v-if="target === 'here'">
+        <label :class="{on: quality === ''}"><input type="radio" value="" v-model="quality" @change="retune">192k</label>
+        <label :class="{on: quality === '-lo'}"><input type="radio" value="-lo" v-model="quality" @change="retune">96k</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- The remote is ONE component, mounted by this page and by the phone —
+       see web/remote-panel.html. It was two copies of the markup until the
+       phone turned out not to have the Roku half at all (2026-10-21).
+       `:app="this"` hands it the page: the state and the methods live in
+       shared.js, where the receiver half already was. -->
+  <remote-panel v-if="remote" :app="this"></remote-panel>
+  <!-- Always mounted: the markup is fetched at runtime, and a question
+       that arrives after its own answer is no use. -->
+  <ask-panel :app="this"></ask-panel>
+
+  </div><!-- .app -->
+
+  <p class="toast" v-if="toast">{{ toast }}</p>
+  <audio ref="audio" preload="none" style="display:none"></audio>
+  <audio ref="bed" preload="none" loop style="display:none"></audio>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="radio.js"></script>
+<script src="shared.js"></script>
+<script src="admin/admin.js"></script>
+<script src="desktop.js"></script>
+</html>

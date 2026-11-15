@@ -78,6 +78,7 @@
       meshagent = ./modules/services/meshagent;
       decluttarr = ./modules/services/decluttarr.nix;
       nginx-log-paths-check = ./modules/services/nginx-log-paths-check.nix;
+      netradio = ./modules/services/netradio;
       smart-dump = ./modules/services/smart-dump.nix;
       qbit-vpn-watchdog = ./modules/services/qbit-vpn-watchdog.nix;
       arr-missing-sweep = ./modules/services/arr-missing-sweep.nix;

@@ -1,0 +1,15 @@
+{
+  "name": "Library radio",
+  "short_name": "Radio",
+  "description": "The house radio: stations from the music library, and the living-room receiver",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1c1b1a",
+  "theme_color": "#1c1b1a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

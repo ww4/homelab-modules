@@ -53,6 +53,29 @@
     deployDriftWatch = { enable = true; repoUrl = "https://git.example.com/me/flakes.git"; };
     mirrorDriftWatch.pairs = [ { name = "media"; source = "/mnt/media"; mirror = "/mnt/mirror"; } ];
 
+    # netradio with every optional part switched on that a household would
+    # actually use — receiver, sound card, TV remote, vTuner, Jellyfin, a
+    # Last.fm key, an outside stream. Most of its options are interpolated into
+    # unit files and a rendered Liquidsoap script, so defaults would exercise
+    # almost nothing.
+    netradio = {
+      enable = true;
+      domain = "radio.example.com";
+      title = "Example Radio";
+      libraryRoots = [ "/mnt/media/Music" "/mnt/media/arr/music" ];
+      libraryGroup = "media";
+      requiresMounts = [ "mnt-media.mount" ];
+      bedMount = "rainymood";
+      tts = { voice = "af_heart"; urls = [ "http://127.0.0.1:8880" ]; };
+      speaker = { enable = true; label = "Kitchen speakers"; defaultMount = "rainymood"; startVolume = 60; maxVolume = 70; };
+      receiver = { enable = true; label = "Living room"; apiUrl = "http://127.0.0.1:8014"; codecs = [ "mp3" "aac-lc" ]; tvInput = "OPTICAL"; };
+      roku = { enable = true; label = "Living room TV"; apiUrl = "http://127.0.0.1:8793"; };
+      vtuner = { enable = true; address = "192.168.1.10"; };
+      jellyfin = { enable = true; keyFile = "/run/secrets/jellyfin-api"; };
+      lastfmEnvFile = "/run/secrets/lastfm-env";
+      extraInternetRadio = [ { name = "Example FM"; url = "http://stream.example.com/live.mp3"; } ];
+    };
+
     # Two notes front ends over one folder, which is the pairing the modules
     # are written for — and the configuration that catches their shared
     # default vhost label.

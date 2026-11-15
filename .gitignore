@@ -1,2 +1,4 @@
 configurator/result-iso
 result
+__pycache__/
+*.pyc

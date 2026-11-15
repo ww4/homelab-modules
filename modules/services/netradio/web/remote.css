@@ -1,0 +1,118 @@
+/* Library radio — the remote. Phone-first, dark, three screens under a
+   fixed top bar and a fixed bottom (volume + tabs). Desktop gets the same
+   thing centred in a 480px column. No framework CSS here. */
+:root {
+  --bg: #151413; --panel: #1f1e1c; --panel-2: #2a2826; --line: #35322f;
+  --fg: #f3e9dc; --muted: #9b948b; --accent: #d9743f; --accent-2: #b5542a; --live: #5cc36b;
+  --top: 3.2rem; --vol: 3.6rem; --tabs: 3.6rem;
+  --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+[v-cloak] { display: none; }
+#app { min-height: 100dvh; }
+#app.desktop { max-width: 480px; margin: 0 auto; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+h6 { margin: 1rem 0 .5rem; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+
+/* bars */
+.bar { position: fixed; left: 0; right: 0; display: flex; align-items: center; gap: .5rem; padding: 0 .8rem; background: var(--panel); border-color: var(--line); z-index: 5; }
+#app.desktop .bar { max-width: 480px; margin: 0 auto; }
+.bar.top { top: 0; height: calc(var(--top) + var(--sat)); padding-top: var(--sat); border-bottom: 1px solid var(--line); }
+.bar.volume { bottom: calc(var(--tabs) + var(--sab)); height: var(--vol); border-top: 1px solid var(--line); }
+.bar.tabs { bottom: 0; height: calc(var(--tabs) + var(--sab)); padding-bottom: var(--sab); border-top: 1px solid var(--line); justify-content: space-around; gap: 0; }
+.room { display: flex; align-items: center; gap: .5rem; font-weight: 600; font-size: 1.05rem; padding: .4rem .2rem; }
+.room .dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--muted); }
+.room .dot.live { background: var(--live); box-shadow: 0 0 6px var(--live); }
+.room .chev { color: var(--muted); font-size: .9rem; }
+.bar.top .status { flex: 1; text-align: right; font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar.top .admin { color: var(--muted); font-size: 1.1rem; padding: .3rem; }
+.bar.volume .icon { width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.4rem; background: var(--panel-2); }
+.bar.volume .icon svg { width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bar.volume .icon.on { background: var(--accent); color: #1a0f08; }
+.bar.volume .icon:disabled { opacity: .35; }
+.bar.volume input[type=range] { flex: 1; margin: 0; accent-color: var(--accent); height: 2.4rem; }
+.bar.volume canvas { flex: 1; min-width: 0; height: 2.2rem; width: 100%; }
+.bar.volume .quality { display: flex; flex: none; gap: .4rem; white-space: nowrap; font-size: .75rem; color: var(--muted); }
+.bar.volume .quality input { accent-color: var(--accent); margin-right: .2rem; }
+.bar.tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .15rem; font-size: .68rem; color: var(--muted); padding: .4rem 0; }
+.bar.tabs button svg { width: 1.5rem; height: 1.5rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bar.tabs button.active { color: var(--accent); }
+.bar.tabs button:disabled { opacity: .3; }
+
+/* screens */
+.screen { padding: calc(var(--top) + var(--sat) + .6rem) .9rem calc(var(--vol) + var(--tabs) + var(--sab) + 1rem); min-height: 100dvh; }
+
+/* NOW */
+.now .hero { aspect-ratio: 1; max-height: 42dvh; margin: .2rem auto 1rem; border-radius: 18px; overflow: hidden; background: var(--panel-2); display: grid; place-items: center; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+.now .hero img { width: 100%; height: 100%; object-fit: cover; }
+.now .tile-art { font-size: 4.5rem; font-weight: 700; letter-spacing: -.04em; color: rgba(255,255,255,.85); }
+.now .meta { text-align: center; padding: 0 .4rem; }
+.now .station { color: var(--accent); font-size: .85rem; letter-spacing: .04em; text-transform: uppercase; }
+.now .station .segment { color: var(--fg); opacity: .85; }
+.now .title { font-size: 1.35rem; font-weight: 700; margin: .25rem 0; line-height: 1.25; }
+.now .sub { color: var(--muted); min-height: 1.4em; }
+.transport { display: flex; justify-content: center; gap: .6rem; margin: 1.2rem 0 .6rem; }
+.transport button { flex: 1; max-width: 6rem; display: flex; flex-direction: column; align-items: center; gap: .25rem; padding: .7rem .2rem; border-radius: 14px; background: var(--panel); font-size: .72rem; color: var(--muted); }
+.transport button svg { width: 1.7rem; height: 1.7rem; fill: currentColor; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; }
+.transport button .big { font-size: 1.6rem; line-height: 1; color: var(--fg); }
+.transport button.main { background: var(--accent); color: #1a0f08; max-width: 5rem; }
+.transport button.resume { background: var(--accent); color: #1a0f08; max-width: 16rem; flex-direction: row; gap: .5rem; padding: .7rem 1.3rem; font-size: .9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.transport button:active { background: var(--panel-2); }
+.lists { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: .8rem; font-size: .85rem; }
+.lists ol { margin: 0; padding-left: 1.2rem; color: var(--muted); }
+.lists li.break { color: var(--accent-2); }
+.lists li.request { color: var(--accent); }
+.lists .dj { color: var(--accent-2); font-size: .8rem; margin: .5rem 0 0; }
+.toast { position: fixed; left: 50%; bottom: calc(var(--vol) + var(--tabs) + var(--sab) + 1rem); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: .5rem .9rem; border-radius: 999px; font-size: .85rem; z-index: 6; }
+
+/* STATIONS: tiles */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+.tile { position: relative; aspect-ratio: 1; border-radius: 14px; background: var(--panel); padding: .6rem; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; text-align: left; overflow: hidden; }
+.tile .ini { position: absolute; top: .5rem; left: .6rem; font-size: 1.6rem; font-weight: 800; opacity: .28; letter-spacing: -.04em; }
+.tile .name { font-weight: 600; font-size: .85rem; line-height: 1.15; }
+.tile .sub { font-size: .68rem; color: rgba(255,255,255,.7); }
+.tile.playing { outline: 2px solid var(--fg); }
+.tile .live-dot { position: absolute; top: .6rem; right: .6rem; width: .5rem; height: .5rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 6px var(--live); }
+.grid.inputs { grid-template-columns: repeat(3, 1fr); }
+.tile.small { aspect-ratio: auto; min-height: 3.2rem; justify-content: center; align-items: center; text-align: center; background: var(--panel-2); }
+.tile.small.playing { background: var(--accent); color: #1a0f08; outline: 0; }
+
+/* SOURCES: tuner + menus */
+.dial { background: var(--panel); border-radius: 16px; padding: 1rem; }
+.dial .freq { font-size: 2.6rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.dial .freq small { font-size: .9rem; color: var(--muted); margin-left: .4rem; }
+.dial .flags { display: flex; justify-content: center; gap: 1rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--line); }
+.dial .flags .on { color: var(--live); }
+.dial .bands { display: flex; justify-content: center; gap: .5rem; margin: .6rem 0; }
+.chip { padding: .3rem .9rem; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.chip.active { background: var(--accent); color: #1a0f08; }
+.dial .transport { margin: .4rem 0; }
+.dial .direct { display: flex; gap: .5rem; margin: .6rem 0; }
+.dial .direct input { flex: 1; font: inherit; padding: .5rem .7rem; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+.dial .direct button { padding: .5rem 1rem; border-radius: 10px; background: var(--panel-2); }
+.menu { background: var(--panel); border-radius: 16px; overflow: hidden; }
+.menu .row { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: .8rem .9rem; border-bottom: 1px solid var(--line); text-align: left; }
+.menu .row:active { background: var(--panel-2); }
+.menu .row .chev { color: var(--muted); }
+.menu .row small { color: var(--muted); }
+.menu .pager { display: flex; justify-content: space-between; align-items: center; padding: .5rem .9rem; font-size: .8rem; color: var(--muted); }
+.menu .pager button:disabled { opacity: .3; }
+.menu p { padding: .8rem .9rem; margin: 0; }
+.request input[type=search] { width: 100%; font: inherit; font-size: 1.05rem; padding: .7rem .9rem; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); margin-bottom: .6rem; }
+
+/* station tiles: a 2x2 cover mosaic, a single hero cover, or a glyph */
+.tile .mosaic, .tile .hero1 { position: absolute; inset: 0; display: grid; }
+.tile .mosaic { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.tile .mosaic img, .tile .hero1 img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile.art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.88) 0%, rgba(0,0,0,.5) 36%, rgba(0,0,0,0) 62%); }
+.tile .name, .tile .sub, .tile .live-dot { position: relative; z-index: 1; }
+.tile.art .name { text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.tile .glyph { position: absolute; top: .5rem; left: .6rem; width: 2rem; height: 2rem; opacity: .55; }
+.tile .glyph svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* The remote's styles live in remote-panel.css now — one sheet for the one
+   component both pages mount. The only thing that ever differed between the
+   two copies was how big a finger is, which is a viewport query, not a page. */

@@ -1,0 +1,131 @@
+/* The remote, styled once for both pages.
+ *
+ * It was styled twice — a touch-sized sheet in remote.css and a mouse-sized
+ * one in desktop.css — which is the same duplication the markup had. The
+ * difference between them was never "which page"; it was how big a finger is.
+ * So that is what it keys off here: one file, and a viewport query where the
+ * two genuinely differ. Below 600px the keys grow to a thumb; above it they
+ * shrink to a pointer.
+ *
+ * The palette comes from tokens.css, which both pages already load. */
+
+.remote-wrap {
+  position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .72);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.remote {
+  width: 100%; max-width: 480px; max-height: 94vh; overflow-y: auto;
+  background: var(--panel); border-radius: 18px 18px 0 0;
+  padding: .9rem 1rem calc(1.4rem + var(--sab, 0px));
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, .5);
+}
+.remote header { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .8rem; }
+.remote header strong { font-size: 1.05rem; }
+.remote header small { color: var(--muted); flex: 1; min-width: 0; }
+.remote header .x { border: 0; background: none; color: var(--muted); font-size: 1.2rem; padding: .2rem .5rem; cursor: pointer; }
+.remote h6 {
+  margin: 1rem 0 .4rem; font-size: .72rem; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+
+/* ---- keys ---------------------------------------------------------------- */
+.key {
+  background: var(--panel-2); color: var(--fg); border: 0; border-radius: 12px;
+  padding: .7rem .4rem; font-size: .95rem; cursor: pointer;
+  display: grid; place-items: center; min-height: 2.9rem;
+}
+.key:disabled { opacity: .35; cursor: not-allowed; }
+.key.on { background: var(--accent); color: #1a0f08; }
+.key svg { width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.key.wide { font-size: .8rem; padding: .7rem .5rem; }
+
+.dpad {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+  gap: .4rem;
+}
+.dpad .up { grid-area: 1 / 2; } .dpad .left { grid-area: 2 / 1; } .dpad .sel { grid-area: 2 / 2; }
+.dpad .right { grid-area: 2 / 3; } .dpad .down { grid-area: 3 / 2; }
+.dpad .sel { background: var(--accent); color: #1a0f08; font-weight: 600; }
+
+/* ---- what is on the screen ------------------------------------------------
+   Names from the library server, clock from the box. */
+.r-now { margin: 0 0 .8rem; padding: .55rem .65rem; border-radius: .45rem; background: var(--panel-2); }
+.r-now-t { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; }
+.r-now-t strong { font-size: .95rem; }
+.r-now-t small, .r-clock { color: var(--muted); font-size: .76rem; }
+.r-bar { height: 3px; margin: .5rem 0 .3rem; border-radius: 2px; background: var(--line-2); overflow: hidden; }
+.r-bar-f { height: 100%; background: var(--accent); transition: width .6s linear; }
+.r-clock { font-variant-numeric: tabular-nums; }
+
+/* ---- the pad and the volume, side by side ---------------------------------
+   `auto` on the right gives the volume column the width its widest label
+   needs; the pad keeps the rest. The volume column is the taller of the two,
+   so the pad is centred against it rather than hanging from its heading. */
+.r-pair { display: grid; grid-template-columns: 1fr auto; gap: .9rem; align-items: start; }
+.r-pair h6 { margin-top: 0; }
+.r-pad { display: flex; flex-direction: column; }
+/* Capped and centred: left to fill the column the keys stretch into wide
+   rectangles, and a d-pad whose arrows are three times wider than they are
+   tall stops reading as a d-pad. `auto` on all four sides centres it against
+   the taller volume column. */
+.r-pair .dpad { margin: auto; width: 100%; max-width: 13rem; }
+.r-vcol { min-width: 5.5rem; }
+.r-vstack { display: grid; gap: .35rem; }
+/* Tabular figures so the level does not shuffle the buttons under it as it
+   crosses from 9 to 10. */
+.r-vstack .lvl { text-align: center; font-variant-numeric: tabular-nums; font-size: 1.3rem; font-weight: 600; padding: .1rem 0; }
+
+.r-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: .4rem; margin-top: .9rem; }
+
+/* ---- quick launch ---------------------------------------------------------
+   The box's own icons are 290x218, so 4:3 keeps them undistorted. */
+.r-apps { display: grid; gap: .4rem; margin-top: .9rem; grid-template-columns: repeat(auto-fit, minmax(4.4rem, 1fr)); }
+.rapp {
+  display: grid; gap: .25rem; padding: .3rem; border-radius: .5rem;
+  border: 1px solid var(--line-2); background: var(--panel); cursor: pointer;
+}
+.rapp:hover { border-color: #55504a; }
+.rapp img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: .35rem; display: block; background: var(--line-2); }
+.rapp span { color: var(--muted); font-size: .68rem; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.rtype { display: flex; gap: .4rem; margin-top: .9rem; }
+.rtype input {
+  flex: 1; min-width: 0; padding: .55rem .6rem; font-size: 1rem;
+  border: 1px solid var(--line-2); border-radius: .5rem; background: #171615; color: var(--fg);
+}
+
+/* ---- the receiver's own world, folded away -------------------------------- */
+.r-more { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .2rem; }
+.r-more summary { cursor: pointer; padding: .55rem 0; color: var(--muted); font-size: .78rem; }
+.r-more summary:hover { color: var(--fg); }
+.r-inputs { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.r-mid { display: grid; grid-template-columns: 1fr 3.4rem; gap: .8rem; margin-top: 1rem; align-items: center; }
+.r-side { display: grid; gap: .4rem; }
+.r-transport { display: grid; grid-template-columns: repeat(5, 1fr); gap: .5rem; }
+.r-transport .key.wide { grid-column: span 2; }
+.r-tuner { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; align-items: center; }
+.r-tuner .freq { grid-column: span 2; text-align: center; font-size: 1.1rem; font-weight: 600; }
+
+.r-note { color: var(--muted); font-size: .72rem; margin: 1rem 0 0; line-height: 1.45; }
+
+/* A setting on the television that no amount of retrying here will change. */
+.r-limited {
+  margin: 0 0 .7rem; padding: .5rem .6rem; border-radius: .4rem;
+  background: #4a2a1216; border: 1px solid var(--warn); color: var(--warn);
+  font-size: .78rem; line-height: 1.45;
+}
+.r-limited b { color: var(--fg); font-weight: 600; }
+
+/* ---- a pointer rather than a thumb ----------------------------------------
+   The only thing that ever differed between the two copies of this sheet.
+   The sheet also stops hugging the bottom edge, since there is no thumb
+   reaching up to it. */
+@media (min-width: 600px) {
+  .remote-wrap { align-items: center; }
+  .remote { border-radius: 14px; max-height: 92vh; padding-bottom: 1.1rem; }
+  .key { min-height: 2.2rem; padding: .45rem .5rem; font-size: .9rem; border-radius: .45rem; }
+  .key svg { width: 1.1rem; height: 1.1rem; }
+  .remote h6 { font-size: .66rem; letter-spacing: .12em; }
+  .r-vstack .lvl { font-size: 1.05rem; }
+  .r-inputs { grid-template-columns: repeat(4, 1fr); }
+}

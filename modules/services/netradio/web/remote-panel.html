@@ -1,0 +1,186 @@
+<!-- One remote for the room, mounted by BOTH pages.
+
+     It used to be two: a receiver-only sheet in index.html and a second copy
+     in desktop.html that had grown the Roku half. The owner, on the phone page
+     having no Roku: "The phone should have the roku, obviously. What am I
+     sitting on the couch with" (2026-10-21). He is right, and the fix is not
+     a third copy — the pages have drifted once already this month, which is
+     what shared.js and the parity tests exist to stop.
+
+     So this is the markup, once, fetched at runtime the way admin/panel.html
+     is. `app` is the mounting page itself, which is why every reference below
+     goes through it: the state and the methods stay on the page, where the
+     receiver half already lived in shared.js.
+
+     Two boxes, one thing a person is doing. The receiver owns the volume (the
+     television's optical out feeds it) and the Roku owns the picture, so the
+     pad and the volume sit side by side — a thumb each, the way a physical
+     remote puts the rocker beside the pad. The receiver's own world (inputs,
+     FM, presets, Pandora, its menu) is none of watching television, so it
+     folds away; with no Roku to combine it with, it opens, because then it is
+     the whole remote. -->
+<div class="remote-wrap" @click.self="app.remote = false">
+  <section class="remote">
+    <header>
+      <strong>{{ app.site.roomName || 'Remote' }}</strong>
+      <small>{{ app.remoteSub() }}</small>
+      <button class="x" @click="app.remote = false" aria-label="Close">✕</button>
+    </header>
+
+    <!-- What is on the screen. The names come from the library server, which
+         only knows what came out of the library; the clock from the box,
+         which knows the second but never the title. -->
+    <div class="r-now" v-if="app.tvNow()">
+      <div class="r-now-t">
+        <strong>{{ app.tvNow().head }}</strong>
+        <small v-if="app.tvNow().sub">{{ app.tvNow().sub }}</small>
+        <small v-else-if="!app.tvNow().playing">paused</small>
+      </div>
+      <div class="r-bar" v-if="app.tvNow().dur">
+        <div class="r-bar-f" :style="{ width: app.tvNow().pct + '%' }"></div>
+      </div>
+      <small class="r-clock" v-if="app.tvNow().dur">{{ app.clock(app.tvNow().pos) }} / {{ app.clock(app.tvNow().dur) }}</small>
+    </div>
+
+    <!-- Nothing here can clear this: it is a setting on the television. Said
+         up front rather than one toast per press, because every button is
+         refused while it is on (2026-10-19). -->
+    <p class="r-limited" v-if="app.roku.limited">
+      This Roku is in <b>Limited mode</b> and is refusing every button.
+      On the device: Settings → System → Advanced system settings →
+      Control by mobile apps → <b>Enabled</b>.
+    </p>
+
+    <div class="r-pair">
+      <div class="r-pad" v-if="app.site.hasRoku">
+        <h6>{{ app.rokuLabel() }}</h6>
+        <div class="dpad">
+          <button class="key up" @click="app.rokuKey('Up')" aria-label="Up">▲</button>
+          <button class="key left" @click="app.rokuKey('Left')" aria-label="Left">◀</button>
+          <button class="key sel" @click="app.rokuKey('Select')">OK</button>
+          <button class="key right" @click="app.rokuKey('Right')" aria-label="Right">▶</button>
+          <button class="key down" @click="app.rokuKey('Down')" aria-label="Down">▼</button>
+        </div>
+      </div>
+      <div class="r-vcol" v-if="app.site.hasRoom">
+        <h6>{{ app.receiverLabel() }}</h6>
+        <div class="r-vstack">
+          <button class="key" @click="app.volumeStep(2)" :disabled="!app.receiver.on" aria-label="Louder">+</button>
+          <span class="lvl">{{ app.shownVolume() }}</span>
+          <button class="key" @click="app.volumeStep(-2)" :disabled="!app.receiver.on" aria-label="Quieter">−</button>
+          <button class="key mute" :class="{on: app.receiver.mute}" @click="app.mute(!app.receiver.mute)"
+                  :disabled="!app.receiver.on" title="Mute" aria-label="Mute">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"></path><path v-if="!app.receiver.mute" d="M16 8.5a5 5 0 0 1 0 7"></path><path v-else d="M16 9l5 6M21 9l-5 6"></path></svg>
+          </button>
+          <button class="key power" :class="{on: app.receiver.on}" @click="app.power(!app.receiver.on)"
+                  title="Receiver power" aria-label="Receiver power">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v8"></path><path d="M6.3 6.3a8 8 0 1 0 11.4 0"></path></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Getting out of a screen and moving through a programme are the same
+         gesture from a sofa, so they are one strip. All of it the Roku's: the
+         receiver's transport drives ITS sources, not the television. -->
+    <div class="r-strip" v-if="app.site.hasRoku">
+      <button class="key" @click="app.rokuKey('Home')" title="Home">⌂</button>
+      <button class="key" @click="app.rokuKey('Back')" title="Back">‹</button>
+      <button class="key" @click="app.rokuKey('InstantReplay')" title="Instant replay">↺</button>
+      <button class="key" @click="app.rokuKey('Rev')" title="Rewind">⏪</button>
+      <button class="key" @click="app.rokuKey('Play')" title="Play / pause">⏯</button>
+      <button class="key" @click="app.rokuKey('Fwd')" title="Fast forward">⏩</button>
+      <button class="key" @click="app.rokuKey('Info')" title="Options">✱</button>
+    </div>
+
+    <!-- Straight to an app, the way the shortcut buttons on the physical
+         remote do it. The list and the icons are the box's own, so a channel
+         installed tomorrow appears here without anybody editing a page. -->
+    <div class="r-apps" v-if="app.rokuApps.length">
+      <button v-for="a in app.rokuApps" :key="a.id" class="rapp"
+              @click="app.rokuLaunch(a)" :title="'Open ' + a.name">
+        <img :src="'roku/apps/' + a.id + '/icon'" :alt="a.name" loading="lazy">
+        <span>{{ a.name }}</span>
+      </button>
+    </div>
+
+    <!-- Typing on a d-pad is the worst part of any streaming box, and ECP will
+         take the characters directly. One request per character, so the reply
+         says how many actually landed. -->
+    <div class="rtype" v-if="app.site.hasRoku">
+      <input v-model="app.rokuText" placeholder="type into a search box…"
+             @keydown.enter="app.rokuSend" aria-label="Text to send to the Roku">
+      <button class="key" @click="app.rokuSend" :disabled="!app.rokuText.trim()">Send</button>
+    </div>
+
+    <details class="r-more" v-if="app.site.hasRoom" :open="app.rxOpen">
+      <summary>{{ app.receiverLabel() }}: inputs, tuner, its own menu</summary>
+
+      <h6>Input</h6>
+      <div class="r-inputs">
+        <button v-for="i in app.inputs" :key="i.param || i.name" class="key wide"
+                :class="{on: app.receiver.input === (i.param || i.name)}"
+                @click="app.selectInput(i.param || i.name)" :disabled="!app.receiver.on">{{ i.title || i.param || i.name }}</button>
+      </div>
+
+      <div class="r-mid">
+        <div class="dpad">
+          <button class="key up" @click="app.cursor('Up')" :disabled="!app.receiver.on">▲</button>
+          <button class="key left" @click="app.cursor('Return')" :disabled="!app.receiver.on" title="Back">◀</button>
+          <button class="key sel" @click="app.cursor('Sel')" :disabled="!app.receiver.on">OK</button>
+          <button class="key right" @click="app.remotePage(true)" :disabled="!app.receiver.on" title="Page down">▶</button>
+          <button class="key down" @click="app.cursor('Down')" :disabled="!app.receiver.on">▼</button>
+        </div>
+        <div class="r-side">
+          <button class="key" @click="app.cursor('Return to Home')" :disabled="!app.receiver.on" title="Home">⌂</button>
+          <button class="key" @click="app.remotePage(false)" :disabled="!app.receiver.on" title="Page up">⇞</button>
+          <button class="key" @click="app.remotePage(true)" :disabled="!app.receiver.on" title="Page down">⇟</button>
+        </div>
+      </div>
+
+      <h6>Transport</h6>
+      <div class="r-transport">
+        <button class="key" @click="app.playback('Skip Rev')" :disabled="!app.receiver.on">⏮</button>
+        <button class="key" @click="app.playback('Play')" :disabled="!app.receiver.on">▶</button>
+        <button class="key" @click="app.playback('Pause')" :disabled="!app.receiver.on">⏸</button>
+        <button class="key" @click="app.playback('Stop')" :disabled="!app.receiver.on">⏹</button>
+        <button class="key" @click="app.playback('Skip Fwd')" :disabled="!app.receiver.on">⏭</button>
+      </div>
+
+      <template v-if="app.receiver.input === 'Pandora'">
+        <h6>Pandora</h6>
+        <div class="r-transport">
+          <button class="key wide" @click="app.feedback(true)">👍 Thumb up</button>
+          <button class="key wide" @click="app.feedback(false)">👎 Thumb down</button>
+        </div>
+      </template>
+
+      <h6>Tuner</h6>
+      <div class="r-tuner">
+        <button class="key" :class="{on: app.receiver.tuner && app.receiver.tuner.band === 'FM'}" @click="app.band('FM')" :disabled="!app.receiver.on">FM</button>
+        <button class="key" :class="{on: app.receiver.tuner && app.receiver.tuner.band === 'AM'}" @click="app.band('AM')" :disabled="!app.receiver.on">AM</button>
+        <span class="freq">{{ app.receiver.input === 'TUNER' ? app.freqText : '—' }}</span>
+        <button class="key" @click="app.tuneStep(-1)" :disabled="app.receiver.input !== 'TUNER'">−</button>
+        <button class="key" @click="app.tuneStep(1)" :disabled="app.receiver.input !== 'TUNER'">+</button>
+        <button class="key" @click="app.presetStep(false)" :disabled="app.receiver.input !== 'TUNER'" title="Preset down">P−</button>
+        <button class="key" @click="app.presetStep(true)" :disabled="app.receiver.input !== 'TUNER'" title="Preset up">P+</button>
+      </div>
+
+      <p class="r-note">No sleep timer, tone, dimmer, scenes or FM mono over the network — the receiver keeps those on the front panel.</p>
+    </details>
+
+    <!-- Two deletions worth remembering, both because the hardware here is not
+         what the protocol assumes (2026-10-21):
+
+         FIND REMOTE made the paired Roku remote beep. There isn't one — the
+         physical remote in this house is an infrared knock-off the box has
+         never heard of, so the button could only ever have done nothing.
+
+         WAKE sent PowerOn. Home wakes it, Home is already here, and a second
+         button for the same job is a button to think about. -->
+    <p class="r-note" v-if="app.site.hasRoku && app.site.hasRoom">Volume and mute are the
+      {{ app.receiverLabel() }}&rsquo;s; everything else is the {{ app.rokuLabel() }}&rsquo;s.
+      There is no seek or subtitle button because the Roku&rsquo;s Jellyfin app does not
+      accept them — only its own keypresses.</p>
+  </section>
+</div>
