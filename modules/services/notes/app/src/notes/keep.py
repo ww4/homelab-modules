@@ -64,6 +64,30 @@ class KeepNote:
     label: str | None
 
 
+MAX_CONFLICTS = 300
+EXCERPT = 600
+CHOICES = ("here", "keep", "both")
+
+
+@dataclass
+class Conflict:
+    note: KeepNote
+    rel: str
+    here_title: str
+    here_body: str
+    here_edited: str
+
+    def as_dict(self) -> dict:
+        return {
+            "id": self.note.keep_id,
+            "title": self.note.title or self.here_title or _first_line(self.note.body),
+            "here": {"edited": self.here_edited, "title": self.here_title,
+                     "text": self.here_body[:EXCERPT], "more": len(self.here_body) > EXCERPT},
+            "keep": {"edited": self.note.edited or self.note.created, "title": self.note.title,
+                     "text": self.note.body[:EXCERPT], "more": len(self.note.body) > EXCERPT},
+        }
+
+
 @dataclass
 class Plan:
     importer: str
@@ -71,10 +95,14 @@ class Plan:
     have_id: int = 0
     have_trashed: int = 0
     have_body: int = 0
-    # Already here, but edited in Keep after the copy here was taken. Not
-    # overwritten: the copy here may have been edited too, and there is no
-    # way to merge two edits to a note. Counted so it is not silently lost.
-    changed_in_keep: list[str] = field(default_factory=list)
+    # Already here, but edited in Keep after the copy here was taken. Two
+    # edits to one note cannot be merged, so the person chooses, per note,
+    # the way a file-copy dialog does: keep this one, use Keep's, keep both.
+    conflicts: list["Conflict"] = field(default_factory=list)
+    # Keep moved the edit date but the text matches this copy. Not a
+    # conflict — nothing to choose between — so it is settled silently by
+    # recording the date as seen.
+    same_text: list[tuple[str, str]] = field(default_factory=list)
     trashed_in_keep: int = 0
     empty: int = 0
     files: list[dict] = field(default_factory=list)
@@ -87,8 +115,8 @@ class Plan:
             "deleted_here": self.have_trashed,
             "trashed_in_keep": self.trashed_in_keep,
             "empty": self.empty,
-            "changed_in_keep": len(self.changed_in_keep),
-            "changed_sample": self.changed_in_keep[:15],
+            "conflicts": [c.as_dict() for c in self.conflicts[:MAX_CONFLICTS]],
+            "conflicts_total": len(self.conflicts),
             "files": self.files,
             "sample": [n.title or _first_line(n.body) for n in self.new[:25]],
         }
@@ -203,10 +231,14 @@ def content_key(title: str, body: str) -> tuple[str, str]:
     return ("b", b) if b else ("t", _norm(title))
 
 
-def inventory(space: Path) -> tuple[dict[str, str], set[str], set[tuple[str, str]]]:
-    """(live keep_id -> last edit date recorded here, keep_ids in the trash,
-    body keys of live Keep notes)."""
-    live: dict[str, str] = {}
+def inventory(space: Path) -> tuple[dict[str, tuple[str, str]], set[str], set[tuple[str, str]]]:
+    """(live keep_id -> (newest Keep edit already accounted for, path),
+    keep_ids in the trash, body keys of live Keep notes).
+
+    "Accounted for" is the later of the note's own edit date and
+    ``keep_seen`` — the Keep edit someone already looked at and decided
+    about, so an answered conflict is not asked again."""
+    live: dict[str, tuple[str, str]] = {}
     gone: set[str] = set()
     bodies: set[tuple[str, str]] = set()
     for root, bucket in ((space / "Keep", live), (space / paths.TRASH_DIR, gone)):
@@ -223,7 +255,8 @@ def inventory(space: Path) -> tuple[dict[str, str], set[str], set[tuple[str, str
             if kid and bucket is live:
                 field_ = lambda k: next((l.split(":", 1)[1].strip() for l in fm
                                          if re.match(rf"^{k}\s*:", l, re.I)), "")
-                live[kid] = field_("edited") or field_("date")
+                live[kid] = (max(field_("edited") or field_("date"), field_("keep_seen")),
+                             paths.relative(space, p))
             elif kid:
                 bucket.add(kid)
             if bucket is live:
@@ -249,8 +282,16 @@ def plan(space: Path, importer: str, batches: list[tuple[str, list[KeepNote]]]) 
                 pl.trashed_in_keep += 1
             elif n.keep_id in live:
                 pl.have_id += 1
-                if n.edited and live[n.keep_id] and n.edited > live[n.keep_id]:
-                    pl.changed_in_keep.append(n.title or _first_line(n.body))
+                seen_date, rel = live[n.keep_id]
+                if n.edited and seen_date and n.edited > seen_date:
+                    try:
+                        here = store.read(space, rel)
+                        if (_norm(here.title), _norm(here.body)) == (_norm(n.title), _norm(n.body)):
+                            pl.same_text.append((rel, n.edited))
+                        else:
+                            pl.conflicts.append(Conflict(n, rel, here.title, here.body, seen_date))
+                    except (OSError, paths.PathError):
+                        pass
             elif n.keep_id in gone:
                 pl.have_trashed += 1
             elif not n.title and not n.body.strip():
@@ -304,6 +345,45 @@ def render(n: KeepNote, importer: str, people: users.People,
     return "\n".join(out).rstrip("\n") + "\n"
 
 
+def resolve(space: Path, pl: Plan, people: users.People,
+            choices: dict[str, str], default: str = "here") -> dict[str, int]:
+    """Settle each conflict as chosen. Whatever is chosen, the note records
+    the Keep edit it has now seen, so the same conflict is not raised again."""
+    done = {c: 0 for c in CHOICES}
+    for rel, seen in pl.same_text:
+        store.set_fields(space, rel, keep_seen=seen)
+    for c in pl.conflicts:
+        n = c.note
+        choice = choices.get(n.keep_id, default)
+        if choice not in CHOICES:
+            choice = default
+        seen = n.edited or n.created
+        if choice == "keep":
+            # Title and body only: who owns it, whether it is shared, and
+            # everyone's archive and pin state are this space's, not Keep's.
+            store.write(space, c.rel, title=n.title if n.title else None, body=n.body)
+            store.set_fields(space, c.rel, edited=seen, keep_seen=seen)
+        elif choice == "both":
+            stem = f"{n.created} {_slug(n.title) or n.keep_id} (from Keep)"
+            rel = f"Keep/{stem}.md"
+            k = 2
+            while paths.resolve(space, rel).exists():
+                rel = f"Keep/{stem} {k}.md"
+                k += 1
+            # The copy deliberately carries NO keep_id — the original still
+            # holds that identity — but says where it came from.
+            text = render(n, pl.importer, people, False)
+            text = text.replace(f"keep_id: {n.keep_id}\n", f"keep_copy_of: {n.keep_id}\n", 1)
+            if n.title:
+                text = text.replace(f"\n# {n.title}\n", f"\n# {n.title} (from Keep)\n", 1)
+            paths.resolve(space, rel).write_text(text, encoding="utf-8")
+            store.set_fields(space, c.rel, keep_seen=seen)
+        else:
+            store.set_fields(space, c.rel, keep_seen=seen)
+        done[choice] += 1
+    return done
+
+
 def apply(space: Path, pl: Plan, people: users.People, archive_all: bool) -> list[str]:
     """Write the planned notes. Re-checks every id, so a stale plan cannot
     duplicate something imported since it was made."""
@@ -322,6 +402,6 @@ def apply(space: Path, pl: Plan, people: users.People, archive_all: bool) -> lis
             k += 1
         target = paths.resolve(space, rel)       # the boundary, as for every write
         target.write_text(render(n, pl.importer, people, archive_all), encoding="utf-8")
-        live[n.keep_id] = n.created
+        live[n.keep_id] = (n.created, rel)
         written.append(rel)
     return written

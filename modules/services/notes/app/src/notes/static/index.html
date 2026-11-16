@@ -648,6 +648,39 @@ body.selecting .pin{display:none}
   color:var(--ink-soft); cursor:pointer; font:500 14px/1 "IBM Plex Sans",system-ui,sans-serif;
 }
 
+/* import conflicts — the file-copy dialog's choice, per note */
+.signin.wide{width:min(760px, calc(100vw - 28px))}
+.im-conflicts{margin-top:14px; border-top:1px solid var(--line); padding-top:12px}
+.im-conflicts h3{
+  margin:0 0 4px; font:600 15px/1.3 "IBM Plex Sans",system-ui,sans-serif; color:var(--ink);
+}
+.im-conflicts .lede{
+  margin:0 0 10px; color:var(--ink-soft); font:400 12.5px/1.5 "IBM Plex Sans",system-ui,sans-serif;
+}
+.im-all{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px;
+  font:500 11px/1 "IBM Plex Mono",ui-monospace,monospace; color:var(--ink-soft); letter-spacing:.06em}
+.im-c{border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px}
+.im-c .t{font:600 14px/1.3 "IBM Plex Sans",system-ui,sans-serif; margin-bottom:8px; color:var(--ink)}
+.im-sides{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+@media (max-width:560px){.im-sides{grid-template-columns:1fr}}
+.im-side{border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:var(--ground)}
+.im-side.picked{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset}
+.im-side .h{display:flex; justify-content:space-between; gap:8px; margin-bottom:5px;
+  font:500 10px/1.4 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink-soft)}
+.im-side .newer{color:var(--accent)}
+.im-side pre{margin:0; max-height:9.5em; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere;
+  font:400 12.5px/1.5 "IBM Plex Sans",system-ui,sans-serif; color:var(--ink)}
+.im-side .more{color:var(--ink-faint); font-size:11px; margin-top:3px}
+.seg3{display:flex; margin-top:9px; border:1px solid var(--line); border-radius:8px; overflow:hidden}
+.seg3 button{flex:1; padding:8px 6px; border:0; border-left:1px solid var(--line); background:none;
+  color:var(--ink-soft); cursor:pointer; font:500 12.5px/1.2 "IBM Plex Sans",system-ui,sans-serif}
+.seg3 button:first-child{border-left:0}
+.seg3 button[aria-pressed="true"]{background:var(--accent); color:#fff}
+.im-all button{padding:6px 10px; border:1px solid var(--line); border-radius:7px; background:none;
+  color:var(--ink); cursor:pointer; font:500 12px/1 "IBM Plex Sans",system-ui,sans-serif; letter-spacing:0}
+.im-all button:hover{border-color:var(--accent); color:var(--accent)}
+
 /* users */
 .users-title{
   flex:1; font:600 15px/1.2 "IBM Plex Sans",system-ui,sans-serif; color:var(--ink);
@@ -823,7 +856,7 @@ body.selecting .pin{display:none}
 </div>
 
 <div class="scrim" id="importScrim" hidden>
-  <div class="signin" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+  <div class="signin wide" role="dialog" aria-modal="true" aria-labelledby="importTitle">
     <h2 id="importTitle">Import from Google Keep</h2>
     <p class="si-sub">In Google Takeout, choose only <b>Keep</b> and download the
       export. Pick the zip here — or all of them, if Takeout split it into several.
@@ -833,6 +866,7 @@ body.selecting .pin{display:none}
       <span>Choose Takeout zip…</span>
     </label>
     <div class="im-status" id="importStatus" aria-live="polite"></div>
+    <div class="im-conflicts" id="importConflicts" hidden></div>
     <label class="im-opt" id="importOptRow" hidden>
       <input type="checkbox" id="importArchive">
       File everything in the archive — for history you want searchable but off the wall
@@ -1120,7 +1154,7 @@ body.selecting .pin{display:none}
     importScrim:document.getElementById("importScrim"), importFile:document.getElementById("importFile"),
     importStatus:document.getElementById("importStatus"), importGo:document.getElementById("importGo"),
     importCancel:document.getElementById("importCancel"), importArchive:document.getElementById("importArchive"),
-    importOptRow:document.getElementById("importOptRow"),
+    importOptRow:document.getElementById("importOptRow"), importConflicts:document.getElementById("importConflicts"),
     usersScrim:document.getElementById("usersScrim"), usersBody:document.getElementById("usersBody"),
     usersClose:document.getElementById("usersClose"), usersPath:document.getElementById("usersPath"),
     toast:document.getElementById("toast"), toastMsg:document.getElementById("toastMsg"),
@@ -3130,7 +3164,9 @@ body.selecting .pin{display:none}
 
   function openImport(){
     if (!ME) { openSignIn(); return; }      // imported notes are recorded as someone's
-    IMPORT = {token: null, plan: null, busy: false};
+    IMPORT = {token: null, plan: null, busy: false, choices: {}};
+    el.importConflicts.hidden = true;
+    el.importConflicts.textContent = "";
     el.importFile.value = "";
     el.importArchive.checked = false;
     el.importOptRow.hidden = true;
@@ -3179,17 +3215,93 @@ body.selecting .pin{display:none}
       if (!f.notes) li(why, f.name + " held no notes (Takeout's index part — that is normal)");
     });
     if (why.children.length) box.appendChild(why);
-    if (p.changed_in_keep) {
-      box.appendChild(node("div", "muted", p.changed_in_keep + (p.changed_in_keep === 1
-        ? " note was edited in Keep after it came here. It is NOT updated — the copy here may have changed too:"
-        : " notes were edited in Keep after they came here. They are NOT updated — the copies here may have changed too:")));
-      var ch = node("ul"); (p.changed_sample || []).forEach(function(t){ li(ch, t); });
-      box.appendChild(ch);
+    if (done && p.settled) {
+      var st = p.settled, bits = [];
+      if (st.keep) bits.push(st.keep + " replaced with Keep's version");
+      if (st.both) bits.push(st.both + " kept both");
+      if (st.here) bits.push(st.here + " kept as they were");
+      if (bits.length) box.appendChild(node("div", "muted", "Edited in both places: " + bits.join(", ") + "."));
     }
     if (!done && p.sample && p.sample.length) {
       box.appendChild(node("div", "muted", "New, for example:"));
       var s = node("ul"); p.sample.slice(0, 8).forEach(function(t){ li(s, t); });
       box.appendChild(s);
+    }
+  }
+
+  var CHOICE_LABEL = {here: "Keep this one", keep: "Use Keep's", both: "Keep both"};
+
+  function importLabel(){
+    var p = IMPORT.plan, n = p.new, c = p.conflicts_total || 0;
+    var parts = [];
+    if (n) parts.push("Import " + n);
+    if (c) parts.push("settle " + c);
+    el.importGo.textContent = parts.length ? parts.join(" · ") : "Import";
+    el.importGo.disabled = !(n || c);
+  }
+
+  // Edited here AND in Keep since the copy was taken. Two edits to one note
+  // cannot be merged, so the person picks — per note, or for all at once —
+  // the way a file-copy dialog asks about a file that already exists.
+  function drawConflicts(){
+    var p = IMPORT.plan, box = el.importConflicts;
+    box.textContent = "";
+    var list = p.conflicts || [];
+    box.hidden = !list.length;
+    if (!list.length) return;
+    box.appendChild(node("h3", null, list.length === 1
+      ? "1 note was changed in both places" : list.length + " notes were changed in both places"));
+    box.appendChild(node("p", "lede",
+      "Each was edited here and edited in Keep after it came here. Choose which to keep. "
+      + "Nothing about who owns it, sharing, or anyone's archive and pins changes either way."));
+    if (list.length > 1) {
+      var all = node("div", "im-all");
+      all.appendChild(document.createTextNode("FOR ALL " + list.length + ":"));
+      ["here", "keep", "both"].forEach(function(c){
+        var b = node("button", null, CHOICE_LABEL[c]);
+        b.type = "button";
+        b.addEventListener("click", function(){
+          list.forEach(function(x){ IMPORT.choices[x.id] = c; });
+          drawConflicts();
+        });
+        all.appendChild(b);
+      });
+      box.appendChild(all);
+    }
+    list.forEach(function(c){
+      var pick = IMPORT.choices[c.id] || "here";
+      var card = node("div", "im-c");
+      card.appendChild(node("div", "t", c.title || "(untitled)"));
+      var sides = node("div", "im-sides");
+      [["here", "Here", c.here], ["keep", "In Keep", c.keep]].forEach(function(s){
+        var side = node("div", "im-side" + ((pick === s[0] || pick === "both") ? " picked" : ""));
+        var h = node("div", "h");
+        h.appendChild(node("span", null, s[1]));
+        var newer = s[0] === "keep" ? c.keep.edited > c.here.edited : c.here.edited >= c.keep.edited;
+        h.appendChild(node("span", newer ? "newer" : null, "edited " + s[2].edited + (newer ? " · newer" : "")));
+        side.appendChild(h);
+        var txt = (s[2].title ? s[2].title + "\n\n" : "") + (s[2].text || "(empty)");
+        side.appendChild(node("pre", null, txt));
+        if (s[2].more) side.appendChild(node("div", "more", "…continues"));
+        sides.appendChild(side);
+      });
+      card.appendChild(sides);
+      var seg = node("div", "seg3");
+      seg.setAttribute("role", "group");
+      seg.setAttribute("aria-label", "Which to keep for " + (c.title || "this note"));
+      ["here", "keep", "both"].forEach(function(ch){
+        var b = node("button", null, CHOICE_LABEL[ch]);
+        b.type = "button";
+        b.setAttribute("aria-pressed", pick === ch ? "true" : "false");
+        b.addEventListener("click", function(){ IMPORT.choices[c.id] = ch; drawConflicts(); });
+        seg.appendChild(b);
+      });
+      card.appendChild(seg);
+      box.appendChild(card);
+    });
+    if ((p.conflicts_total || 0) > list.length) {
+      box.appendChild(node("p", "lede", (p.conflicts_total - list.length)
+        + " more are not shown; they keep the copy here unless you use a FOR ALL button."));
     }
   }
 
@@ -3211,8 +3323,9 @@ body.selecting .pin{display:none}
       IMPORT.busy = false;
       drawPlan(IMPORT.plan, false);
       el.importOptRow.hidden = !IMPORT.plan.new;
-      el.importGo.disabled = !IMPORT.plan.new;
-      el.importGo.textContent = IMPORT.plan.new ? "Import " + IMPORT.plan.new : "Import";
+      IMPORT.choices = {};
+      drawConflicts();
+      importLabel();
     }).catch(function(e){
       IMPORT.busy = false;
       el.importStatus.textContent = "";
@@ -3226,10 +3339,14 @@ body.selecting .pin{display:none}
     IMPORT.busy = true;
     el.importGo.disabled = true;
     el.importGo.textContent = "Importing…";
-    api("POST", "/api/import/keep/apply", {token: IMPORT.token, archive_all: el.importArchive.checked})
+    var shown = (IMPORT.plan.conflicts || []).map(function(c){ return IMPORT.choices[c.id] || "here"; });
+    var uniform = shown.length && shown.every(function(c){ return c === shown[0]; }) ? shown[0] : "here";
+    api("POST", "/api/import/keep/apply", {token: IMPORT.token, archive_all: el.importArchive.checked,
+                                           choices: IMPORT.choices, "default": uniform})
       .then(function(p){
         drawPlan(p, true);
         el.importOptRow.hidden = true;
+        el.importConflicts.hidden = true;
         IMPORT.done = true;                 // the token is spent; Done just closes
         el.importGo.textContent = "Done";
         el.importGo.disabled = false;

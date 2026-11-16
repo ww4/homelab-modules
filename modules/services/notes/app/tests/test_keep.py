@@ -130,12 +130,75 @@ def test_the_same_note_in_two_uploaded_files_counts_once(space, people):
     assert len(pl.new) == 1
 
 
-def test_an_edit_made_in_keep_after_import_is_reported_not_overwritten(space, people):
+LATER = DAY + 40 * 86_400_000_000
+
+
+def conflicted(space, people):
+    """Import a note, edit it here, then bring an export where Keep edited it too."""
+    _, w = run(space, people, takeout(note(1)))
+    store.write(space, w[0], body="edited here")
+    pl = keep.plan(space, "ana", [("t.zip", keep.read_zip(takeout(
+        note(1, title="Note 1 renamed", textContent="edited in keep", userEditedTimestampUsec=LATER))))])
+    assert len(pl.conflicts) == 1
+    return pl, w[0]
+
+
+def test_a_conflict_shows_both_sides(space, people):
+    pl, rel = conflicted(space, people)
+    c = pl.summary()["conflicts"][0]
+    assert c["here"]["text"] == "edited here" and c["keep"]["text"] == "edited in keep"
+    assert c["keep"]["edited"] > c["here"]["edited"]
+    assert keep.apply(space, pl, people, False) == [], "a conflict is never a new note"
+
+
+def test_keep_this_one_changes_nothing_but_is_not_asked_again(space, people):
+    pl, rel = conflicted(space, people)
+    keep.resolve(space, pl, people, {}, "here")
+    assert store.read(space, rel).body == "edited here"
+    again = keep.plan(space, "ana", [("t.zip", keep.read_zip(takeout(
+        note(1, textContent="edited in keep", userEditedTimestampUsec=LATER))))])
+    assert again.conflicts == [], "an answered conflict must stay answered"
+
+
+def test_use_keeps_version_replaces_text_but_not_ownership(space, people):
+    pl, rel = conflicted(space, people)
+    store.write(space, rel, archived=True, actor="sam")
+    keep.resolve(space, pl, people, {pl.conflicts[0].note.keep_id: "keep"})
+    n = store.read(space, rel)
+    assert n.body == "edited in keep" and n.title == "Note 1 renamed"
+    assert n.archived_by == ["sam"], "someone's archive state is not Keep's to change"
+    assert "keep_id:" in (space / rel).read_text()
+
+
+def test_keep_both_adds_a_marked_copy(space, people):
+    pl, rel = conflicted(space, people)
+    keep.resolve(space, pl, people, {}, "both")
+    assert store.read(space, rel).body == "edited here"
+    copies = [p for p in (space / "Keep").glob("*from Keep*.md")]
+    assert len(copies) == 1
+    text = copies[0].read_text()
+    assert "keep_copy_of:" in text and "\nkeep_id:" not in text
+    assert "edited in keep" in text
+    # and the next import neither re-raises it nor imports the copy again
+    again = keep.plan(space, "ana", [("t.zip", keep.read_zip(takeout(
+        note(1, textContent="edited in keep", userEditedTimestampUsec=LATER))))])
+    assert again.conflicts == [] and again.new == []
+
+
+def test_a_newer_date_with_the_same_text_is_not_a_conflict(space, people):
+    """Keep moves the edit date without changing the text; nothing to choose."""
     run(space, people, takeout(note(1)))
-    later = note(1, textContent="edited in keep", userEditedTimestampUsec=DAY + 40 * 86_400_000_000)
-    pl, written = run(space, people, takeout(later))
-    assert written == [] and pl.changed_in_keep == ["Note 1"]
-    assert "edited in keep" not in next((space / "Keep").glob("*.md")).read_text()
+    pl = keep.plan(space, "ana", [("t.zip", keep.read_zip(takeout(note(1, userEditedTimestampUsec=LATER))))])
+    assert pl.conflicts == [] and len(pl.same_text) == 1
+    keep.resolve(space, pl, people, {})
+    again = keep.plan(space, "ana", [("t.zip", keep.read_zip(takeout(note(1, userEditedTimestampUsec=LATER))))])
+    assert again.same_text == [], "settled once, not on every import"
+
+
+def test_an_unknown_choice_falls_back_to_keeping_this_one(space, people):
+    pl, rel = conflicted(space, people)
+    keep.resolve(space, pl, people, {pl.conflicts[0].note.keep_id: "delete-everything"})
+    assert store.read(space, rel).body == "edited here"
 
 
 def test_a_stale_plan_cannot_duplicate(space, people):
