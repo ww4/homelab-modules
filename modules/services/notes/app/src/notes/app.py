@@ -23,13 +23,15 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from . import paths, store, users
+from . import keep, paths, store, users
 from .config import Settings
 
 log = logging.getLogger("notes")
@@ -131,6 +133,11 @@ class NoteWrite(NoteRef):
 class NoteNew(BaseModel):
     title: str = Field(default="", max_length=500)
     body: str = Field(default="", max_length=1_000_000)
+
+
+class KeepApply(BaseModel):
+    token: str = Field(min_length=8, max_length=64)
+    archive_all: bool = False
 
 
 class UserNew(BaseModel):
@@ -369,6 +376,74 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ppl.detach_email(u, e)
         save_roster(ppl)
         return {"ok": True, "user": u.as_dict()}
+
+    # ---- importing a Google Keep Takeout ------------------------------------
+    # Upload one zip at a time (a Takeout is often several), see what WOULD
+    # happen, then apply. Nothing is written before the person has seen the
+    # counts. Staged uploads live in memory only — parsed notes, not the zips
+    # — and expire, because an abandoned preview must not linger.
+    STAGED: dict[str, dict] = {}
+    STAGE_TTL = 30 * 60
+    MAX_UPLOAD = 300 * 1024 * 1024
+
+    def _sweep() -> None:
+        now = time.monotonic()
+        for t in [t for t, v in STAGED.items() if v["expires"] < now]:
+            STAGED.pop(t, None)
+
+    @app.post("/api/import/keep")
+    async def import_keep_upload(request: Request, name: str = "upload.zip",
+                                 token: str | None = None):
+        """Stage one Takeout zip, sent as the raw request body; return the plan."""
+        _sweep()
+        ppl = roster()
+        importer = who(request, cfg, ppl)
+        if not importer:
+            raise HTTPException(status_code=409,
+                                detail="choose who you are first — imported notes are recorded as yours")
+        declared = int(request.headers.get("content-length") or 0)
+        if declared > MAX_UPLOAD:
+            raise HTTPException(status_code=413, detail="that file is larger than a Keep export should be")
+        chunks, size = [], 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_UPLOAD:
+                raise HTTPException(status_code=413, detail="that file is larger than a Keep export should be")
+            chunks.append(chunk)
+        label = (name or "upload.zip")[:120]
+        try:
+            notes = keep.read_zip(b"".join(chunks), label)
+        except keep.ImportError_ as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        st = STAGED.get(token or "")
+        if not st or st["importer"] != importer:
+            if len(STAGED) > 20:
+                raise HTTPException(status_code=429, detail="too many imports in progress")
+            token = secrets.token_urlsafe(16)
+            st = STAGED[token] = {"importer": importer, "batches": []}
+        if len(st["batches"]) >= 10:
+            raise HTTPException(status_code=400, detail="that is more files than one Takeout has")
+        st["batches"].append((label, notes))
+        st["expires"] = time.monotonic() + STAGE_TTL
+        pl = keep.plan(space, importer, st["batches"])
+        return {"token": token, **pl.summary()}
+
+    @app.post("/api/import/keep/apply")
+    async def import_keep_apply(request: Request, req: KeepApply):
+        _sweep()
+        st = STAGED.get(req.token)
+        ppl = roster()
+        importer = who(request, cfg, ppl)
+        if not st or st["importer"] != importer:
+            raise HTTPException(status_code=404, detail="that import expired — upload the file again")
+        # Planned again here rather than reused: the space may have changed
+        # since the preview, and apply() re-checks every id besides.
+        pl = keep.plan(space, importer, st["batches"])
+        written = keep.apply(space, pl, ppl, req.archive_all)
+        STAGED.pop(req.token, None)
+        log.info("keep import by %s: %d notes written", importer, len(written))
+        return {"written": len(written), **pl.summary()}
 
     @app.get("/healthz")
     async def healthz():
