@@ -138,6 +138,10 @@ class NoteNew(BaseModel):
 class KeepApply(BaseModel):
     token: str = Field(min_length=8, max_length=64)
     archive_all: bool = False
+    # Per conflict, keyed by keep id: "here" keeps this copy, "keep" takes
+    # Keep's, "both" keeps both. Anything not named takes `default`.
+    choices: dict[str, str] = Field(default_factory=dict, max_length=5000)
+    default: str = "here"
 
 
 class UserNew(BaseModel):
@@ -441,9 +445,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # since the preview, and apply() re-checks every id besides.
         pl = keep.plan(space, importer, st["batches"])
         written = keep.apply(space, pl, ppl, req.archive_all)
+        settled = keep.resolve(space, pl, ppl, req.choices,
+                               req.default if req.default in keep.CHOICES else "here")
         STAGED.pop(req.token, None)
-        log.info("keep import by %s: %d notes written", importer, len(written))
-        return {"written": len(written), **pl.summary()}
+        log.info("keep import by %s: %d written, conflicts %s", importer, len(written), settled)
+        return {"written": len(written), "settled": settled, **pl.summary()}
 
     @app.get("/healthz")
     async def healthz():

@@ -369,6 +369,19 @@ def write(
     return read(space, rel)
 
 
+def set_fields(space: Path, rel: str, **fields: str | None) -> None:
+    """Set or drop frontmatter keys and touch nothing else — not the body,
+    not the other keys, not their order. None drops a key."""
+    path = paths.resolve(space, rel)
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    fm, rest = _split_frontmatter(raw)
+    for k, v in fields.items():
+        fm = _fm_set(fm, k, v)
+    body = rest.lstrip("\n")
+    out = [FM_DELIM, *fm, FM_DELIM, "", body] if fm else [body]
+    _atomic_write(path, "\n".join(out).rstrip("\n") + "\n")
+
+
 def _slug(title: str) -> str:
     s = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
     s = re.sub(r"[^A-Za-z0-9 _-]+", "", s).strip()

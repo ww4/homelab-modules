@@ -162,8 +162,15 @@ written, so importing the same export twice adds nothing.
   own creation timestamp, which a shared note keeps across everyone's
   export) under `Keep/` or `Trash/`, or — for notes imported before ids were
   recorded — the same body text.
-- **Edited in Keep since** is listed, not applied. The copy here may have
-  been edited too, and two edits to one note cannot be merged.
+- **Changed in both places** — edited here, and edited in Keep after it
+  came here — is a choice, the way a file-copy dialog asks about a file that
+  already exists: both versions side by side with their edit dates, and
+  *Keep this one*, *Use Keep's* (title and body replaced; owner, sharing and
+  everyone's archive and pins untouched) or *Keep both* (Keep's becomes a
+  new note marked as a copy). A *for all* row decides them at once. Whatever
+  is chosen is remembered (`keep_seen:`), so the same conflict is not asked
+  again. A newer date with identical text is not a conflict and settles
+  silently.
 - **Whose it is.** Notes are recorded as the account doing the import. A
   shared note whose owner (Keep's `isOwner`) has an email on an account here
   is recorded as theirs instead. Archived and pinned carry across for the
