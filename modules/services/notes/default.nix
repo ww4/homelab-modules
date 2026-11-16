@@ -207,6 +207,18 @@ in
         proxyPass = "http://127.0.0.1:${toString cfg.port}";
         recommendedProxySettings = true;
       };
+      # nginx refuses request bodies over 1 MB by default, and a Keep Takeout
+      # is tens of megabytes. Raised for the import endpoint alone; the app
+      # enforces its own ceiling and reads the zip in memory, never to disk.
+      locations."/api/import/" = {
+        proxyPass = "http://127.0.0.1:${toString cfg.port}";
+        recommendedProxySettings = true;
+        extraConfig = ''
+          client_max_body_size 300m;
+          proxy_request_buffering off;
+          proxy_read_timeout 300s;
+        '';
+      };
     };
   };
 }

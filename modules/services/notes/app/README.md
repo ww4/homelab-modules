@@ -146,6 +146,34 @@ An email is reduced to its local part, so `ana@example.com` becomes `ana`.
 > the app on a private network where only the proxy can reach it. This is why
 > trusting the header is opt-in.
 
+## Importing from Google Keep
+
+**Import from Keep** (side menu on a phone, the account menu elsewhere) takes a
+Google Takeout export. Choose only Keep in Takeout; if it arrives as several
+zips, pick them all — a part holding only Takeout's HTML index is reported and
+ignored.
+
+It shows what it *would* do before writing anything: how many notes are new,
+how many are already here, how many were deleted here and will stay deleted,
+and how many were edited in Keep after they came here. Only the new ones are
+written, so importing the same export twice adds nothing.
+
+- **Already here** means a note with the same Keep id (`keep_id`, from Keep's
+  own creation timestamp, which a shared note keeps across everyone's
+  export) under `Keep/` or `Trash/`, or — for notes imported before ids were
+  recorded — the same body text.
+- **Edited in Keep since** is listed, not applied. The copy here may have
+  been edited too, and two edits to one note cannot be merged.
+- **Whose it is.** Notes are recorded as the account doing the import. A
+  shared note whose owner (Keep's `isOwner`) has an email on an account here
+  is recorded as theirs instead. Archived and pinned carry across for the
+  importer only, as they are per-person here as in Keep.
+- A Keep **label** becomes the note's category. Attachments and link previews
+  are not imported.
+
+The zip is read in memory and never extracted; only `*.json` under a `Keep/`
+folder is opened, and each is size-capped.
+
 ## Users
 
 Everyone who uses the space has an **account**. **Users** in the side menu

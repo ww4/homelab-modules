@@ -622,6 +622,32 @@ body.selecting .pin{display:none}
 }
 .si-go:disabled{opacity:.45; cursor:default}
 
+/* keep import */
+#importScrim{z-index:55}
+.im-pick{display:block; margin:4px 0 14px}
+.im-pick input{position:absolute; width:1px; height:1px; opacity:0}
+.im-pick span{
+  display:block; text-align:center; padding:14px; border:1px dashed var(--line-strong);
+  border-radius:9px; color:var(--ink-soft); cursor:pointer;
+  font:500 13px/1 "IBM Plex Sans",system-ui,sans-serif;
+}
+.im-pick span:hover, .im-pick input:focus + span{border-color:var(--accent); color:var(--accent)}
+.im-status{font:400 13px/1.55 "IBM Plex Sans",system-ui,sans-serif; color:var(--ink)}
+.im-status .big{font:600 17px/1.3 "IBM Plex Sans",system-ui,sans-serif; margin:2px 0 8px}
+.im-status ul{margin:4px 0 10px; padding-left:18px; color:var(--ink-soft)}
+.im-status .muted{color:var(--ink-soft)}
+.im-status .bad{color:#9a3412}
+.im-opt{
+  display:flex; gap:9px; align-items:flex-start; margin:12px 0 4px; color:var(--ink-soft);
+  font:400 12.5px/1.45 "IBM Plex Sans",system-ui,sans-serif;
+}
+.im-actions{display:flex; gap:10px; margin-top:16px}
+.im-actions .si-go{flex:1; margin:0}
+.im-cancel{
+  padding:12px 16px; border:1px solid var(--line); border-radius:9px; background:none;
+  color:var(--ink-soft); cursor:pointer; font:500 14px/1 "IBM Plex Sans",system-ui,sans-serif;
+}
+
 /* users */
 .users-title{
   flex:1; font:600 15px/1.2 "IBM Plex Sans",system-ui,sans-serif; color:var(--ink);
@@ -793,6 +819,28 @@ body.selecting .pin{display:none}
       </label>
       <button type="submit" class="si-go" id="suGo">Create account</button>
     </form>
+  </div>
+</div>
+
+<div class="scrim" id="importScrim" hidden>
+  <div class="signin" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <h2 id="importTitle">Import from Google Keep</h2>
+    <p class="si-sub">In Google Takeout, choose only <b>Keep</b> and download the
+      export. Pick the zip here — or all of them, if Takeout split it into several.
+      Notes already here are skipped, so importing the same export twice is safe.</p>
+    <label class="im-pick">
+      <input type="file" id="importFile" accept=".zip,application/zip" multiple>
+      <span>Choose Takeout zip…</span>
+    </label>
+    <div class="im-status" id="importStatus" aria-live="polite"></div>
+    <label class="im-opt" id="importOptRow" hidden>
+      <input type="checkbox" id="importArchive">
+      File everything in the archive — for history you want searchable but off the wall
+    </label>
+    <div class="im-actions">
+      <button type="button" class="im-cancel" id="importCancel">Cancel</button>
+      <button type="button" class="si-go" id="importGo" disabled>Import</button>
+    </div>
   </div>
 </div>
 
@@ -1069,6 +1117,10 @@ body.selecting .pin{display:none}
     signinForm:document.getElementById("signinForm"), suUser:document.getElementById("suUser"),
     suName:document.getElementById("suName"), suMail:document.getElementById("suMail"),
     suGo:document.getElementById("suGo"), suHint:document.getElementById("suHint"),
+    importScrim:document.getElementById("importScrim"), importFile:document.getElementById("importFile"),
+    importStatus:document.getElementById("importStatus"), importGo:document.getElementById("importGo"),
+    importCancel:document.getElementById("importCancel"), importArchive:document.getElementById("importArchive"),
+    importOptRow:document.getElementById("importOptRow"),
     usersScrim:document.getElementById("usersScrim"), usersBody:document.getElementById("usersBody"),
     usersClose:document.getElementById("usersClose"), usersPath:document.getElementById("usersPath"),
     toast:document.getElementById("toast"), toastMsg:document.getElementById("toastMsg"),
@@ -1286,6 +1338,7 @@ body.selecting .pin{display:none}
     if (k === "note") close(true);
     else if (k === "users") closeUsers(true);
     else if (k === "signin") closeSignIn(true);
+    else if (k === "import") closeImport(true);
     else if (k === "drawer") closeDrawer(true);
     else if (k === "sel") exitSel(true);
   });
@@ -2405,6 +2458,9 @@ body.selecting .pin{display:none}
       openUsers();
     });
     el.meMenu.appendChild(mu);
+    var mi = node("button", null, "Import from Keep");
+    mi.addEventListener("click", function(ev){ ev.stopPropagation(); closeMenus(null); openImport(); });
+    el.meMenu.appendChild(mi);
   }
 
   function openWhoBar(){ toggleMenu(el.meMenu, el.meBtn, fillMeMenu); }
@@ -2939,6 +2995,7 @@ body.selecting .pin{display:none}
     el.drawer.appendChild(node("div", "sep"));
     el.drawer.appendChild(node("h2", null, "People"));
     el.drawer.appendChild(drawerRow("Users", "users", usersOpen(), null, openUsers, true));
+    el.drawer.appendChild(drawerRow("Import from Keep", "archive", false, null, openImport, true));
     el.drawer.appendChild(node("div", "sep"));
     el.drawer.appendChild(node("h2", null, "Categories"));
     var active = activeCat();
@@ -3063,6 +3120,130 @@ body.selecting .pin{display:none}
   el.usersClose.addEventListener("click", function(){ closeUsers(); });
   el.usersScrim.addEventListener("click", function(ev){
     if (ev.target === el.usersScrim) closeUsers();
+  });
+
+  // ---- import a Google Keep Takeout ----
+  // Upload each zip, show what WOULD happen, import only on a second tap.
+  // Every number is shown — including what is skipped and why — because an
+  // import that quietly drops things is worse than one that refuses.
+  var IMPORT = null;
+
+  function openImport(){
+    if (!ME) { openSignIn(); return; }      // imported notes are recorded as someone's
+    IMPORT = {token: null, plan: null, busy: false};
+    el.importFile.value = "";
+    el.importArchive.checked = false;
+    el.importOptRow.hidden = true;
+    el.importGo.disabled = true;
+    el.importGo.textContent = "Import";
+    el.importStatus.textContent = "";
+    hideDrawer();
+    el.importScrim.hidden = false;
+    if (LAYER === "drawer") LAYER = "import"; else enterLayer("import");
+  }
+
+  function closeImport(fromHistory){
+    if (el.importScrim.hidden) return;
+    el.importScrim.hidden = true;
+    IMPORT = null;
+    if (fromHistory !== true) exitLayer();
+  }
+
+  function uploadOne(file, token){
+    var url = "/api/import/keep?name=" + encodeURIComponent(file.name)
+            + (token ? "&token=" + encodeURIComponent(token) : "");
+    return fetch(url, {method: "POST", headers: {"Content-Type": "application/zip"}, body: file})
+      .then(function(r){
+        return r.json().catch(function(){ return {}; }).then(function(j){
+          if (!r.ok) throw new Error(j.detail || (r.status + " " + r.statusText));
+          return j;
+        });
+      });
+  }
+
+  function li(list, text){ list.appendChild(node("li", null, text)); }
+
+  function drawPlan(p, done){
+    var box = el.importStatus;
+    box.textContent = "";
+    var n = done ? p.written : p.new;
+    box.appendChild(node("div", "big", done
+      ? (n ? "Imported " + n + (n === 1 ? " note." : " notes.") : "Nothing new to import.")
+      : (n ? n + (n === 1 ? " new note to import" : " new notes to import") : "Nothing new in this export")));
+    var why = node("ul");
+    if (p.already_here) li(why, p.already_here + " already here — skipped");
+    if (p.deleted_here) li(why, p.deleted_here + " you deleted here — left deleted");
+    if (p.trashed_in_keep) li(why, p.trashed_in_keep + " in Keep's own trash — skipped");
+    if (p.empty) li(why, p.empty + " empty — skipped");
+    (p.files || []).forEach(function(f){
+      if (!f.notes) li(why, f.name + " held no notes (Takeout's index part — that is normal)");
+    });
+    if (why.children.length) box.appendChild(why);
+    if (p.changed_in_keep) {
+      box.appendChild(node("div", "muted", p.changed_in_keep + (p.changed_in_keep === 1
+        ? " note was edited in Keep after it came here. It is NOT updated — the copy here may have changed too:"
+        : " notes were edited in Keep after they came here. They are NOT updated — the copies here may have changed too:")));
+      var ch = node("ul"); (p.changed_sample || []).forEach(function(t){ li(ch, t); });
+      box.appendChild(ch);
+    }
+    if (!done && p.sample && p.sample.length) {
+      box.appendChild(node("div", "muted", "New, for example:"));
+      var s = node("ul"); p.sample.slice(0, 8).forEach(function(t){ li(s, t); });
+      box.appendChild(s);
+    }
+  }
+
+  el.importFile.addEventListener("change", function(){
+    var files = [].slice.call(el.importFile.files || []);
+    if (!files.length || !IMPORT) return;
+    IMPORT.busy = true;
+    el.importGo.disabled = true;
+    var i = 0;
+    function next(){
+      if (i >= files.length) { return Promise.resolve(); }
+      var f = files[i++];
+      el.importStatus.textContent = "Reading " + f.name + " (" + Math.round(f.size / 1048576) + " MB)…";
+      return uploadOne(f, IMPORT.token).then(function(p){
+        IMPORT.token = p.token; IMPORT.plan = p; return next();
+      });
+    }
+    next().then(function(){
+      IMPORT.busy = false;
+      drawPlan(IMPORT.plan, false);
+      el.importOptRow.hidden = !IMPORT.plan.new;
+      el.importGo.disabled = !IMPORT.plan.new;
+      el.importGo.textContent = IMPORT.plan.new ? "Import " + IMPORT.plan.new : "Import";
+    }).catch(function(e){
+      IMPORT.busy = false;
+      el.importStatus.textContent = "";
+      el.importStatus.appendChild(node("div", "bad", (e && e.message) || "That upload failed."));
+    });
+  });
+
+  el.importGo.addEventListener("click", function(){
+    if (IMPORT && IMPORT.done) { closeImport(); el.importCancel.textContent = "Cancel"; return; }
+    if (!IMPORT || !IMPORT.token || IMPORT.busy) return;
+    IMPORT.busy = true;
+    el.importGo.disabled = true;
+    el.importGo.textContent = "Importing…";
+    api("POST", "/api/import/keep/apply", {token: IMPORT.token, archive_all: el.importArchive.checked})
+      .then(function(p){
+        drawPlan(p, true);
+        el.importOptRow.hidden = true;
+        IMPORT.done = true;                 // the token is spent; Done just closes
+        el.importGo.textContent = "Done";
+        el.importGo.disabled = false;
+        el.importCancel.textContent = "Close";
+        return refresh();
+      }).catch(function(e){
+        el.importGo.disabled = false;
+        el.importGo.textContent = "Import";
+        el.importStatus.appendChild(node("div", "bad", (e && e.message) || "The import failed."));
+      }).then(function(){ if (IMPORT) IMPORT.busy = false; });
+  });
+  el.importCancel.addEventListener("click", function(){ closeImport(); el.importCancel.textContent = "Cancel"; });
+  el.importScrim.addEventListener("click", function(ev){
+    if (ev.target === el.importScrim && !(IMPORT && IMPORT.busy)) closeImport();
   });
 
   function openDrawer(){
