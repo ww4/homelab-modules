@@ -520,6 +520,23 @@ body.selecting .pin{display:none}
 .row .x:hover{background:var(--surface-2); color:var(--ink)}
 .row .box{margin-top:7px}
 
+/* drag a line to a new place in the note. The handle is the ONLY place a drag
+   starts: on a phone the rest of the row has to stay a scroll and a tap. */
+.row .drag{
+  flex:none; width:18px; align-self:stretch; padding:0; border:0; background:none;
+  color:var(--ink-faint); cursor:grab; display:grid; place-items:center;
+  touch-action:none; opacity:0; margin-right:-4px;
+}
+.row:hover .drag, .row:focus-within .drag{opacity:1}
+@media (pointer:coarse){.row .drag{opacity:.6; width:24px}}
+.row .drag.none{visibility:hidden; cursor:default}
+.row.dragging{
+  position:relative; z-index:2; background:var(--surface);
+  box-shadow:0 6px 20px #00000033; cursor:grabbing;
+}
+.row.dragging .drag{opacity:1; cursor:grabbing}
+.ed-scroll.dragging{user-select:none; -webkit-user-select:none}
+
 .add{
   display:flex; align-items:center; gap:8px; padding:5px 2px; margin-left:24px;
   background:none; border:0; cursor:pointer; color:var(--ink-soft);
@@ -2653,6 +2670,22 @@ body.selecting .pin{display:none}
 
   function mkRow(b, i){
     var row = node("div", "row" + (b.t === "sec" ? " sec" : "") + (b.t === "note" ? " note" : "") + (b.done ? " done" : ""));
+    row.dataset.i = i;
+
+    // A heading stays put: dragging it would move one line and leave its items
+    // behind, which is not what moving a section means. Its slot is kept
+    // (hidden) so the text lines up with the rows around it.
+    var h = node("button", "drag" + (b.t === "sec" ? " none" : ""));
+    h.tabIndex = -1;
+    if (b.t !== "sec") {
+      h.setAttribute("aria-label", "Drag to move line (or Alt+Up/Down)");
+      h.setAttribute("title", "Drag to move");
+      h.innerHTML = '<svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="3" r="1.5"/><circle cx="7.5" cy="3" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="7.5" cy="13" r="1.5"/></svg>';
+      h.addEventListener("pointerdown", function(ev){ startLineDrag(ev, row); });
+    } else {
+      h.setAttribute("aria-hidden", "true");
+    }
+    row.appendChild(h);
 
     if (b.t === "item" && b.ck) {
       var cb = node("button", "box" + (b.done ? " on" : ""));
@@ -2686,6 +2719,13 @@ body.selecting .pin{display:none}
         ev.preventDefault();
         ed.blocks.splice(i, 1);
         focusIdx = Math.max(0, i - 1); focusEnd = true; draw(); touch();
+      } else if (ev.altKey && (ev.key === "ArrowUp" || ev.key === "ArrowDown") && b.t !== "sec") {
+        // the keyboard way to do what the drag handle does
+        ev.preventDefault();
+        var j = ev.key === "ArrowUp" ? i - 1 : i + 1;
+        if (j < 0 || j >= ed.blocks.length) return;
+        ed.blocks.splice(j, 0, ed.blocks.splice(i, 1)[0]);
+        focusIdx = j; focusEnd = true; draw(); touch();
       } else if (ev.key === "ArrowUp" && i > 0) {
         ev.preventDefault(); focusIdx = i - 1; focusEnd = true; focusRow();
       } else if (ev.key === "ArrowDown" && i < ed.blocks.length - 1) {
@@ -2704,6 +2744,70 @@ body.selecting .pin{display:none}
     });
     row.appendChild(x);
     return row;
+  }
+
+  // ---- drag a line to a new place ----
+  // The real row element moves through the DOM as the pointer passes other
+  // rows' midpoints, and a transform keeps it under the finger in between. On
+  // drop, the order of the rows IS the new order of the blocks, so the note is
+  // rebuilt from that and saved like any other edit. Crossing a heading moves
+  // the line into that section; a checked item is left where it is dropped.
+  var LD = null;
+
+  function startLineDrag(ev, row){
+    if (!ed || ed.raw !== null || ed.loading || LD) return;
+    if (ev.button !== undefined && ev.button !== 0) return;
+    ev.preventDefault();
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    var sc = el.edScroll, h = ev.currentTarget, r = row.getBoundingClientRect();
+    LD = {row:row, id:ev.pointerId, grab:ev.clientY - r.top, y:ev.clientY, raf:0, moved:false};
+    try { h.setPointerCapture(ev.pointerId); } catch (e) {}
+    row.classList.add("dragging"); sc.classList.add("dragging");
+    function move(e){ if (e.pointerId !== LD.id) return; e.preventDefault(); LD.y = e.clientY; LD.moved = true; place(); }
+    function end(e){
+      if (e.pointerId !== LD.id) return;
+      h.removeEventListener("pointermove", move);
+      h.removeEventListener("pointerup", end);
+      h.removeEventListener("pointercancel", end);
+      cancelAnimationFrame(LD.raf);
+      var moved = LD.moved; LD = null;
+      sc.classList.remove("dragging");
+      row.classList.remove("dragging"); row.style.transform = "";
+      var rows = sc.querySelectorAll(".row"), old = ed.blocks, order = [], same = true;
+      for (var k = 0; k < rows.length; k++) { var n = +rows[k].dataset.i; order.push(old[n]); if (n !== k) same = false; }
+      if (!moved || same || order.length !== old.length) { draw(); return; }
+      ed.blocks = order; draw(); touch();
+    }
+    h.addEventListener("pointermove", move);
+    h.addEventListener("pointerup", end);
+    h.addEventListener("pointercancel", end);
+    (function tick(){                    // scroll while held near an edge
+      if (!LD) return;
+      var b = sc.getBoundingClientRect(), edge = 44, v = 0;
+      if (LD.y < b.top + edge) v = -Math.ceil((b.top + edge - LD.y) / 4);
+      else if (LD.y > b.bottom - edge) v = Math.ceil((LD.y - (b.bottom - edge)) / 4);
+      if (v) { sc.scrollTop += v; place(); }
+      LD.raf = requestAnimationFrame(tick);
+    })();
+  }
+
+  function place(){
+    var sc = el.edScroll, row = LD.row, rows = sc.querySelectorAll(".row");
+    for (var k = 0; k < rows.length; k++) {
+      var o = rows[k];
+      if (o === row) continue;
+      var r = o.getBoundingClientRect(), mid = r.top + r.height / 2;
+      var above = !!(row.compareDocumentPosition(o) & Node.DOCUMENT_POSITION_PRECEDING);
+      // first row above whose middle the pointer has risen past: go before it
+      if (above && LD.y < mid) { sc.insertBefore(row, o); break; }
+      // every row below whose middle it has passed: go after it (ahead of that
+      // section's "+", so the line lands IN the section). Keep scanning — a
+      // fast drag passes several rows in one move.
+      if (!above && LD.y > mid) sc.insertBefore(row, o.nextSibling);
+    }
+    // offset from where the row now sits naturally, so it tracks the pointer
+    row.style.transform = "";
+    row.style.transform = "translateY(" + (LD.y - LD.grab - row.getBoundingClientRect().top) + "px)";
   }
 
   function focusRow(){
