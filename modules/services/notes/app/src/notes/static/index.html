@@ -1373,6 +1373,9 @@ body.selecting .pin{display:none}
   // covers the wall pushes one history entry and takes it back when it closes,
   // so back means "close this" exactly once.
   var LAYER = null;
+  // These entries are layers, not pages: going back must not also restore the
+  // scroll saved when the layer opened, or closing one jumps the wall.
+  try { history.scrollRestoration = "manual"; } catch (e) {}
   function enterLayer(kind){
     if (LAYER === kind) return;
     LAYER = kind;
@@ -1917,7 +1920,7 @@ body.selecting .pin{display:none}
   // Build the wall a page at a time and grow it as you scroll. Rendering all
   // 545 cards up front was ~12,600 DOM nodes, and every keystroke rebuilt the
   // lot: 67 ms per character on a desktop over loopback, far worse on a phone.
-  var PAGE = 60, CLIP_LINES = 9, shownCount = PAGE, io = null;
+  var PAGE = 60, CLIP_LINES = 9, shownCount = PAGE, io = null, LAST_WALL = null;
 
   // Queued notes render as real cards, marked, so a captured thought is
   // visibly on the wall rather than sitting invisibly in a database.
@@ -1954,6 +1957,15 @@ body.selecting .pin{display:none}
     var slice = rest.slice(0, budget);
     var more = rest.length - slice.length;
 
+    // Emptying the wall collapses the page for a moment, and the browser clamps
+    // the scroll to the top. That threw you back to the top on every redraw
+    // — each long-press or tap in selection mode, a tick, loading more. So the
+    // place is kept unless WHAT is shown changed (another view, scope or
+    // search), where starting at the top is the point.
+    var wallKey = [view, who, q, onlyQueued].join("\u0001");
+    var keepY = wallKey === LAST_WALL ? window.scrollY : 0;
+    LAST_WALL = wallKey;
+
     if (io) { io.disconnect(); io = null; }
     el.wall.textContent = "";
     if (!shown.length) {
@@ -1974,6 +1986,7 @@ body.selecting .pin{display:none}
           : pinned.length ? "Everything else" : "All notes", slice, false));
       if (more > 0) el.wall.appendChild(sentinel(more));
     }
+    if (Math.round(window.scrollY) !== Math.round(keepY)) window.scrollTo(0, keepY);
     drawSel();
     el.count.textContent = shown.length === NOTES.length
       ? NOTES.length + " notes"
