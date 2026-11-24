@@ -79,6 +79,18 @@
     # Two notes front ends over one folder, which is the pairing the modules
     # are written for — and the configuration that catches their shared
     # default vhost label.
+    # The configuration a real install runs: scoring through a logged-in
+    # account's claude CLI, a secrets file, and a notifier — every branch of
+    # the unit's ExecStart and hardening that the defaults never reach.
+    marketAgent = {
+      user = "operator";
+      judge = "cli";
+      claudeBin = "/etc/profiles/per-user/operator/bin/claude";
+      environmentFile = "/run/secrets/market-agent.env";
+      notifyCommand = "/run/current-system/sw/bin/notify --priority default";
+      schedule = [ "*-*-* 06:30:00" "*-*-* 18:30:00" ];
+    };
+
     silverbullet.subdomain = "silverbullet";
     notes = {
       defaultAuthor = "operator";
