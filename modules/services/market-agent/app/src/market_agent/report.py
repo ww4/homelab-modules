@@ -183,6 +183,29 @@ details ul{margin:4px 0 6px;padding-left:18px}details li{margin:2px 0}
 .health{font-size:12.5px;color:var(--muted)}.health.broken{color:var(--bad);font-weight:600}
 .legend{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
 footer{color:var(--muted);font-size:12.5px;max-width:80ch}
+button.chip{font:inherit;font-size:11.5px;border:0;cursor:pointer}
+button.chip:hover{filter:brightness(.95)}button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+dialog.recalls{border:1px solid var(--line);border-radius:12px;padding:0;max-width:min(720px,calc(100vw - 32px));
+max-height:min(80vh,900px);background:var(--surface);color:var(--fg);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+dialog.recalls::backdrop{background:rgba(10,14,16,.55)}
+dialog.recalls[open]{display:flex;flex-direction:column;overflow:hidden}
+.rc-top{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:12px;
+padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--line)}
+.rc-top h3{font-size:15px;text-transform:none;letter-spacing:0;color:var(--fg)}
+.rc-top button{font:inherit;font-size:20px;line-height:1;border:0;background:none;color:var(--muted);cursor:pointer;padding:2px 6px}
+.rc-body{padding:12px 18px 18px;overflow:auto;min-height:0;flex:1}
+.rc-note{margin:0 0 12px;font-size:13px;color:var(--muted)}
+.rc-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column}
+.rc-list li{border-top:1px solid var(--line)}
+.rc-list summary{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 2px;cursor:pointer;
+list-style:none;color:var(--fg)}
+.rc-list summary::-webkit-details-marker{display:none}
+.rc-list summary::before{content:"▸";color:var(--muted);font-size:11px;flex:none}
+.rc-list details[open] summary::before{content:"▾"}
+.rc-comp{flex:1;font-size:13.5px;font-weight:600}
+.rc-meta{flex:none;font:500 12px var(--mono);color:var(--muted)}
+.rc-list details > p{margin:0 0 8px 18px;font-size:13.5px}.rc-fix{color:var(--muted)}
+.rc-link{font-size:12.5px}.rc-link a,.rc-note a{color:var(--accent)}
 .card{cursor:pointer}
 .card .full{display:none}
 .open,.close,.copy{font:inherit;font-size:13px;color:var(--accent);background:none;border:0;padding:2px 0;cursor:pointer;text-align:left}
@@ -330,9 +353,36 @@ def _ref_chips(c: Candidate) -> str:
         attrs = f' href="{escape(href)}" target="_blank" rel="noopener"' if href else ""
         chips.append(f'<{tag} class="chip {kind}" title="{escape(tip)}"{attrs}>{escape(label)}</{tag}>')
     if nhtsa:
-        tip = "; ".join(str(r.get("title", "")).split(": ", 1)[-1] for r in nhtsa)
-        chips.append(f'<span class="chip pattern" title="{escape(tip)}">{len(nhtsa)} NHTSA recalls (check VIN)</span>')
+        chips.append(f'<button type="button" class="chip pattern recalls-btn" aria-haspopup="dialog">'
+                     f'{len(nhtsa)} NHTSA recall{"s" if len(nhtsa) != 1 else ""} ›</button>'
+                     + _recall_template(c, nhtsa))
     return "".join(chips)
+
+
+def _recall_template(c: Candidate, recalls: list[dict[str, Any]]) -> str:
+    """The overlay's content, kept inert in a <template> until the chip is clicked."""
+    f = c.facts
+    what = " ".join(str(x) for x in (f.get("year"), f.get("make"), f.get("model")) if x) or c.listing.title
+    rows = []
+    for r in sorted(recalls, key=lambda r: str(r.get("date") or ""), reverse=True):
+        head = str(r.get("title", ""))
+        camp, _, component = head.replace("Recall ", "", 1).partition(": ")
+        date = str(r.get("date") or "")[:10]
+        src = r.get("source")
+        link = (f'<a href="{escape(src)}" target="_blank" rel="noopener">{escape(camp)}</a>' if src else escape(camp))
+        comp = " · ".join(part.strip().capitalize() for part in component.split(":") if part.strip())
+        rows.append(
+            f'<li><details><summary><span class="rc-comp">{escape(comp)}</span>'
+            f'<span class="rc-meta">{escape(camp)}{" · " + escape(date) if date else ""}</span></summary>'
+            f'<p>{escape(str(r.get("detail") or ""))}</p>'
+            + (f'<p class="rc-fix"><b>Remedy:</b> {escape(str(r["remedy"]))}</p>' if r.get("remedy") else "")
+            + f'<p class="rc-link">{link} on nhtsa.gov</p></details></li>'
+        )
+    return (f'<template class="recalls-data" data-title="NHTSA recalls · {escape(what)} ({len(recalls)})">'
+            '<p class="rc-note">Recalls issued for this model year. Whether they apply to this car, and whether '
+            'they have been done, depends on its VIN: ask the seller for it and check at '
+            '<a href="https://www.nhtsa.gov/recalls" target="_blank" rel="noopener">nhtsa.gov/recalls</a>.</p>'
+            f'<ol class="rc-list">{"".join(rows)}</ol></template>')
 
 
 def _status_chips(c: Candidate, eff: Effective | None) -> str:
@@ -765,6 +815,20 @@ SCRIPT = """
       setTimeout(() => { copy.textContent = "Copy questions"; }, 2000);
       return;
     }
+    const rb = e.target.closest(".recalls-btn");
+    if (rb) {
+      const tpl = rb.nextElementSibling, dlg = document.querySelector("dialog.recalls");
+      if (!tpl || !dlg) return;
+      dlg.querySelector("#rc-title").textContent = tpl.dataset.title;
+      const body = dlg.querySelector(".rc-body");
+      body.replaceChildren(tpl.content.cloneNode(true));
+      body.scrollTop = 0;
+      dlg.showModal();
+      return;
+    }
+    if (e.target.closest(".rc-close")) { e.target.closest("dialog").close(); return; }
+    if (e.target.matches && e.target.matches("dialog.recalls")) { e.target.close(); return; }  // backdrop click
+    if (e.target.closest("dialog")) return;
     const shot = e.target.closest(".strip .shot");
     if (shot) {
       const card = shot.closest(".card");
@@ -869,6 +933,8 @@ the contenders get the full evaluation. Colored tags are model-wide facts (recal
 reported pattern, not a verified one. Seller claims are the sellers'. Get anything with an engine inspected
 before buying.</footer>
 </div>
+<dialog class="recalls" aria-labelledby="rc-title"><div class="rc-top"><h3 id="rc-title"></h3>
+<button type="button" class="rc-close" aria-label="Close">×</button></div><div class="rc-body"></div></dialog>
 <script>{SCRIPT}</script>"""
 
 

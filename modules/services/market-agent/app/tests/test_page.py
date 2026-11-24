@@ -43,7 +43,9 @@ def test_bulletins_are_tags_and_recalls_are_not_double_counted(tmp_path: Path):
     chips = _ref_chips(c)
     assert 'class="chip recall"' in chips and "Frame-rust recall" in chips
     assert 'class="chip bulletin"' in chips and "Rear diff fluid?" in chips
-    assert "1 NHTSA recalls" in chips  # 23V-228 already has its own tag
+    assert 'class="chip pattern recalls-btn"' in chips and "1 NHTSA recall " in chips
+    overlay = chips.split("<template", 1)[1]
+    assert "19V182000" in overlay and "23V228" not in overlay  # 23V-228 already has its own tag
 
 
 def test_screened_listing_has_no_full_evaluation(tmp_path: Path):
