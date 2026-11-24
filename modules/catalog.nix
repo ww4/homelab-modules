@@ -382,6 +382,18 @@ in
     vhosts = [ "notes" ];
     secrets = [ ];
   };
+  market-agent = {
+    description = "Facebook Marketplace watcher: searches against written briefs, checks the facts, scores with Claude, publishes one page.";
+    memory = 160;
+    enable = "import";
+    options = [ "homelab.domain" "homelab.marketAgent" ];
+    requires = [ "acme" "nginx-access" ];
+    vhosts = [ "market" ];
+    # Optional: an Anthropic API key (judge = "api") or a proxy URL, both via
+    # homelab.marketAgent.environmentFile. The default judge uses the claude
+    # CLI's existing login and needs no secret.
+    secrets = [ ];
+  };
   uptime-kuma = {
     description = "Uptime Kuma status wall-board.";
     memory = 192;

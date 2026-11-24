@@ -1,0 +1,277 @@
+# Model-year facts the judge is allowed to use.
+#
+# The judge is told to make NO model-specific claim that isn't in this file,
+# in NHTSA's recall data, or in a VIN decode. That rule exists because a
+# from-memory "ask about head gaskets" was wrong for a 2011 Forester (it has
+# the FB25 engine; the real issue is oil consumption).
+#
+# generations: drivetrain and transmission type by year range. These are
+#   spec-sheet facts; check a generation against the maker's spec page before
+#   adding it. transmission_type: conventional | cvt | depends-on-engine.
+#   drivetrain: awd-standard | fwd-or-awd | fwd-or-4wd | rwd-or-4wd | 4wd-standard
+# issues: verified = true only with a source URL that was actually read.
+#   Unverified entries reach the judge labelled as unverified and are phrased
+#   as questions for the seller, never as findings.
+
+# ---------------------------------------------------------------- Honda
+[[models]]
+make = "Honda"
+model = "CR-V"
+aliases = ["cr-v", "crv", "cr v"]
+generations = [
+  { years = [2002, 2006], transmission = "4- or 5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
+  { years = [2007, 2011], transmission = "5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
+  { years = [2012, 2014], transmission = "5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
+  { years = [2015, 2022], transmission = "CVT", transmission_type = "cvt", drivetrain = "fwd-or-awd" },
+]
+
+[[models]]
+make = "Honda"
+model = "Pilot"
+aliases = ["pilot"]
+generations = [
+  { years = [2003, 2005], transmission = "5-speed automatic", transmission_type = "conventional", drivetrain = "4wd-standard" },
+  { years = [2006, 2015], transmission = "5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-4wd" },
+]
+
+[[models]]
+make = "Honda"
+model = "Element"
+aliases = ["element"]
+generations = [
+  { years = [2003, 2011], transmission = "4- or 5-speed automatic (manual also offered)", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
+]
+
+# ---------------------------------------------------------------- Toyota
+[[models]]
+make = "Toyota"
+model = "RAV4"
+aliases = ["rav4", "rav-4", "rav 4"]
+generations = [
+  { years = [2001, 2005], transmission = "4-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-4wd" },
+  { years = [2006, 2012], transmission = "4-speed automatic (4-cyl) / 5-speed (V6)", transmission_type = "conventional", drivetrain = "fwd-or-4wd" },
+  { years = [2013, 2018], transmission = "6-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
+]
+
+[[models]]
+make = "Toyota"
+model = "Highlander"
+aliases = ["highlander"]
+generations = [
+  { years = [2001, 2007], transmission = "4- or 5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-4wd" },
+  { years = [2008, 2013], transmission = "5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-4wd" },
+]
+
+[[models]]
+make = "Toyota"
+model = "4Runner"
+aliases = ["4runner", "4 runner", "forerunner"]
+generations = [
+  { years = [1996, 2009], transmission = "4- or 5-speed automatic", transmission_type = "conventional", drivetrain = "rwd-or-4wd" },
+  { years = [2010, 2024], transmission = "5-speed automatic", transmission_type = "conventional", drivetrain = "rwd-or-4wd" },
+]
+
+[[models]]
+make = "Toyota"
+model = "Tacoma"
+aliases = ["tacoma"]
+generations = [
+  { years = [1995, 2015], transmission = "4- or 5-speed automatic (manual also offered)", transmission_type = "conventional", drivetrain = "rwd-or-4wd" },
+]
+
+# ---------------------------------------------------------------- Subaru
+[[models]]
+make = "Subaru"
+model = "Forester"
+aliases = ["forester"]
+generations = [
+  { years = [1998, 2010], transmission = "4-speed automatic (manual also offered)", transmission_type = "conventional", drivetrain = "awd-standard", engine = "EJ25" },
+  { years = [2011, 2013], transmission = "4-speed automatic (manual also offered)", transmission_type = "conventional", drivetrain = "awd-standard", engine = "FB25" },
+  { years = [2014, 2018], transmission = "CVT (manual also offered)", transmission_type = "cvt", drivetrain = "awd-standard", engine = "FB25 / FA20 turbo (XT)" },
+]
+
+[[models]]
+make = "Subaru"
+model = "Outback"
+aliases = ["outback"]
+generations = [
+  { years = [2000, 2009], transmission = "4- or 5-speed automatic", transmission_type = "conventional", drivetrain = "awd-standard", engine = "EJ25 / H6" },
+  { years = [2010, 2012], transmission = "CVT on 2.5i; 5-speed automatic on 3.6R", transmission_type = "depends-on-engine", drivetrain = "awd-standard", engine = "EJ25 (2.5i) / EZ36 (3.6R)" },
+  { years = [2013, 2019], transmission = "CVT on 2.5i; 5-speed automatic on 3.6R", transmission_type = "depends-on-engine", drivetrain = "awd-standard", engine = "FB25 (2.5i) / EZ36 (3.6R)" },
+]
+
+# ---------------------------------------------------------------- Mazda
+[[models]]
+make = "Mazda"
+model = "CX-5"
+aliases = ["cx-5", "cx5", "cx 5"]
+generations = [
+  { years = [2013, 2016], transmission = "6-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
+]
+
+[[models]]
+make = "Mazda"
+model = "CX-7"
+aliases = ["cx-7", "cx7", "cx 7"]
+generations = [
+  { years = [2007, 2012], transmission = "6-speed (turbo) or 5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
+]
+
+# ---------------------------------------------------------------- Nissan
+[[models]]
+make = "Nissan"
+model = "Rogue"
+aliases = ["rogue"]
+generations = [
+  { years = [2008, 2020], transmission = "CVT", transmission_type = "cvt", drivetrain = "fwd-or-awd" },
+]
+
+# ================================================================ issues
+[[issues]]
+make = "Honda"
+model = "CR-V"
+years = [2007, 2011]
+kind = "recall"
+title = "Rear frame corrosion recall (NHTSA 23V-228)"
+detail = "In salt-belt states, rust inside the rear frame can let the rear trailing arm separate. Dealer inspects; adds a brace, repairs the frame, or buys the vehicle back. Free."
+ask = "Has recall 23V-228 been done? Get the VIN and check Honda's recall lookup; look at the rear frame on a lift."
+source = "https://hondanews.com/en-US/honda-corporate/releases/release-f61ab7d13cb83fb181b8bc22df059449-2007-2011-honda-cr-v-rear-frame-corrosion-recall"
+verified = true
+
+[[issues]]
+make = "Honda"
+model = "CR-V"
+years = [2007, 2011]
+kind = "bulletin"
+title = "A/C compressor clutch wear (Honda SB 12-072)"
+detail = "Clutch wears out: A/C blows warm or makes noise from the compressor. The old 7-year warranty extension has long expired."
+ask = "Does the A/C blow cold at idle and on the road? Any compressor noise?"
+source = "https://www.carcomplaints.com/Honda/CR-V/2009/tsb/tsb-sb-12-072.shtml"
+verified = true
+
+[[issues]]
+make = "Toyota"
+model = "RAV4"
+years = [2006, 2012]
+drivetrain = "4wd"
+kind = "bulletin"
+title = "Rear differential coupling growl on 4WD (Toyota T-SB-0080-13)"
+detail = "Contaminated front bearing in the rear coupling causes a growl while driving. The warranty enhancement ended April 2017."
+ask = "Any growl or hum from the rear while driving? Has the rear coupling been replaced?"
+source = "https://www.cars.com/articles/2006-2012-toyota-rav4-coupling-issue-1420688743307"
+verified = true
+
+[[issues]]
+make = "Subaru"
+model = "Forester"
+years = [2011, 2014]
+kind = "bulletin"
+title = "Excessive oil consumption, 2.5L FB25 (Subaru TSB 02-157-14R)"
+detail = "Faulty short block; Subaru's fix was a short-block replacement (earlier: pistons and rings)."
+ask = "How much oil does it use between changes? Has Subaru replaced the short block or rings?"
+source = "https://www.cars.com/articles/2011-15-subaru-oil-consumption-update-1420683845519"
+verified = true
+
+[[issues]]
+make = "Subaru"
+model = "Outback"
+years = [2013, 2014]
+kind = "bulletin"
+title = "Excessive oil consumption, 2.5L FB25 (Subaru TSB 02-157-14R)"
+detail = "Same bulletin as the Forester; later revisions cover Outback. Confirm VIN applicability against the current revision."
+ask = "How much oil does it use between changes? Any Subaru engine work under 02-157-14R?"
+source = "https://static.nhtsa.gov/odi/tsbs/2016/MC-10120985-9999.pdf"
+verified = true
+
+# --- Unverified patterns: reach the judge as questions only. ---------------
+
+[[issues]]
+make = "Subaru"
+model = "Forester"
+years = [1999, 2010]
+kind = "pattern"
+title = "EJ25 head gasket leaks"
+detail = "Widely reported on the EJ25 non-turbo engine."
+ask = "Have the head gaskets been replaced? Any oil or coolant seepage at the heads?"
+verified = false
+
+[[issues]]
+make = "Subaru"
+model = "Outback"
+years = [2000, 2012]
+kind = "pattern"
+title = "EJ25 head gasket leaks (2.5i)"
+detail = "Widely reported on the EJ25 non-turbo engine."
+ask = "Have the head gaskets been replaced? Any oil or coolant seepage at the heads?"
+verified = false
+
+[[issues]]
+make = "Subaru"
+model = "Outback"
+years = [2010, 2019]
+kind = "pattern"
+title = "CVT service history (2.5i)"
+detail = "CVT fluid service and any transmission warnings matter on these."
+ask = "Has the CVT fluid ever been changed? Has the transmission temperature light ever come on?"
+verified = false
+
+[[issues]]
+make = "Toyota"
+model = "Tacoma"
+years = [1995, 2010]
+kind = "pattern"
+title = "Frame rust"
+detail = "Toyota ran frame programs for these years; salt-state frames often rot."
+ask = "Has the frame been replaced or repaired? Photos of the frame rails near the rear leaf-spring hangers?"
+verified = false
+
+[[issues]]
+make = "Toyota"
+model = "4Runner"
+years = [2003, 2009]
+kind = "pattern"
+title = "Frame corrosion in salt states"
+detail = "Commonly reported; check before anything else."
+ask = "Any frame rust or patches? Photos underneath?"
+verified = false
+
+[[issues]]
+make = "Honda"
+model = "CR-V"
+years = [2002, 2016]
+drivetrain = "awd"
+kind = "pattern"
+title = "Rear differential fluid (Real Time 4WD)"
+detail = "Honda's AWD rear differential groans in tight turns when its fluid is old."
+ask = "When was the rear differential fluid last changed? Any groan in tight turns?"
+verified = false
+
+[[issues]]
+make = "Honda"
+model = "Pilot"
+years = [2003, 2004]
+kind = "pattern"
+title = "5-speed automatic failures"
+detail = "Early 5-speed automatics in this generation had a reputation for failing."
+ask = "Has the transmission been replaced or rebuilt? Any slipping or harsh shifts?"
+verified = false
+
+[[issues]]
+make = "Mazda"
+model = "CX-7"
+years = [2007, 2012]
+kind = "pattern"
+title = "2.3L turbo engine reliability"
+detail = "Turbo and timing-chain problems are commonly reported on the turbo engine."
+ask = "Has the turbo or timing chain been replaced? Any smoke or rattle on a cold start?"
+verified = false
+
+[[issues]]
+make = "Nissan"
+model = "Rogue"
+years = [2008, 2020]
+kind = "pattern"
+title = "CVT failures"
+detail = "Nissan CVTs of this era have a poor reliability record."
+ask = "Has the CVT been replaced? Any whine, shudder or hesitation?"
+verified = false

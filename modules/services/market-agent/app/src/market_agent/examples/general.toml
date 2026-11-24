@@ -1,0 +1,33 @@
+# A general (non-vehicle) brief. Copy it with:  market-agent brief new <name> --example general
+
+name = "example-general"
+title = "Used table saw for the shop"
+kind = "general"
+
+notes = """
+Looking for a contractor or cabinet table saw for occasional shop use.
+Needs to be complete and working; would rather pay a bit more for a saw
+with the fence and blade guard than chase missing parts.
+"""
+
+preferences = [
+    "Cabinet or hybrid saw over a jobsite saw",
+    "Fence included and in good shape",
+    "Seller shows it running or says it was recently used",
+]
+
+[location]
+home = "Springfield, IL"
+max_miles = 60
+
+[price]
+min = 50
+max = 900
+
+[search]
+queries = ["table saw", "cabinet saw", "delta table saw", "powermatic"]
+exclude_words = ["wanted", "iso", "parts only"]
+
+[judge]
+max_candidates = 12
+photos = 4

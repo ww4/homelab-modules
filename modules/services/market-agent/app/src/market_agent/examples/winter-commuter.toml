@@ -1,0 +1,57 @@
+# A vehicle brief. Copy it with:  market-agent brief new <name> --example winter-commuter
+#
+# Hard limits (location.max_miles, price, [vehicle]) exclude a listing, or mark
+# it "unknown" when the listing doesn't say. Preferences only steer the score.
+
+name = "winter-commuter"
+title = "Reliable AWD/4WD winter commuter"
+kind = "vehicle"
+
+notes = """
+Daily commute from home to work through the winter on rural roads. Wants
+something dependable more than anything else: it has to start every morning
+and not strand him. About $5,000 budget,
+$6,000 absolute ceiling. Cash purchase.
+"""
+
+preferences = [
+    "Conventional automatic strongly preferred over a CVT",
+    "Under 150,000 miles preferred",
+    "Good mechanical and cosmetic condition; no warning lights",
+    "Private seller with maintenance records preferred over a flipper or buy-here-pay-here lot",
+    "Reasonable fuel economy for a daily commute",
+    "Closer to work is a plus: that's where he drives every day",
+]
+
+[location]
+home = "Springfield, IL"
+destinations = [{ name = "Work", place = "Decatur, IL" }]
+max_miles = 50            # "within 50 miles" = straight-line radius, like Facebook
+distance = "radius"       # or "driving" (road miles via OSRM, else an estimate)
+measure_from = "home"     # "nearest" = closest of home and destinations
+search_radius_miles = 60  # what we ask Facebook for; it doesn't always listen
+
+[price]
+min = 2500   # below this is mostly "down payment" bait
+max = 6000
+
+[search]
+queries = [
+    "honda cr-v", "honda crv awd", "toyota rav4", "subaru forester",
+    "subaru outback", "toyota highlander", "honda pilot", "honda element",
+    "mazda cx-5", "toyota 4runner", "toyota tacoma 4x4", "awd suv", "4x4",
+]
+listed_within_days = 0    # 0 = any age; a watcher would use 2-3
+exclude_words = ["parts only", "parts car", "not running", "doesn't run", "salvage"]
+
+[vehicle]
+drivetrain = ["awd", "4wd"]
+title = "clean"
+transmission = "automatic"  # hard: no manuals. CVT-vs-conventional is a preference above.
+# max_mileage = 200000      # uncomment to make mileage a hard limit
+min_year = 2000
+
+[judge]
+max_candidates = 40
+max_near_misses = 25
+photos = 6
