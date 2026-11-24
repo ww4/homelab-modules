@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from .brief import Brief
-from .models import Candidate
+from .models import Candidate, awaiting_read
 from .policy import Effective, effective, rank
 
 THUMB_WIDTH = 520
@@ -45,6 +45,7 @@ class Section:
     favorites: set[str] = field(default_factory=set)
     first_seen: dict[str, int] = field(default_factory=dict)
     pending: bool = False  # a run was requested from the page and hasn't happened yet
+    awaiting: int = 0  # stored listings whose page hasn't been read properly yet (not shown)
 
 
 GALLERY_WIDTH = 800
@@ -684,7 +685,7 @@ def _limits(b: Brief) -> str:
     return " · ".join(parts)
 
 
-def _health(last: dict[str, Any] | None, pending: bool = False) -> str:
+def _health(last: dict[str, Any] | None, pending: bool = False, awaiting: int = 0) -> str:
     if pending:
         return '<div class="health">Searching now; results appear here in a few minutes.</div>'
     if not last:
@@ -696,6 +697,10 @@ def _health(last: dict[str, Any] | None, pending: bool = False) -> str:
     text = (f"Last run {when} · {last.get('seen', 0)} listings seen · {last.get('judged', 0)} newly scored"
             + (f" · {len(failed)} searches failed" if failed else "")
             + (f" · {last['unread']} new listings not read yet (read cap reached)" if last.get("unread") else "")
+            + (f" · Facebook rate-limited the run; {last['rate_limited']} listings will be read next run"
+               if last.get("rate_limited") else "")
+            + (f" · {last['detail_failures']} listing pages failed to load" if last.get("detail_failures") else "")
+            + (f" · {awaiting} listings hidden until their page is read" if awaiting else "")
             + (f" · {last['unscored']} waiting to be scored next run" if last.get("unscored") else ""))
     return f'<div class="health">{text}</div>'
 
@@ -787,7 +792,7 @@ def section(s: Section, photos: "Photos", *, interactive: bool) -> str:
     return (
         f'<section class="brief" id="{escape(b.name)}" data-brief="{escape(b.name)}"><div class="brief-head">'
         f'<div class="brief-title"><h2>{escape(b.title)}</h2>{paused}{controls}</div>'
-        f'<div class="limits">{_limits(b)}</div>{_requirements(b)}{_health(s.last_run, s.pending)}</div>'
+        f'<div class="limits">{_limits(b)}</div>{_requirements(b)}{_health(s.last_run, s.pending, s.awaiting)}</div>'
         f'{toolbar}{legend}{body or "<div class=more>Nothing matches yet.</div>"}{more}</section>'
     )
 
@@ -1151,11 +1156,13 @@ before buying.</footer>
 
 def sections_from_store(store: Any, briefs_list: list[Brief], requests_dir: Path | None = None) -> list[Section]:
     pending = {p.name for p in requests_dir.iterdir()} if requests_dir and requests_dir.is_dir() else set()
-    return [
-        Section(b, store.all(b.name), store.last_run(b.name), store.favorites(b.name), store.first_seen(b.name),
-                pending=b.name in pending)
-        for b in briefs_list
-    ]
+    out = []
+    for b in briefs_list:
+        rows = store.all(b.name)
+        shown = [c for c in rows if not awaiting_read(c)]
+        out.append(Section(b, shown, store.last_run(b.name), store.favorites(b.name), store.first_seen(b.name),
+                           pending=b.name in pending, awaiting=len(rows) - len(shown)))
+    return out
 
 
 __all__ = ["Section", "render", "sections_from_store", "make_model"]

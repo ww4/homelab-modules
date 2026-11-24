@@ -15,6 +15,7 @@ from pathlib import Path
 from . import brief as briefs
 from .config import Settings
 from .pipeline import run
+from .models import awaiting_read
 from .policy import effective, rank
 from .report import Section, render, sections_from_store
 from .store import Store
@@ -178,7 +179,7 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
             tops = []
             for c in store.all(b.name):
                 eff = effective(c, b)
-                if not c.excluded and eff and eff.verdict == "top":
+                if not c.excluded and not awaiting_read(c) and eff and eff.verdict == "top":
                     tops.append((c, eff))
             fresh = store.unnotified(b.name, [c.listing.id for c, _ in tops])
             for c, eff in tops:

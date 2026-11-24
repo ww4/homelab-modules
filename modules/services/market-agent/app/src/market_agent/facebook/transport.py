@@ -26,6 +26,11 @@ PAGE_ATTEMPTS = 2
 ATTEMPT_TIMEOUT_S = 8.0
 TOTAL_BUDGET_S = 15.0
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
+# Facebook rate-limits with HTTP 200 + a data-less GraphQL error. Back off for
+# real (seconds, not the sub-second retry above), then slow the whole run down.
+RATE_LIMIT_BACKOFF_S = (20.0, 60.0)
+RATE_LIMIT_SLOWDOWN = 2.0
+RATE_LIMIT_MAX_INTERVAL_S = 12.0
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -55,8 +60,25 @@ class RefusalError(Exception):
     """Facebook answered with an error instead of data. Retrying won't help."""
 
 
+class RateLimited(Exception):
+    """Facebook said "Rate limit exceeded" and kept saying it after backing off.
+
+    Not a RefusalError: the listing is fine, we asked too fast. Callers should
+    stop reading for this run and try again next run, never treat the missing
+    data as an answer.
+    """
+
+
 class _Retryable(Exception):
     pass
+
+
+class _RateLimitReply(Exception):
+    pass
+
+
+def _is_rate_limit(message: str | None) -> bool:
+    return "rate limit" in (message or "").lower()
 
 
 class Transport:
@@ -77,6 +99,19 @@ class Transport:
             self._last = time.monotonic()
 
     async def graphql(self, doc_id: str, variables: dict[str, Any]) -> dict[str, Any]:
+        for wait in (*RATE_LIMIT_BACKOFF_S, None):
+            try:
+                return await self._graphql_once(doc_id, variables)
+            except _RateLimitReply:
+                # Every request after this one goes slower, for the rest of the run.
+                self._min_interval = min(self._min_interval * RATE_LIMIT_SLOWDOWN, RATE_LIMIT_MAX_INTERVAL_S)
+                if wait is None:
+                    break
+                log.warning("Facebook rate limit; waiting %.0fs, then one request per %.1fs", wait, self._min_interval)
+                await asyncio.sleep(wait)
+        raise RateLimited("Facebook rate limit exceeded (still limited after backing off)")
+
+    async def _graphql_once(self, doc_id: str, variables: dict[str, Any]) -> dict[str, Any]:
         body = {"variables": json.dumps(variables, separators=(",", ":")), "doc_id": doc_id}
         deadline = time.monotonic() + TOTAL_BUDGET_S
         last: Exception | None = None
@@ -89,7 +124,7 @@ class Transport:
                 return await asyncio.wait_for(
                     self._attempt(body, min(ATTEMPT_TIMEOUT_S, remaining)), timeout=remaining
                 )
-            except RefusalError:
+            except (RefusalError, _RateLimitReply):
                 raise
             except (httpx.HTTPError, asyncio.TimeoutError, _Retryable, ValueError) as e:
                 last = e
@@ -108,6 +143,8 @@ class Transport:
         payload = r.json()  # ValueError on an HTML interstitial -> retried
         errors = payload.get("errors") or []
         if errors and not payload.get("data"):
+            if _is_rate_limit(errors[0].get("message")):
+                raise _RateLimitReply(errors[0].get("message"))
             raise RefusalError(f"Facebook GraphQL error: {errors[0].get('message')}")
         if errors:
             log.warning("partial GraphQL error, continuing with data: %s", errors[0].get("message"))

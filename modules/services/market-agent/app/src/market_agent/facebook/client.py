@@ -133,15 +133,18 @@ class Marketplace:
             self.t.graphql(DETAIL_INFO_DOC_ID, detail_info_variables(listing_id)),
             return_exceptions=True,
         )
+        # The info half is the listing: description, price, place, vehicle fields.
+        # If it failed, there is no reading to return - an empty description here
+        # once got judged as "the ad has no description" (a rate-limited run).
+        if isinstance(info, Exception):
+            raise info
         p = _target(photos)
         i = _target(info)
-        if p is None and i is None:
-            err = next((x for x in (photos, info) if isinstance(x, Exception)), None)
-            if err:
-                raise err
+        if i is None:
+            if isinstance(photos, Exception):
+                raise photos
             raise ListingGone(f"Facebook returned no listing {listing_id}; it may have been removed")
-        missing = [name for name, part in (("photos", p), ("description", i)) if part is None]
-        i = i or {}
+        missing = ["photos"] if p is None else []
         loc = i.get("location") or None
         price = (i.get("listing_price") or {}).get("amount")
         return Detail(
@@ -164,7 +167,7 @@ class Marketplace:
 
 def _target(result: Any) -> dict[str, Any] | None:
     if isinstance(result, Exception):
-        log.info("listing detail request failed: %s", result)
+        log.warning("listing detail request failed: %s", result)
         return None
     return ((((result or {}).get("data") or {}).get("viewer") or {}).get("marketplace_product_details_page") or {}).get(
         "target"

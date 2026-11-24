@@ -113,3 +113,24 @@ class Candidate(BaseModel):
     @property
     def unknown_checks(self) -> list[Check]:
         return [c for c in self.checks if c.status == "unknown"]
+
+
+def readable(d: "Detail | None") -> bool:
+    """A reading we can judge from: the listing's own page, not just its photos.
+
+    Readings saved before the page half was required (description in
+    missing_parts) are not; they read as ads with no description.
+    """
+    return d is not None and "description" not in d.missing_parts
+
+
+def awaiting_read(c: "Candidate") -> bool:
+    """Stored, but its page was never properly read: no card, no alert, no score.
+
+    Covers rows judged before that rule existed (a failed read left no detail,
+    or a photos-only detail) until a run reads them for real.
+    """
+    if c.detail is not None:
+        return not readable(c.detail)
+    return c.evaluation is not None
+

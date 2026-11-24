@@ -18,9 +18,9 @@ from . import judge as judge_mod
 from .brief import Brief
 from .config import Settings
 from .facebook.client import ListingGone, Marketplace
-from .facebook.transport import Transport
+from .facebook.transport import RateLimited, Transport
 from .geo import driving_miles, miles_between
-from .models import Candidate, Coordinates, Detail, Listing, Signal
+from .models import Candidate, Coordinates, Detail, Listing, Signal, readable
 from .policy import effective
 from .store import Store
 from .vehicles import checks as vchecks
@@ -40,6 +40,7 @@ class RunResult:
     new: int = 0
     detail_failures: int = 0
     unread: int = 0  # new listings skipped because max_details was reached
+    rate_limited: int = 0  # listings not read because Facebook rate-limited the run
     unscored: int = 0  # candidates left for the next run because the judge budget ran out
     excluded: int = 0
     judged: int = 0
@@ -55,7 +56,7 @@ class RunResult:
         return {
             "searches_ok": sum(1 for s in self.searches if s["ok"]),
             "searches_failed": [s for s in self.searches if not s["ok"]],
-            "seen": self.seen, "new": self.new, "detail_failures": self.detail_failures, "unread": self.unread, "unscored": self.unscored,
+            "seen": self.seen, "new": self.new, "detail_failures": self.detail_failures, "unread": self.unread, "rate_limited": self.rate_limited, "unscored": self.unscored,
             "excluded": self.excluded, "judged": self.judged, "judge_failures": self.judge_failures,
         }
 
@@ -184,21 +185,30 @@ async def run(
 
         cands: list[Candidate] = []
         fetched = 0
+        limited = False
         for n, c in enumerate(pending, 1):
             prior = store.get(brief.name, c.listing.id)
-            if prior and not prior[0].detail:
+            if prior and not readable(prior[0].detail):
                 # A page read by a run that never finished is in the cache.
-                if cached := store.cache_get(f"detail:{c.listing.id}", max_age=None):
-                    prior[0].detail = Detail.model_validate(cached)
+                cached = store.cache_get(f"detail:{c.listing.id}", max_age=None)
+                prior[0].detail = Detail.model_validate(cached) if cached else None
+                if not readable(prior[0].detail):
+                    prior[0].detail = None
             elif not prior and (cached := store.cache_get(f"detail:{c.listing.id}", max_age=None)):
-                prior = (Candidate(listing=c.listing, detail=Detail.model_validate(cached)), None, c.listing.price)
+                if readable(d := Detail.model_validate(cached)):
+                    prior = (Candidate(listing=c.listing, detail=d), None, c.listing.price)
             # A tracked listing is re-read about once a day to see if it sold.
             stale = bool(prior and prior[0].detail and time.time() - (prior[0].detail.fetched_at or 0) > RECHECK_SECONDS)
             reread = refresh or (c.listing.id in carried and stale)
-            if prior and prior[0].detail and (fetched >= brief.search.max_details
-                                              or (not reread and prior[2] == c.listing.price)):
-                # Cached page: unchanged, or the read budget is spent (stale beats missing).
-                c.detail = prior[0].detail
+            have = prior[0].detail if prior else None
+            if have and (limited or fetched >= brief.search.max_details
+                         or (not reread and prior[2] == c.listing.price)):
+                # Cached page: unchanged, or reads are spent/limited (stale beats missing).
+                c.detail = have
+            elif limited:
+                # Facebook is rate-limiting: read next run, never judge without the page.
+                result.rate_limited += 1
+                continue
             elif fetched >= brief.search.max_details:
                 # Never silently: counted, reported, and read first next run.
                 result.unread += 1
@@ -213,9 +223,22 @@ async def run(
                 except ListingGone:
                     store.mark_gone(brief.name, c.listing.id)
                     continue
+                except RateLimited as e:
+                    log.warning("stopping listing reads for %s: %s", brief.name, e)
+                    limited = True
+                    if not have:
+                        result.rate_limited += 1
+                        continue
+                    c.detail = have
                 except Exception as e:  # noqa: BLE001 - keep going; count it
+                    log.warning("couldn't read listing %s: %s", c.listing.id, e)
                     result.detail_failures += 1
-                    c.signals.append(Signal(name="detail unavailable", detail=str(e), severity="caution"))
+                    if not have:
+                        # Judging a listing without its page is how "the ad has no
+                        # description" got written about ads that had one.
+                        continue
+                    c.detail = have
+                    c.signals.append(Signal(name="detail unavailable", detail=f"re-read failed, using the earlier reading: {e}", severity="info"))
             cands.append(c)
 
         # 3. Facts and hard limits.
