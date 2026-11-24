@@ -61,3 +61,30 @@ def test_read_cap_is_reported_not_silent():
     r = RunResult(brief="w")
     r.unread = 7
     assert r.summary()["unread"] == 7
+
+
+def test_watch_runs_only_requested_and_skips_paused(tmp_path, monkeypatch):
+    s = Settings(home=tmp_path, judge="none")
+    s.ensure_dirs()
+    from market_agent import brief as briefs
+
+    for n in ("a", "b"):
+        briefs.new_brief(n, s.briefs_dir, "general")
+    p = briefs.load(s.briefs_dir / "b.toml").model_copy(update={"paused": True})
+    briefs.save(p, s.briefs_dir)
+    ran = []
+
+    async def fake_run(settings, brief, **_kw):
+        ran.append(brief.name)
+        return RunResult(brief=brief.name, searches=[{"query": "q", "ok": True, "count": 0, "source": "", "error": None}])
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    monkeypatch.setattr(cli, "_notify", lambda *a: None)
+    args = argparse.Namespace(page=str(tmp_path / "www/index.html"), page_url=None, notify_cmd=None, title="t")
+    cli.cmd_watch(s, args)
+    assert ran == ["a"]  # b is paused
+    (tmp_path / "requests").mkdir()
+    (tmp_path / "requests" / "a").write_text("1")
+    ran.clear()
+    cli.cmd_watch(s, args)
+    assert ran == ["a"] and not any((tmp_path / "requests").iterdir())  # request consumed

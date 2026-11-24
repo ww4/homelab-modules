@@ -232,12 +232,22 @@ async def run(
             if ex := general.exclude_words_check(brief, text):
                 c.checks.append(ex)
 
-            if d and d.coords:
+            where = d.coords if d else None
+            town = (d.location_text if d and d.location_text else None) or c.listing.location_text
+            if where is None and town:
+                # The listing page didn't say where; the search result named a town.
+                # Town-level is plenty for a distance limit (and is cached per town).
+                try:
+                    where = await resolve_place(mp, store, town)
+                    c.facts["location_source"] = f"town from search result ({town})"
+                except Exception as e:  # noqa: BLE001 - stays "unknown", which the page shows
+                    log.info("couldn't place %r: %s", town, e)
+            if where is not None:
                 async def measure(o: Coordinates) -> tuple[float, str]:
                     if brief.location.distance == "radius":
-                        return miles_between(o.latitude, o.longitude, d.coords.latitude, d.coords.longitude), "radius"
+                        return miles_between(o.latitude, o.longitude, where.latitude, where.longitude), "radius"
                     return await driving_miles(
-                        http, settings.osrm_url, o.latitude, o.longitude, d.coords.latitude, d.coords.longitude
+                        http, settings.osrm_url, o.latitude, o.longitude, where.latitude, where.longitude
                     )
 
                 miles, method = await measure(home)

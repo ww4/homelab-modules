@@ -95,7 +95,8 @@ def write_page(s: Settings, out: Path, title: str, names: list[str] | None = Non
     loaded = [briefs.load(briefs.resolve(n, s.briefs_dir)) for n in names]
     store = Store(s.db_path)
     try:
-        html = render(sections_from_store(store, loaded), s.photos_dir, title=title, interactive=interactive,
+        html = render(sections_from_store(store, loaded, s.home / "requests"), s.photos_dir, title=title,
+                      interactive=interactive,
                       photo_files=None if inline_photos else out.parent / "photos")
     finally:
         store.close()
@@ -136,6 +137,13 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
     names = [p.stem for p in sorted(s.briefs_dir.glob("*.toml"))]
     if not names:
         return _err(f"no briefs in {s.briefs_dir}")
+    # A run asked for from the page ("+ New", Edit, unpause) searches only those
+    # watches; the timer's runs search every watch that isn't paused.
+    reqdir = s.home / "requests"
+    requested = sorted(p.name for p in reqdir.iterdir()) if reqdir.is_dir() else []
+    for r in requested:
+        (reqdir / r).unlink(missing_ok=True)
+    only = {n for n in requested if n in names}
     broken: list[str] = []
     failed: list[str] = []
     loaded = []
@@ -146,6 +154,8 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
             failed.append(f"{name}: invalid brief ({e})")
             continue
         loaded.append(b)
+        if b.paused or (only and b.name not in only):
+            continue
         try:
             result = asyncio.run(run(s, b))
         except Exception as e:  # noqa: BLE001

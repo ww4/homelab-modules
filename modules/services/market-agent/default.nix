@@ -6,8 +6,9 @@
 # looks up recalls and VINs with NHTSA, has Claude score the survivors against
 # the brief (photos included), and publishes one static page at
 # <subdomain>.<domain>: cards with a photo, score and price, grouped by brief,
-# with sorting, a model filter, "new" dogears and shared stars (a small
-# loopback endpoint, market-agent-web, behind /api/ on the same vhost).
+# with sorting, a model filter, "new" dogears, shared stars, and "+ New" /
+# Edit / Pause for watches (a small loopback endpoint, market-agent-web, behind
+# /api/ on the same vhost; a saved watch is searched at once via a .path unit).
 # See ./app/README.md for the brief format and how scoring works.
 #
 # Briefs live in <stateDir>/briefs/*.toml and are NOT part of this module:
@@ -140,7 +141,19 @@ in
       "d ${cfg.stateDir} 0755 ${cfg.user} ${group} -"
       "d ${cfg.stateDir}/briefs 0750 ${cfg.user} ${group} -"
       "d ${cfg.stateDir}/www 0755 ${cfg.user} ${group} -"
+      "d ${cfg.stateDir}/requests 0750 ${cfg.user} ${group} -"
     ];
+
+    # The page's "+ New" / Edit / Resume leave a file in requests/; this starts
+    # the normal service for it (which searches only the requested watches and
+    # empties the directory). The star/watch endpoint itself never runs a search.
+    systemd.paths.market-agent = {
+      wantedBy = [ "paths.target" ];
+      pathConfig = {
+        DirectoryNotEmpty = "${cfg.stateDir}/requests";
+        Unit = "market-agent.service";
+      };
+    };
 
     environment.systemPackages = [ market-agent ];
 

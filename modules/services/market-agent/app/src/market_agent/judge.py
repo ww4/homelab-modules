@@ -75,6 +75,7 @@ Rules:
 - A check marked "unknown" is not a pass. List it in unknowns and say how to settle it (often: ask for the VIN).
 - Seller claims ("no rust", "runs great") are claims. Photos can support or contradict them; say which.
 - Judge photos for: rust (especially frame and rocker panels), body damage, mismatched paint, tire wear, dashboard warning lights, interior wear, and whether the photos match the description.
+- The brief's requirements are hard: a listing that clearly fails one scores 2 or below; one the listing does not settle goes in unknowns with the question that would settle it.
 - Score 0-10 for fit to THIS brief, weighing the brief's preferences. Anchors: 8+ = would contact today, little doubt; 7 = contact today; 5-6 = worth one question before driving; 3-4 = poor fit; 0-2 = do not pursue. Set verdict to match (7+ top, 5-6.9 consider, below 5 skip); the page derives it from the score anyway.
 - A car whose drivetrain the listing does not establish cannot score above 6 on an AWD/4WD brief; say what would settle it.
 - Scam risk medium or high, financing / down-payment / buy-here-pay-here ads, and text copied across listings are near-disqualifying for a private buyer: score them 3 or below.
@@ -91,6 +92,7 @@ def packet(brief: Brief, c: Candidate) -> dict[str, Any]:
         "brief": {
             "title": brief.title,
             "notes": brief.notes.strip(),
+            "requirements": brief.requirements,
             "preferences": brief.preferences,
             "price_limits": brief.price.model_dump(),
             "home": brief.location.home,
