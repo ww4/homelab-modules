@@ -102,6 +102,14 @@ class Store:
         self.db.execute("UPDATE listings SET status = 'gone' WHERE brief = ? AND id = ?", (brief, listing_id))
         self.db.commit()
 
+    def recent(self, brief: str, since: float) -> list[Candidate]:
+        """Listings still live that some run saw after `since`."""
+        rows = self.db.execute(
+            "SELECT candidate FROM listings WHERE brief = ? AND status != 'gone' AND last_seen >= ?",
+            (brief, int(since)),
+        )
+        return [Candidate.model_validate_json(r["candidate"]) for r in rows]
+
     def all(self, brief: str, include_gone: bool = False) -> list[Candidate]:
         q = "SELECT candidate FROM listings WHERE brief = ?" + ("" if include_gone else " AND status != 'gone'")
         return [Candidate.model_validate_json(r["candidate"]) for r in self.db.execute(q, (brief,))]

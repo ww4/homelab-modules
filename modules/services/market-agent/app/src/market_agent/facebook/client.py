@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -157,6 +158,7 @@ class Marketplace:
             condition=i.get("condition"),
             vehicle={k: v for k, v in i.items() if k.startswith("vehicle_") and v not in (None, [], {})},
             missing_parts=missing,
+            fetched_at=int(time.time()),
         )
 
 

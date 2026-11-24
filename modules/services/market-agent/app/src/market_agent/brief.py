@@ -49,7 +49,14 @@ class Search(Strict):
     queries: list[str]
     listed_within_days: int | None = None  # watch mode: only recent listings
     exclude_words: list[str] = Field(default_factory=list)
-    max_details: int = 120  # cap on listing pages read per run
+    max_details: int = 400  # cap on listing pages FETCHED per run; cached ones are free
+    # Facebook returns only its first ~24 results per search (logged out, there
+    # is no second page). Splitting the price range runs each query once per
+    # band, and each band gets its own 24 - the cheapest way to see more.
+    price_bands: int = 2
+    # Listings found by an earlier run stay tracked this long even when this
+    # run's search doesn't return them (results vary run to run).
+    keep_days: int = 14
 
     @field_validator("queries")
     @classmethod
@@ -77,8 +84,8 @@ class Vehicle(Strict):
 class Judge(Strict):
     # Cost caps, not filters. Anything over the cap still shows on the page as
     # "not scored yet", so a cap can never hide a listing.
-    max_candidates: int = 40
-    max_near_misses: int = 25
+    max_candidates: int = 100
+    max_near_misses: int = 50
     photos: int = 6
 
 

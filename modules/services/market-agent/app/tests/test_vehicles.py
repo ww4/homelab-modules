@@ -193,3 +193,29 @@ def test_2008_crv_passes_the_winter_brief():
     statuses = {x.name: x.status for x in vehicle_checks(rules, c.facts)}
     assert statuses["drivetrain"] == "pass" and statuses["title"] == "pass"
     assert "fail" not in statuses.values()
+
+
+def test_price_bands_cover_the_near_miss_ceiling():
+    from market_agent.pipeline import price_bands
+
+    b = briefs.Brief.model_validate({
+        "name": "t", "title": "t", "location": {"home": "Springfield, IL"},
+        "price": {"min": 2500, "max": 6000}, "search": {"queries": ["x"]},
+    })
+    bands = price_bands(b)
+    assert bands[0][0] == 2500 and bands[-1][1] == 6600  # 10% past the ceiling: a $6,500 4Runner is findable
+    assert len(bands) == 2 and bands[0][1] == bands[1][0]
+    one = b.model_copy(update={"search": b.search.model_copy(update={"price_bands": 1})})
+    assert price_bands(one) == [(2500, 6600)]
+
+
+def test_store_keeps_tracking_listings_a_search_missed(tmp_path):
+    import time as _t
+    from market_agent.store import Store
+
+    st = Store(tmp_path / "db")
+    c = Candidate(listing=Listing(id="5", title="2008 Honda CR-V", price_text="$4,200", price=4200))
+    st.save("w", c, None)
+    assert [x.listing.id for x in st.recent("w", since=_t.time() - 3600)] == ["5"]
+    st.mark_gone("w", "5")
+    assert st.recent("w", since=0) == []

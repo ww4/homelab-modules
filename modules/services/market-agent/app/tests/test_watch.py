@@ -53,3 +53,11 @@ def test_watch_alerts_when_every_search_fails(tmp_path: Path, monkeypatch):
     args = argparse.Namespace(page=str(tmp_path / "index.html"), page_url=None, notify_cmd="x", title="t")
     assert cli.cmd_watch(s, args) == 1
     assert any("failing" in t for t in sent)
+
+
+def test_read_cap_is_reported_not_silent():
+    from market_agent.pipeline import RunResult
+
+    r = RunResult(brief="w")
+    r.unread = 7
+    assert r.summary()["unread"] == 7
