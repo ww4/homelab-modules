@@ -88,13 +88,15 @@ def cmd_run(s: Settings, a: argparse.Namespace) -> int:
     return 1 if summary["searches_failed"] or summary["judge_failures"] else 0
 
 
-def write_page(s: Settings, out: Path, title: str, names: list[str] | None = None, interactive: bool = False) -> int:
+def write_page(s: Settings, out: Path, title: str, names: list[str] | None = None, interactive: bool = False,
+               inline_photos: bool = False) -> int:
     """Render briefs (default: all) from the store to `out` atomically, readable by nginx."""
     names = names or [p.stem for p in sorted(s.briefs_dir.glob("*.toml"))]
     loaded = [briefs.load(briefs.resolve(n, s.briefs_dir)) for n in names]
     store = Store(s.db_path)
     try:
-        html = render(sections_from_store(store, loaded), s.photos_dir, title=title, interactive=interactive)
+        html = render(sections_from_store(store, loaded), s.photos_dir, title=title, interactive=interactive,
+                      photo_files=None if inline_photos else out.parent / "photos")
     finally:
         store.close()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -108,7 +110,7 @@ def write_page(s: Settings, out: Path, title: str, names: list[str] | None = Non
 def cmd_page(s: Settings, a: argparse.Namespace) -> int:
     if not any(s.briefs_dir.glob("*.toml")) and not a.brief:
         return _err(f"no briefs in {s.briefs_dir}")
-    size = write_page(s, Path(a.out), a.title, a.brief, interactive=a.interactive)
+    size = write_page(s, Path(a.out), a.title, a.brief, interactive=a.interactive, inline_photos=a.inline_photos)
     print(f"wrote {a.out} ({size // 1024} KB)", file=sys.stderr)
     return 0
 
@@ -231,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("--brief", action="append", help="limit to these briefs (repeatable)")
     pp.add_argument("--title", default="Marketplace Watch")
     pp.add_argument("--interactive", action="store_true", help="include star buttons (needs `serve` behind /api/)")
+    pp.add_argument("--inline-photos", action="store_true",
+                    help="embed photos in the HTML (one file, much heavier) instead of writing photos/ next to it")
 
     ps = sub.add_parser("serve", help="the /api/favorites endpoint for stars (loopback only)")
     ps.add_argument("--port", type=int, default=3341)

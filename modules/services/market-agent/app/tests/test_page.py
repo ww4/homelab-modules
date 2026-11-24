@@ -60,3 +60,26 @@ def test_artifact_render_has_no_stars(tmp_path: Path):
     ev = Evaluation(score=8.0, verdict="top", headline="good")
     c = Candidate(listing=Listing(id="3", title="2008 Honda CR-V", price_text="$4,200", price=4200), evaluation=ev)
     assert 'class="star"' not in render([Section(_brief(), [c], None)], tmp_path, interactive=False)
+
+
+def test_photos_as_files_gallery_and_sweep(tmp_path: Path):
+    from PIL import Image
+    from market_agent.report import Photos, card
+
+    src = tmp_path / "src" / "9"
+    src.mkdir(parents=True)
+    for n in range(1, 9):  # eight photos on disk; the strip shows at most six
+        Image.new("RGB", (960, 720), (n * 20, 90, 120)).save(src / f"photo-{n:02d}.jpg")
+    out = tmp_path / "www" / "photos"
+    (out.parent).mkdir()
+    out.mkdir()
+    (out / "stale-1-240.jpg").write_bytes(b"x")
+    photos = Photos(tmp_path / "src", out)
+    ev = Evaluation(score=6.0, headline="ok", depth="full", strengths=["a"])
+    c = Candidate(listing=Listing(id="9", title="2011 Subaru Forester", price_text="$5,500", price=5500), evaluation=ev)
+    html = card(c, photos, _brief(), starred=False, interactive=False, first_seen=1)
+    photos.sweep()
+    assert "data:image" not in html and 'src="photos/9-1-520.jpg"' in html
+    assert html.count('class="shot') == 6 and 'data-full="photos/9-3-800.jpg"' in html
+    assert not (out / "stale-1-240.jpg").exists()  # unreferenced photos are removed
+    assert (out / "9-6-800.jpg").stat().st_mode & 0o044  # nginx can read them
