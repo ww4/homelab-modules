@@ -77,6 +77,10 @@ class Vehicle(Strict):
     title: TitleRule = "any"
     transmission: Transmission = "any"
     max_mileage: int | None = None  # hard limit
+    # Hard limits a listing must actually establish before it is shown as a
+    # candidate. "unknown" on these puts the car on a "confirm first" list
+    # instead: an AWD search should not show cars that may be FWD.
+    must_confirm: list[str] = Field(default_factory=lambda: ["drivetrain"])
     min_year: int | None = None
     max_year: int | None = None
 
@@ -84,8 +88,9 @@ class Vehicle(Strict):
 class Judge(Strict):
     # Cost caps, not filters. Anything over the cap still shows on the page as
     # "not scored yet", so a cap can never hide a listing.
-    max_candidates: int = 100
-    max_near_misses: int = 50
+    max_candidates: int = 100  # quick screens for candidates inside the limits
+    max_near_misses: int = 50  # quick screens for near misses
+    max_full: int = 30  # full evaluations, for the best screens (starred ones always)
     photos: int = 6
 
 

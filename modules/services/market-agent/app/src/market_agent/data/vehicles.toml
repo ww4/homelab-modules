@@ -8,8 +8,10 @@
 # generations: drivetrain and transmission type by year range. These are
 #   spec-sheet facts; check a generation against the maker's spec page before
 #   adding it. transmission_type: conventional | cvt | depends-on-engine.
-#   drivetrain: awd-standard | fwd-or-awd | fwd-or-4wd | rwd-or-4wd | 4wd-standard
+#   drivetrain: awd-standard | fwd-or-awd | fwd-or-4wd | rwd-or-4wd | 4wd-standard | fwd-only
 # issues: verified = true only with a source URL that was actually read.
+#   `chip` is the short label shown as a colored tag on every listing of that
+#   model; the judge is told not to restate these, only to use listing evidence.
 #   Unverified entries reach the judge labelled as unverified and are phrased
 #   as questions for the seller, never as findings.
 
@@ -117,6 +119,25 @@ generations = [
   { years = [2007, 2012], transmission = "6-speed (turbo) or 5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
 ]
 
+# ---------------------------------------------------------------- FWD-only
+# Models that were never sold with AWD/4WD in the US. Listing them settles the
+# drivetrain check outright instead of leaving it "unknown".
+[[models]]
+make = "Mazda"
+model = "Mazda5"
+aliases = ["mazda5", "mazda 5", "mazda mazda5"]
+generations = [
+  { years = [2006, 2015], transmission = "4- or 5-speed automatic (manual also offered)", transmission_type = "conventional", drivetrain = "fwd-only" },
+]
+
+[[models]]
+make = "Honda"
+model = "Odyssey"
+aliases = ["odyssey"]
+generations = [
+  { years = [1995, 2024], transmission = "automatic", transmission_type = "conventional", drivetrain = "fwd-only" },
+]
+
 # ---------------------------------------------------------------- Nissan
 [[models]]
 make = "Nissan"
@@ -133,6 +154,7 @@ model = "CR-V"
 years = [2007, 2011]
 kind = "recall"
 title = "Rear frame corrosion recall (NHTSA 23V-228)"
+chip = "Frame-rust recall"
 detail = "In salt-belt states, rust inside the rear frame can let the rear trailing arm separate. Dealer inspects; adds a brace, repairs the frame, or buys the vehicle back. Free."
 ask = "Has recall 23V-228 been done? Get the VIN and check Honda's recall lookup; look at the rear frame on a lift."
 source = "https://hondanews.com/en-US/honda-corporate/releases/release-f61ab7d13cb83fb181b8bc22df059449-2007-2011-honda-cr-v-rear-frame-corrosion-recall"
@@ -144,6 +166,7 @@ model = "CR-V"
 years = [2007, 2011]
 kind = "bulletin"
 title = "A/C compressor clutch wear (Honda SB 12-072)"
+chip = "A/C clutch"
 detail = "Clutch wears out: A/C blows warm or makes noise from the compressor. The old 7-year warranty extension has long expired."
 ask = "Does the A/C blow cold at idle and on the road? Any compressor noise?"
 source = "https://www.carcomplaints.com/Honda/CR-V/2009/tsb/tsb-sb-12-072.shtml"
@@ -156,6 +179,7 @@ years = [2006, 2012]
 drivetrain = "4wd"
 kind = "bulletin"
 title = "Rear differential coupling growl on 4WD (Toyota T-SB-0080-13)"
+chip = "Rear coupling"
 detail = "Contaminated front bearing in the rear coupling causes a growl while driving. The warranty enhancement ended April 2017."
 ask = "Any growl or hum from the rear while driving? Has the rear coupling been replaced?"
 source = "https://www.cars.com/articles/2006-2012-toyota-rav4-coupling-issue-1420688743307"
@@ -167,6 +191,7 @@ model = "Forester"
 years = [2011, 2014]
 kind = "bulletin"
 title = "Excessive oil consumption, 2.5L FB25 (Subaru TSB 02-157-14R)"
+chip = "Oil consumption"
 detail = "Faulty short block; Subaru's fix was a short-block replacement (earlier: pistons and rings)."
 ask = "How much oil does it use between changes? Has Subaru replaced the short block or rings?"
 source = "https://www.cars.com/articles/2011-15-subaru-oil-consumption-update-1420683845519"
@@ -178,6 +203,7 @@ model = "Outback"
 years = [2013, 2014]
 kind = "bulletin"
 title = "Excessive oil consumption, 2.5L FB25 (Subaru TSB 02-157-14R)"
+chip = "Oil consumption"
 detail = "Same bulletin as the Forester; later revisions cover Outback. Confirm VIN applicability against the current revision."
 ask = "How much oil does it use between changes? Any Subaru engine work under 02-157-14R?"
 source = "https://static.nhtsa.gov/odi/tsbs/2016/MC-10120985-9999.pdf"
@@ -191,6 +217,7 @@ model = "Forester"
 years = [1999, 2010]
 kind = "pattern"
 title = "EJ25 head gasket leaks"
+chip = "Head gaskets"
 detail = "Widely reported on the EJ25 non-turbo engine."
 ask = "Have the head gaskets been replaced? Any oil or coolant seepage at the heads?"
 verified = false
@@ -201,6 +228,7 @@ model = "Outback"
 years = [2000, 2012]
 kind = "pattern"
 title = "EJ25 head gasket leaks (2.5i)"
+chip = "Head gaskets"
 detail = "Widely reported on the EJ25 non-turbo engine."
 ask = "Have the head gaskets been replaced? Any oil or coolant seepage at the heads?"
 verified = false
@@ -211,6 +239,7 @@ model = "Outback"
 years = [2010, 2019]
 kind = "pattern"
 title = "CVT service history (2.5i)"
+chip = "CVT history"
 detail = "CVT fluid service and any transmission warnings matter on these."
 ask = "Has the CVT fluid ever been changed? Has the transmission temperature light ever come on?"
 verified = false
@@ -221,6 +250,7 @@ model = "Tacoma"
 years = [1995, 2010]
 kind = "pattern"
 title = "Frame rust"
+chip = "Frame rust"
 detail = "Toyota ran frame programs for these years; salt-state frames often rot."
 ask = "Has the frame been replaced or repaired? Photos of the frame rails near the rear leaf-spring hangers?"
 verified = false
@@ -231,6 +261,7 @@ model = "4Runner"
 years = [2003, 2009]
 kind = "pattern"
 title = "Frame corrosion in salt states"
+chip = "Frame rust"
 detail = "Commonly reported; check before anything else."
 ask = "Any frame rust or patches? Photos underneath?"
 verified = false
@@ -242,6 +273,7 @@ years = [2002, 2016]
 drivetrain = "awd"
 kind = "pattern"
 title = "Rear differential fluid (Real Time 4WD)"
+chip = "Rear diff fluid"
 detail = "Honda's AWD rear differential groans in tight turns when its fluid is old."
 ask = "When was the rear differential fluid last changed? Any groan in tight turns?"
 verified = false
@@ -252,6 +284,7 @@ model = "Pilot"
 years = [2003, 2004]
 kind = "pattern"
 title = "5-speed automatic failures"
+chip = "Transmission"
 detail = "Early 5-speed automatics in this generation had a reputation for failing."
 ask = "Has the transmission been replaced or rebuilt? Any slipping or harsh shifts?"
 verified = false
@@ -262,6 +295,7 @@ model = "CX-7"
 years = [2007, 2012]
 kind = "pattern"
 title = "2.3L turbo engine reliability"
+chip = "Turbo engine"
 detail = "Turbo and timing-chain problems are commonly reported on the turbo engine."
 ask = "Has the turbo or timing chain been replaced? Any smoke or rattle on a cold start?"
 verified = false
@@ -272,6 +306,7 @@ model = "Rogue"
 years = [2008, 2020]
 kind = "pattern"
 title = "CVT failures"
+chip = "CVT"
 detail = "Nissan CVTs of this era have a poor reliability record."
 ask = "Has the CVT been replaced? Any whine, shudder or hesitation?"
 verified = false

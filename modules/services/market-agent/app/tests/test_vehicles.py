@@ -219,3 +219,11 @@ def test_store_keeps_tracking_listings_a_search_missed(tmp_path):
     assert [x.listing.id for x in st.recent("w", since=_t.time() - 3600)] == ["5"]
     st.mark_gone("w", "5")
     assert st.recent("w", since=0) == []
+
+
+def test_fwd_only_models_fail_the_awd_check():
+    kb = knowledge.load()
+    c = _cand("2009 Mazda MAZDA MAZDA5 · Grand Touring Minivan", "runs great")
+    apply_knowledge(c, kb)
+    statuses = {x.name: x.status for x in vehicle_checks(Vehicle(drivetrain=["awd", "4wd"]), c.facts)}
+    assert statuses["drivetrain"] == "fail"

@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS price_history (
 CREATE TABLE IF NOT EXISTS runs (
     brief TEXT NOT NULL, ts INTEGER NOT NULL, summary TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS favorites (
+    brief TEXT NOT NULL, id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (brief, id)
+);
 CREATE TABLE IF NOT EXISTS notified (
     brief TEXT NOT NULL, id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (brief, id)
 );
@@ -113,6 +116,35 @@ class Store:
     def all(self, brief: str, include_gone: bool = False) -> list[Candidate]:
         q = "SELECT candidate FROM listings WHERE brief = ?" + ("" if include_gone else " AND status != 'gone'")
         return [Candidate.model_validate_json(r["candidate"]) for r in self.db.execute(q, (brief,))]
+
+    # -- favorites ----------------------------------------------------------------
+    def favorites(self, brief: str) -> set[str]:
+        return {r["id"] for r in self.db.execute("SELECT id FROM favorites WHERE brief = ?", (brief,))}
+
+    def all_favorites(self) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {}
+        for r in self.db.execute("SELECT brief, id FROM favorites ORDER BY ts"):
+            out.setdefault(r["brief"], []).append(r["id"])
+        return out
+
+    def set_favorite(self, brief: str, listing_id: str, starred: bool) -> None:
+        if starred:
+            self.db.execute("INSERT OR IGNORE INTO favorites VALUES (?, ?, ?)", (brief, listing_id, int(time.time())))
+        else:
+            self.db.execute("DELETE FROM favorites WHERE brief = ? AND id = ?", (brief, listing_id))
+        self.db.commit()
+
+    def get_many(self, brief: str, ids: set[str]) -> list[Candidate]:
+        out = []
+        for i in ids:
+            got = self.get(brief, i)
+            if got:
+                out.append(got[0])
+        return out
+
+    def first_seen(self, brief: str) -> dict[str, int]:
+        return {r["id"]: r["first_seen"] for r in self.db.execute(
+            "SELECT id, first_seen FROM listings WHERE brief = ?", (brief,))}
 
     # -- notifications --------------------------------------------------------
     def unnotified(self, brief: str, ids: list[str]) -> list[str]:

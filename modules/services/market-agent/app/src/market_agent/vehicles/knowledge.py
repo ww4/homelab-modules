@@ -41,6 +41,7 @@ class Issue(BaseModel):
     ask: str
     source: str | None = None
     verified: bool = False
+    chip: str | None = None
     drivetrain: str | None = None  # only applies to this drivetrain
 
     def applies(self, year: int | None, drive: str | None) -> bool:

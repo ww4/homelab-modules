@@ -14,8 +14,9 @@ from pathlib import Path
 
 from . import brief as briefs
 from .config import Settings
-from .pipeline import rank, run
-from .report import Section, render
+from .pipeline import run
+from .policy import effective, rank
+from .report import Section, render, sections_from_store
 from .store import Store
 
 
@@ -49,12 +50,13 @@ def cmd_brief(s: Settings, a: argparse.Namespace) -> int:
     return _err(f"unknown brief action {a.action}")
 
 
-def _print_ranked(cands: list) -> None:
-    for c in rank(cands):
+def _print_ranked(cands: list, brief) -> None:
+    for c in rank(cands, brief):
         if c.excluded:
             continue
         e = c.evaluation
-        head = f"{e.verdict:8} {e.score:4.1f}" if e else "unjudged     "
+        eff = effective(c, brief)
+        head = f"{eff.verdict:8} {eff.score:4.1f}" if eff else "unjudged     "
         miles = c.facts.get("miles_from_home")
         dist = f"{miles:>3} mi" if miles is not None else "  ? mi"
         print(f"{head}  ${(c.listing.price or 0):>7,.0f}  {dist}  {c.listing.title[:48]:48}  {c.listing.url}")
@@ -73,36 +75,48 @@ def cmd_run(s: Settings, a: argparse.Namespace) -> int:
         print(json.dumps(summary, indent=2), file=sys.stderr)
         return _err("every search failed - Facebook is refusing or the doc_ids changed; nothing was evaluated")
     if a.json:
-        print(json.dumps({"summary": summary, "candidates": [c.model_dump() for c in rank(result.candidates)]},
+        print(json.dumps({"summary": summary, "candidates": [c.model_dump() for c in rank(result.candidates, b)]},
                          indent=1, default=str))
     else:
-        _print_ranked(result.candidates)
+        _print_ranked(result.candidates, b)
         print(f"\n{summary['seen']} seen, {summary['new']} new, {summary['excluded']} excluded, "
               f"{summary['judged']} judged ({summary['judge_failures']} judge failures, "
               f"{summary['detail_failures']} unreadable listings, "
               f"{len(summary['searches_failed'])} failed searches)", file=sys.stderr)
     if a.report:
-        cmd_page(s, argparse.Namespace(brief=[a.brief], out=a.report, title="Marketplace Watch"))
+        write_page(s, Path(a.report), "Marketplace Watch", [a.brief])
     return 1 if summary["searches_failed"] or summary["judge_failures"] else 0
 
 
-def cmd_page(s: Settings, a: argparse.Namespace) -> int:
-    names = a.brief or [p.stem for p in sorted(s.briefs_dir.glob("*.toml"))]
-    if not names:
-        return _err(f"no briefs in {s.briefs_dir}")
+def write_page(s: Settings, out: Path, title: str, names: list[str] | None = None, interactive: bool = False) -> int:
+    """Render briefs (default: all) from the store to `out` atomically, readable by nginx."""
+    names = names or [p.stem for p in sorted(s.briefs_dir.glob("*.toml"))]
+    loaded = [briefs.load(briefs.resolve(n, s.briefs_dir)) for n in names]
     store = Store(s.db_path)
     try:
-        sections = []
-        for name in names:
-            b = briefs.load(briefs.resolve(name, s.briefs_dir))
-            sections.append(Section(b, store.all(b.name), store.last_run(b.name)))
+        html = render(sections_from_store(store, loaded), s.photos_dir, title=title, interactive=interactive)
     finally:
         store.close()
-    html = render(sections, s.photos_dir, title=a.title)
-    out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html)
-    print(f"wrote {out} ({len(html) // 1024} KB, {len(sections)} briefs)", file=sys.stderr)
+    tmp = out.with_name(out.name + ".tmp")
+    tmp.write_text(html)
+    os.chmod(tmp, 0o644)
+    tmp.replace(out)
+    return len(html)
+
+
+def cmd_page(s: Settings, a: argparse.Namespace) -> int:
+    if not any(s.briefs_dir.glob("*.toml")) and not a.brief:
+        return _err(f"no briefs in {s.briefs_dir}")
+    size = write_page(s, Path(a.out), a.title, a.brief, interactive=a.interactive)
+    print(f"wrote {a.out} ({size // 1024} KB)", file=sys.stderr)
+    return 0
+
+
+def cmd_serve(s: Settings, a: argparse.Namespace) -> int:
+    from .web import serve
+
+    serve(s, a.port, lambda: write_page(s, Path(a.page), a.title, interactive=True))
     return 0
 
 
@@ -143,30 +157,42 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
         if sm["searches_failed"] or sm["judge_failures"]:
             failed.append(f"{b.title}: {len(sm['searches_failed'])} searches and {sm['judge_failures']} scores failed")
 
-    out = Path(a.page)
-    out.parent.mkdir(parents=True, exist_ok=True)
+    write_page(s, Path(a.page), a.title, [b.name for b in loaded], interactive=True)
     store = Store(s.db_path)
     try:
-        sections = [Section(b, store.all(b.name), store.last_run(b.name)) for b in loaded]
-        tmp = out.with_suffix(".tmp")
-        tmp.write_text(render(sections, s.photos_dir, title=a.title))
-        os.chmod(tmp, 0o644)
-        tmp.replace(out)
         news: list[str] = []
+        drops: list[str] = []
         for b in loaded:
-            tops = [c for c in store.all(b.name) if not c.excluded and c.evaluation and c.evaluation.verdict == "top"]
-            fresh = store.unnotified(b.name, [c.listing.id for c in tops])
-            for c in tops:
+            tops = []
+            for c in store.all(b.name):
+                eff = effective(c, b)
+                if not c.excluded and eff and eff.verdict == "top":
+                    tops.append((c, eff))
+            fresh = store.unnotified(b.name, [c.listing.id for c, _ in tops])
+            for c, eff in tops:
                 if c.listing.id in fresh:
                     news.append(f"{b.title}: {c.listing.title} {c.listing.price_text} "
-                                f"({c.evaluation.score:.1f}) {c.listing.url}")
+                                f"({eff.score:.1f}) {c.listing.url}")
             store.mark_notified(b.name, fresh)
+            # Starred listings: tell us when the price drops (once per new price).
+            for lid in store.favorites(b.name):
+                hist = [p for _, p in store.price_history(b.name, lid) if p is not None]
+                if len(hist) >= 2 and hist[-1] < hist[-2]:
+                    key = f"price:{lid}:{hist[-1]:.0f}"
+                    if store.unnotified(b.name, [key]):
+                        got = store.get(b.name, lid)
+                        title = got[0].listing.title if got else lid
+                        drops.append(f"{title}: ${hist[-2]:,.0f} -> ${hist[-1]:,.0f} "
+                                     f"https://www.facebook.com/marketplace/item/{lid}")
+                        store.mark_notified(b.name, [key])
     finally:
         store.close()
 
     link = f"\n{a.page_url}" if a.page_url else ""
     if news:
         _notify(a.notify_cmd, f"market-agent: {len(news)} new worth contacting", "\n".join(news) + link)
+    if drops:
+        _notify(a.notify_cmd, f"market-agent: price drop on {len(drops)} starred", "\n".join(drops) + link)
     if broken:
         _notify(a.notify_cmd, "market-agent: Facebook search is failing",
                 "Every search failed for: " + ", ".join(broken)
@@ -204,6 +230,12 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("out", metavar="FILE.html")
     pp.add_argument("--brief", action="append", help="limit to these briefs (repeatable)")
     pp.add_argument("--title", default="Marketplace Watch")
+    pp.add_argument("--interactive", action="store_true", help="include star buttons (needs `serve` behind /api/)")
+
+    ps = sub.add_parser("serve", help="the /api/favorites endpoint for stars (loopback only)")
+    ps.add_argument("--port", type=int, default=3341)
+    ps.add_argument("--page", required=True, metavar="FILE.html", help="page to re-render after a star changes")
+    ps.add_argument("--title", default="Marketplace Watch")
 
     pw = sub.add_parser("watch", help="run every brief, rebuild the page, notify about new top listings")
     pw.add_argument("--page", required=True, metavar="FILE.html")
@@ -223,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_page(s, a)
         if a.cmd == "watch":
             return cmd_watch(s, a)
+        if a.cmd == "serve":
+            return cmd_serve(s, a)
     except (FileNotFoundError, FileExistsError, ValueError) as e:
         return _err(str(e))
     return _err("unknown command")
