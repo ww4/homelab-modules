@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 # Bump when SYSTEM_PROMPT or the schema changes meaning: stored evaluations
 # made under an older version are re-judged on the next run.
-JUDGE_VERSION = 2
+JUDGE_VERSION = 3
 
 EVALUATION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -50,7 +50,23 @@ EVALUATION_SCHEMA: dict[str, Any] = {
     },
 }
 
+SCREEN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["score", "headline", "standout", "seller_kind", "scam_risk"],
+    "properties": {
+        "score": {"type": "number", "description": "0-10 fit for this brief"},
+        "headline": {"type": "string", "description": "One short sentence"},
+        "standout": {"type": "array", "items": {"type": "string"}, "maxItems": 3,
+                     "description": "What sets THIS car apart from other examples of the same model, good or bad"},
+        "seller_kind": {"type": "string", "enum": ["private", "dealer_or_flipper", "unclear"]},
+        "scam_risk": {"type": "string", "enum": ["low", "medium", "high"]},
+    },
+}
+
 SYSTEM_PROMPT = """You evaluate secondhand listings for one buyer, against the buyer's written brief.
+
+The buyer is choosing between many similar listings, often several of the same model. What helps is what sets THIS listing apart: its condition, mileage, records, seller, price for what it is, what the photos show. Model-wide facts (the recalls and bulletins in the references) are already shown to the buyer as tags on every listing of that model. Do not restate them. Mention one only when this listing has evidence about it: records of the repair, symptoms in the text or photos, a VIN that settles it.
 
 Rules:
 - Use only the facts in the packet: the brief, the listing's own fields and text, the checks, the signals, the references, and the photos. Each reference says whether it is verified.
@@ -62,7 +78,11 @@ Rules:
 - Score 0-10 for fit to THIS brief, weighing the brief's preferences. Anchors: 8+ = would contact today, little doubt; 7 = contact today; 5-6 = worth one question before driving; 3-4 = poor fit; 0-2 = do not pursue. Set verdict to match (7+ top, 5-6.9 consider, below 5 skip); the page derives it from the score anyway.
 - A car whose drivetrain the listing does not establish cannot score above 6 on an AWD/4WD brief; say what would settle it.
 - Scam risk medium or high, financing / down-payment / buy-here-pay-here ads, and text copied across listings are near-disqualifying for a private buyer: score them 3 or below.
-- Be plain and specific. Short sentences. No hype."""
+- Be plain and specific. Short sentences. No hype. At most four items per list; skip a list rather than pad it."""
+
+SCREEN_PROMPT = SYSTEM_PROMPT + """
+
+This is a QUICK SCREEN, not the full evaluation: score it, write one short headline, and give at most three standout points. Only listings that screen well get the full read."""
 
 
 def packet(brief: Brief, c: Candidate) -> dict[str, Any]:
@@ -108,13 +128,32 @@ class JudgeError(Exception):
     pass
 
 
-async def judge_cli(settings: Settings, brief: Brief, c: Candidate, photos: list[Path], workdir: Path) -> Evaluation:
+def _stage(depth: str) -> tuple[dict[str, Any], str, str]:
+    """(schema, system prompt, effort) for a judging depth."""
+    if depth == "screen":
+        return SCREEN_SCHEMA, SCREEN_PROMPT, "low"
+    return EVALUATION_SCHEMA, SYSTEM_PROMPT, "medium"
+
+
+def _to_evaluation(raw: dict[str, Any], depth: str) -> Evaluation:
+    raw = dict(raw, depth=depth)
+    score = float(raw.get("score", 0))
+    # The page derives the verdict from the score (policy.py); keep them consistent here too.
+    raw["verdict"] = "top" if score >= 7 else "consider" if score >= 5 else "skip"
+    return Evaluation.model_validate(raw)
+
+
+async def judge_cli(
+    settings: Settings, brief: Brief, c: Candidate, photos: list[Path], workdir: Path, depth: str = "full"
+) -> Evaluation:
+    schema, system, effort = _stage(depth)
     args = [
         settings.claude_bin, "-p", _prompt(brief, c, photos, inline_images=False),
         "--output-format", "json",
-        "--json-schema", json.dumps(EVALUATION_SCHEMA),
+        "--json-schema", json.dumps(schema),
         "--model", settings.model,
-        "--system-prompt", SYSTEM_PROMPT,
+        "--effort", effort,
+        "--system-prompt", system,
         # Keep the judge's context to the packet: no project/user settings,
         # CLAUDE.md, MCP servers, skills or saved sessions.
         "--setting-sources", "",
@@ -148,10 +187,13 @@ async def judge_cli(settings: Settings, brief: Brief, c: Candidate, photos: list
         raise JudgeError("claude CLI returned no structured_output")
     if result.get("permission_denials"):
         log.warning("judge was denied tools: %s", result["permission_denials"])
-    return Evaluation.model_validate(structured)
+    return _to_evaluation(structured, depth)
 
 
-async def judge_api(settings: Settings, brief: Brief, c: Candidate, photos: list[Path]) -> Evaluation:
+async def judge_api(
+    settings: Settings, brief: Brief, c: Candidate, photos: list[Path], depth: str = "full"
+) -> Evaluation:
+    schema, system, effort = _stage(depth)
     try:
         import anthropic
     except ImportError as e:
@@ -166,9 +208,9 @@ async def judge_api(settings: Settings, brief: Brief, c: Candidate, photos: list
     response = await client.beta.messages.create(
         model=settings.model,
         max_tokens=16000,
-        system=SYSTEM_PROMPT,
+        system=system,
         messages=[{"role": "user", "content": content}],
-        output_config={"effort": "medium", "format": {"type": "json_schema", "schema": EVALUATION_SCHEMA}},
+        output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
         # Route a policy decline to a fallback model instead of failing the listing.
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
@@ -178,10 +220,12 @@ async def judge_api(settings: Settings, brief: Brief, c: Candidate, photos: list
     text = next((b.text for b in response.content if b.type == "text"), None)
     if not text:
         raise JudgeError(f"no text in response (stop_reason={response.stop_reason})")
-    return Evaluation.model_validate_json(text)
+    return _to_evaluation(json.loads(text), depth)
 
 
-async def evaluate(settings: Settings, brief: Brief, c: Candidate, photos: list[Path], workdir: Path) -> Evaluation:
+async def evaluate(
+    settings: Settings, brief: Brief, c: Candidate, photos: list[Path], workdir: Path, depth: str = "full"
+) -> Evaluation:
     if settings.judge == "api":
-        return await judge_api(settings, brief, c, photos)
-    return await judge_cli(settings, brief, c, photos, workdir)
+        return await judge_api(settings, brief, c, photos, depth)
+    return await judge_cli(settings, brief, c, photos, workdir, depth)

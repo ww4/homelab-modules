@@ -22,7 +22,41 @@ def test_page_groups_and_photos(tmp_path: Path):
     out = Candidate(listing=Listing(id="2", title="2006 CR-V FWD", price_text="$5,250", price=5250),
                     checks=[Check(name="drivetrain", status="fail", detail="FWD")])
     html = render([Section(_brief(), [top, out], None)], tmp_path)
-    assert "Worth contacting · 1" in html
+    assert 'Worth contacting · <span class="count">1</span>' in html
     assert "data:image/jpeg;base64," in html
     assert "Good car &lt;b&gt;" in html  # escaped
     assert html.count('class="card"') == 1  # the excluded one is a list line, not a card
+
+
+def test_bulletins_are_tags_and_recalls_are_not_double_counted(tmp_path: Path):
+    from market_agent.report import _ref_chips
+
+    c = Candidate(listing=Listing(id="1", title="2009 Honda CR-V", price_text="$5,000", price=5000), references=[
+        {"type": "recall", "title": "Rear frame corrosion recall (NHTSA 23V-228)", "chip": "Frame-rust recall",
+         "source": "https://example/r", "verified": True, "detail": "d", "ask": "a"},
+        {"type": "bulletin", "title": "A/C compressor clutch wear (Honda SB 12-072)", "chip": "A/C clutch",
+         "verified": True, "detail": "d", "ask": "a"},
+        {"type": "pattern", "title": "Rear differential fluid", "chip": "Rear diff fluid", "verified": False},
+        {"type": "nhtsa_recall", "title": "Recall 23V228000: STRUCTURE:FRAME", "verified": True},
+        {"type": "nhtsa_recall", "title": "Recall 19V182000: AIR BAGS", "verified": True},
+    ])
+    chips = _ref_chips(c)
+    assert 'class="chip recall"' in chips and "Frame-rust recall" in chips
+    assert 'class="chip bulletin"' in chips and "Rear diff fluid?" in chips
+    assert "1 NHTSA recalls" in chips  # 23V-228 already has its own tag
+
+
+def test_screened_listing_has_no_full_evaluation(tmp_path: Path):
+    from market_agent.report import card
+
+    ev = Evaluation(score=4.0, headline="meh", depth="screen", standout=["new tires", "no records"])
+    c = Candidate(listing=Listing(id="2", title="2010 Toyota RAV4", price_text="$4,000", price=4000), evaluation=ev)
+    html = card(c, tmp_path, _brief(), starred=False, interactive=True, first_seen=1)
+    assert "Full evaluation" not in html and "new tires" in html
+    assert 'class="star"' in html and 'data-model="Toyota RAV4"' in html
+
+
+def test_artifact_render_has_no_stars(tmp_path: Path):
+    ev = Evaluation(score=8.0, verdict="top", headline="good")
+    c = Candidate(listing=Listing(id="3", title="2008 Honda CR-V", price_text="$4,200", price=4200), evaluation=ev)
+    assert 'class="star"' not in render([Section(_brief(), [c], None)], tmp_path, interactive=False)

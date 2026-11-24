@@ -5,7 +5,9 @@
 # Marketplace for every brief, reads each listing, checks the hard limits,
 # looks up recalls and VINs with NHTSA, has Claude score the survivors against
 # the brief (photos included), and publishes one static page at
-# <subdomain>.<domain>: cards with a photo, score and price, grouped by brief.
+# <subdomain>.<domain>: cards with a photo, score and price, grouped by brief,
+# with sorting, a model filter, "new" dogears and shared stars (a small
+# loopback endpoint, market-agent-web, behind /api/ on the same vhost).
 # See ./app/README.md for the brief format and how scoring works.
 #
 # Briefs live in <stateDir>/briefs/*.toml and are NOT part of this module:
@@ -104,6 +106,17 @@ in
       '';
     };
 
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 3341;
+      description = ''
+        Loopback port for the small star endpoint (/api/favorites) that sits
+        behind the same vhost as the page. Stars are shared by everyone who
+        can open the page, survive every rebuild, and keep a listing tracked
+        until it sells.
+      '';
+    };
+
     notifyCommand = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -171,6 +184,42 @@ in
       };
     };
 
+    # Stars. Unauthenticated by design, like the page: it refuses to bind
+    # anything but loopback, and the vhost's own gating applies to /api/.
+    systemd.services.market-agent-web = {
+      description = "market-agent: star endpoint for the watch page";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      environment = {
+        HOME = home;
+        MARKET_AGENT_HOME = cfg.stateDir;
+        MARKET_AGENT_JUDGE = "none"; # never judges; it only records stars and rebuilds the page
+      };
+      serviceConfig = {
+        ExecStart = lib.escapeShellArgs [
+          (lib.getExe market-agent) "serve"
+          "--port" (toString cfg.port)
+          "--page" "${cfg.stateDir}/www/index.html"
+        ];
+        User = cfg.user;
+        Group = group;
+        Restart = "on-failure";
+        RestartSec = "5s";
+        ProtectSystem = "strict";
+        ReadWritePaths = [ cfg.stateDir ];
+        ProtectHome = true;
+        PrivateTmp = true;
+        PrivateDevices = true;
+        NoNewPrivileges = true;
+        RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
+        RestrictNamespaces = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        SystemCallArchitectures = "native";
+        CapabilityBoundingSet = [ ];
+      };
+    };
+
     systemd.timers.market-agent = {
       wantedBy = [ "timers.target" ];
       timerConfig = {
@@ -189,6 +238,10 @@ in
         index = "index.html";
         # The page changes after every run; never serve yesterday's.
         extraConfig = ''add_header Cache-Control "no-cache";'';
+      };
+      locations."/api/" = {
+        proxyPass = "http://127.0.0.1:${toString cfg.port}";
+        recommendedProxySettings = true;
       };
     };
   };

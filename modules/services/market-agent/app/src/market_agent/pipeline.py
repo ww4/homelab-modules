@@ -21,6 +21,7 @@ from .facebook.client import ListingGone, Marketplace
 from .facebook.transport import Transport
 from .geo import driving_miles, miles_between
 from .models import Candidate, Coordinates, Detail, Listing, Signal
+from .policy import effective
 from .store import Store
 from .vehicles import checks as vchecks
 from .vehicles import knowledge
@@ -154,10 +155,12 @@ async def run(
         # one search is not gone. Its page is re-read below, which is also how
         # a sale is noticed.
         cutoff = time.time() - brief.search.keep_days * 86400
-        for prior in store.recent(brief.name, since=cutoff):
+        starred_ids = store.favorites(brief.name)
+        # Starred listings are tracked however old, until they are gone.
+        for prior in store.recent(brief.name, since=cutoff) + store.get_many(brief.name, starred_ids):
             # Only what is still in play: a listing already ruled out by a hard
             # fact (FWD, rebuilt title) has nothing to track.
-            in_play = not prior.excluded or prior.facts.get("near_miss")
+            in_play = not prior.excluded or prior.facts.get("near_miss") or prior.listing.id in starred_ids
             if prior.listing.id not in found and in_play:
                 found[prior.listing.id] = prior.listing.model_copy(update={"query": "(tracked)"})
                 carried.add(prior.listing.id)
@@ -284,54 +287,71 @@ async def run(
 
         survivors.sort(key=pre_rank)
         near.sort(key=pre_rank)
-        to_judge: list[tuple[Candidate, str]] = []
-        for pool, budget in ((survivors, brief.judge.max_candidates), (near, brief.judge.max_near_misses)):
+        favs = store.favorites(brief.name)
+        in_pool = {c.listing.id for c in survivors + near}
+        starred = [c for c in cands if c.listing.id in favs and c.listing.id not in in_pool and c.detail]
+        judging = judge and settings.judge != "none"
+        keys: dict[str, str] = {}
+
+        # Stage 1: every candidate gets a quick screen (or keeps one nothing has invalidated).
+        screen_q: list[Candidate] = []
+        for pool, budget in ((survivors, brief.judge.max_candidates), (near, brief.judge.max_near_misses), (starred, None)):
             queued = 0
             for c in pool:
                 key = _eval_key(brief, c)
+                keys[c.listing.id] = key
                 prior = store.get(brief.name, c.listing.id)
-                if prior and prior[1] == key and prior[0].evaluation and not refresh:
+                if (prior and prior[0].evaluation and not refresh
+                        and prior[1] == f"{prior[0].evaluation.depth}:{key}"):
                     c.evaluation = prior[0].evaluation
-                elif judge and settings.judge != "none" and queued < budget:
-                    to_judge.append((c, key))
+                elif judging and (budget is None or queued < budget or c.listing.id in favs):
+                    screen_q.append(c)
                     queued += 1
-                elif judge and settings.judge != "none":
+                elif judging:
                     result.unscored += 1  # over budget: shown unscored, scored next run
 
         sem = asyncio.Semaphore(settings.judge_concurrency)
 
-        async def one(c: Candidate) -> None:
+        async def one(c: Candidate, depth: str) -> None:
             async with sem:
                 workdir = settings.photos_dir / c.listing.id
-                photos = await _download_photos(transport, c, workdir, brief.judge.photos)
-                progress(f"judge: {c.listing.title} ({len(photos)} photos)")
+                n_photos = brief.judge.photos if depth == "full" else min(2, brief.judge.photos)
+                photos = await _download_photos(transport, c, workdir, n_photos)
+                progress(f"{depth}: {c.listing.title} ({len(photos)} photos)")
                 for attempt in (1, 2):
                     try:
-                        c.evaluation = await judge_mod.evaluate(settings, brief, c, photos, workdir)
+                        c.evaluation = await judge_mod.evaluate(settings, brief, c, photos, workdir, depth)
                         c.judge_error = None
                         result.judged += 1
                         return
                     except Exception as e:  # noqa: BLE001 - one bad call shouldn't sink the run
                         c.judge_error = str(e)
-                        log.warning("judge attempt %d failed for %s: %s", attempt, c.listing.id, e)
+                        log.warning("%s attempt %d failed for %s: %s", depth, attempt, c.listing.id, e)
                 result.judge_failures += 1
 
-        workdirs = [settings.photos_dir / c.listing.id for c, _ in to_judge]
-        for w in workdirs:
-            w.mkdir(parents=True, exist_ok=True)
-        await asyncio.gather(*(one(c) for c, _ in to_judge))
+        await asyncio.gather(*(one(c, "screen") for c in screen_q))
+
+        # Stage 2: the full read, only for contenders and starred listings.
+        full_q: list[Candidate] = []
+        for c in survivors + near + starred:
+            if not (c.evaluation and c.evaluation.depth == "screen"):
+                continue
+            eff = effective(c, brief)
+            contender = eff is not None and eff.verdict in ("top", "consider")
+            if c.listing.id in favs or (contender and len(full_q) < brief.judge.max_full):
+                full_q.append(c)
+        await asyncio.gather(*(one(c, "full") for c in full_q))
 
         # Every card on the watch page gets a photo, scored or not.
-        for c in survivors + near:
+        for c in survivors + near + starred:
             if not (settings.photos_dir / c.listing.id / "photo-01.jpg").exists():
                 await _download_photos(transport, c, settings.photos_dir / c.listing.id, 1)
 
-        keys = {c.listing.id: k for c, k in to_judge}
         for c in cands:
-            k = keys.get(c.listing.id) if c.evaluation else None
-            if c.evaluation and k is None:
-                k = _eval_key(brief, c)
-            if store.save(brief.name, c, k if c.evaluation else None):
+            k = None
+            if c.evaluation:
+                k = f"{c.evaluation.depth}:{keys.get(c.listing.id) or _eval_key(brief, c)}"
+            if store.save(brief.name, c, k):
                 result.new += 1
         result.candidates = cands
         store.record_run(brief.name, result.summary())

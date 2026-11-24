@@ -88,8 +88,9 @@ class Vehicle(Strict):
 class Judge(Strict):
     # Cost caps, not filters. Anything over the cap still shows on the page as
     # "not scored yet", so a cap can never hide a listing.
-    max_candidates: int = 100
-    max_near_misses: int = 50
+    max_candidates: int = 100  # quick screens for candidates inside the limits
+    max_near_misses: int = 50  # quick screens for near misses
+    max_full: int = 30  # full evaluations, for the best screens (starred ones always)
     photos: int = 6
 
 

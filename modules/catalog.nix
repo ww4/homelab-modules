@@ -383,8 +383,8 @@ in
     secrets = [ ];
   };
   market-agent = {
-    description = "Facebook Marketplace watcher: searches against written briefs, checks the facts, scores with Claude, publishes one page.";
-    memory = 160;
+    description = "Facebook Marketplace watcher: searches against written briefs, checks the facts, scores with Claude, publishes one page with shared stars.";
+    memory = 200;
     enable = "import";
     options = [ "homelab.domain" "homelab.marketAgent" ];
     requires = [ "acme" "nginx-access" ];

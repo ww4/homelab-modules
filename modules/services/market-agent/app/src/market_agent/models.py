@@ -69,11 +69,18 @@ class Signal(BaseModel):
 
 
 class Evaluation(BaseModel):
-    """The judge's read of one candidate. Mirrors judge.EVALUATION_SCHEMA."""
+    """The judge's read of one candidate.
+
+    depth "screen" is the quick pass every candidate gets (score, one line, a
+    few standout points); "full" is the detailed read, only for contenders and
+    starred listings. Mirrors judge.SCREEN_SCHEMA / judge.EVALUATION_SCHEMA.
+    """
 
     score: float
-    verdict: Literal["top", "consider", "skip"]
+    verdict: Literal["top", "consider", "skip"] = "skip"
     headline: str
+    depth: Literal["screen", "full"] = "full"
+    standout: list[str] = Field(default_factory=list)
     strengths: list[str] = Field(default_factory=list)
     concerns: list[str] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)

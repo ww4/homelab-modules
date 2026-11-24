@@ -115,6 +115,7 @@ def apply_knowledge(c: Candidate, kb: Knowledge) -> None:
             {
                 "type": issue.kind,
                 "title": issue.title,
+                "chip": issue.chip,
                 "detail": issue.detail,
                 "ask": issue.ask,
                 "source": issue.source,
