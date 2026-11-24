@@ -21,7 +21,7 @@ RECALL_CACHE_SECONDS = 7 * 86400
 
 
 def _drive_from_generation(drivetrain: str | None) -> str | None:
-    return {"awd-standard": "awd", "4wd-standard": "4wd"}.get(drivetrain or "")
+    return {"awd-standard": "awd", "4wd-standard": "4wd", "fwd-only": "fwd"}.get(drivetrain or "")
 
 
 def vehicle_checks(rules: Vehicle, facts: dict[str, Any]) -> list[Check]:

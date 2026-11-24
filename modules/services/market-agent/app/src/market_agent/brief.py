@@ -77,6 +77,10 @@ class Vehicle(Strict):
     title: TitleRule = "any"
     transmission: Transmission = "any"
     max_mileage: int | None = None  # hard limit
+    # Hard limits a listing must actually establish before it is shown as a
+    # candidate. "unknown" on these puts the car on a "confirm first" list
+    # instead: an AWD search should not show cars that may be FWD.
+    must_confirm: list[str] = Field(default_factory=lambda: ["drivetrain"])
     min_year: int | None = None
     max_year: int | None = None
 

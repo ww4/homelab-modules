@@ -14,7 +14,8 @@ from pathlib import Path
 
 from . import brief as briefs
 from .config import Settings
-from .pipeline import rank, run
+from .pipeline import run
+from .policy import effective, rank
 from .report import Section, render
 from .store import Store
 
@@ -49,12 +50,13 @@ def cmd_brief(s: Settings, a: argparse.Namespace) -> int:
     return _err(f"unknown brief action {a.action}")
 
 
-def _print_ranked(cands: list) -> None:
-    for c in rank(cands):
+def _print_ranked(cands: list, brief) -> None:
+    for c in rank(cands, brief):
         if c.excluded:
             continue
         e = c.evaluation
-        head = f"{e.verdict:8} {e.score:4.1f}" if e else "unjudged     "
+        eff = effective(c, brief)
+        head = f"{eff.verdict:8} {eff.score:4.1f}" if eff else "unjudged     "
         miles = c.facts.get("miles_from_home")
         dist = f"{miles:>3} mi" if miles is not None else "  ? mi"
         print(f"{head}  ${(c.listing.price or 0):>7,.0f}  {dist}  {c.listing.title[:48]:48}  {c.listing.url}")
@@ -73,10 +75,10 @@ def cmd_run(s: Settings, a: argparse.Namespace) -> int:
         print(json.dumps(summary, indent=2), file=sys.stderr)
         return _err("every search failed - Facebook is refusing or the doc_ids changed; nothing was evaluated")
     if a.json:
-        print(json.dumps({"summary": summary, "candidates": [c.model_dump() for c in rank(result.candidates)]},
+        print(json.dumps({"summary": summary, "candidates": [c.model_dump() for c in rank(result.candidates, b)]},
                          indent=1, default=str))
     else:
-        _print_ranked(result.candidates)
+        _print_ranked(result.candidates, b)
         print(f"\n{summary['seen']} seen, {summary['new']} new, {summary['excluded']} excluded, "
               f"{summary['judged']} judged ({summary['judge_failures']} judge failures, "
               f"{summary['detail_failures']} unreadable listings, "
@@ -154,12 +156,16 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
         tmp.replace(out)
         news: list[str] = []
         for b in loaded:
-            tops = [c for c in store.all(b.name) if not c.excluded and c.evaluation and c.evaluation.verdict == "top"]
-            fresh = store.unnotified(b.name, [c.listing.id for c in tops])
-            for c in tops:
+            tops = []
+            for c in store.all(b.name):
+                eff = effective(c, b)
+                if not c.excluded and eff and eff.verdict == "top":
+                    tops.append((c, eff))
+            fresh = store.unnotified(b.name, [c.listing.id for c, _ in tops])
+            for c, eff in tops:
                 if c.listing.id in fresh:
                     news.append(f"{b.title}: {c.listing.title} {c.listing.price_text} "
-                                f"({c.evaluation.score:.1f}) {c.listing.url}")
+                                f"({eff.score:.1f}) {c.listing.url}")
             store.mark_notified(b.name, fresh)
     finally:
         store.close()

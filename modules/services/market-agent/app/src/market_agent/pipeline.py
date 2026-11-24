@@ -77,6 +77,7 @@ async def resolve_place(mp: Marketplace, store: Store, place: str) -> Coordinate
 def _eval_key(brief: Brief, c: Candidate) -> str:
     material = {
         "brief": brief.source_hash,
+        "judge": judge_mod.JUDGE_VERSION,
         "price": c.listing.price,
         "title": c.detail.title if c.detail else c.listing.title,
         "description": c.detail.description if c.detail else "",
@@ -390,19 +391,4 @@ def near_miss(brief: Brief, c: Candidate) -> str | None:
     return "just outside: " + ", ".join(reasons)
 
 
-def rank(cands: list[Candidate]) -> list[Candidate]:
-    order = {"top": 0, "consider": 1, "skip": 2}
-
-    def key(c: Candidate) -> tuple[int, float]:
-        if c.excluded and not c.facts.get("near_miss"):
-            return (5, 0)
-        if c.excluded:
-            return (4, -(c.evaluation.score if c.evaluation else 0))
-        if not c.evaluation:
-            return (3, 0)
-        return (order[c.evaluation.verdict], -c.evaluation.score)
-
-    return sorted(cands, key=key)
-
-
-__all__ = ["run", "rank", "RunResult", "miles_between"]
+__all__ = ["run", "RunResult", "miles_between"]

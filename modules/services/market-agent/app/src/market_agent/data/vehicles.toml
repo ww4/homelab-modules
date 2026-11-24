@@ -8,7 +8,7 @@
 # generations: drivetrain and transmission type by year range. These are
 #   spec-sheet facts; check a generation against the maker's spec page before
 #   adding it. transmission_type: conventional | cvt | depends-on-engine.
-#   drivetrain: awd-standard | fwd-or-awd | fwd-or-4wd | rwd-or-4wd | 4wd-standard
+#   drivetrain: awd-standard | fwd-or-awd | fwd-or-4wd | rwd-or-4wd | 4wd-standard | fwd-only
 # issues: verified = true only with a source URL that was actually read.
 #   Unverified entries reach the judge labelled as unverified and are phrased
 #   as questions for the seller, never as findings.
@@ -115,6 +115,25 @@ model = "CX-7"
 aliases = ["cx-7", "cx7", "cx 7"]
 generations = [
   { years = [2007, 2012], transmission = "6-speed (turbo) or 5-speed automatic", transmission_type = "conventional", drivetrain = "fwd-or-awd" },
+]
+
+# ---------------------------------------------------------------- FWD-only
+# Models that were never sold with AWD/4WD in the US. Listing them settles the
+# drivetrain check outright instead of leaving it "unknown".
+[[models]]
+make = "Mazda"
+model = "Mazda5"
+aliases = ["mazda5", "mazda 5", "mazda mazda5"]
+generations = [
+  { years = [2006, 2015], transmission = "4- or 5-speed automatic (manual also offered)", transmission_type = "conventional", drivetrain = "fwd-only" },
+]
+
+[[models]]
+make = "Honda"
+model = "Odyssey"
+aliases = ["odyssey"]
+generations = [
+  { years = [1995, 2024], transmission = "automatic", transmission_type = "conventional", drivetrain = "fwd-only" },
 ]
 
 # ---------------------------------------------------------------- Nissan

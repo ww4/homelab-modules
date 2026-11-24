@@ -18,7 +18,7 @@ from typing import Any
 
 from .brief import Brief
 from .models import Candidate
-from .pipeline import rank
+from .policy import effective, rank
 
 THUMB_WIDTH = 520
 THUMB_QUALITY = 68
@@ -84,7 +84,7 @@ nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid v
 .score{position:absolute;top:10px;left:10px;font:700 15px var(--mono);padding:4px 9px;border-radius:6px;
 background:var(--surface);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .score.top{background:var(--good);color:var(--surface)}.score.consider{background:var(--warn);color:var(--surface)}
-.score.skip{background:var(--bad);color:var(--surface)}
+.score.skip,.score.confirm{background:var(--bad);color:var(--surface)}
 .price{position:absolute;bottom:10px;right:10px;font:700 16px var(--mono);font-variant-numeric:tabular-nums;
 padding:3px 9px;border-radius:6px;background:rgba(15,20,23,.82);color:#fff}
 .body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:7px;flex:1}
@@ -151,12 +151,13 @@ def _chips(c: Candidate) -> str:
     return f'<div class="chips">{"".join(chips)}</div>' if chips else ""
 
 
-def card(c: Candidate, photos_dir: Path) -> str:
+def card(c: Candidate, photos_dir: Path, brief: Brief) -> str:
     e = c.evaluation
+    eff = effective(c, brief)
     thumb = thumbnail(photos_dir, c.listing.id)
     title = escape((c.detail.title if c.detail and c.detail.title else None) or c.listing.title)
     img = f'<img src="{thumb}" alt="" loading="lazy">' if thumb else '<span class="none">no photo</span>'
-    score = f'<span class="score {e.verdict}">{e.score:.1f}</span>' if e else ""
+    score = f'<span class="score {eff.verdict}">{eff.score:.1f}</span>' if eff else ""
     detail = ""
     if e:
         refs = [r for r in c.references if r.get("type") != "vin_decode"]
@@ -168,8 +169,13 @@ def card(c: Candidate, photos_dir: Path) -> str:
                 + "</li>"
                 for r in refs
             ) + "</ul>"
+        capped = ""
+        if eff and eff.caps:
+            capped = (f'<div class="lbl">Score capped</div><ul><li>Judge gave {e.score:.1f}; capped to '
+                      f'{eff.score:.1f} for: {escape(", ".join(eff.caps))}</li></ul>')
         detail = (
             "<details><summary>Full evaluation</summary>"
+            + capped
             + _items("Strengths", e.strengths)
             + _items("Concerns", e.concerns)
             + _items("Not established", e.unknowns)
@@ -224,39 +230,62 @@ def _health(last: dict[str, Any] | None) -> str:
     return f'<div class="health">{text}</div>'
 
 
+MAX_CARDS = 12  # per group; the rest collapse to a list
+
+
+def _line(c: Candidate, why: str) -> str:
+    return (f'<li><a href="{c.listing.url}" target="_blank" rel="noopener">{escape(c.listing.title)}</a> '
+            f'{_price(c)}: {escape(why)}</li>')
+
+
+def _collapsed(summary: str, rows: list[str]) -> str:
+    if not rows:
+        return ""
+    return f'<details class="more"><summary>{escape(summary)}</summary><ul>{"".join(rows)}</ul></details>'
+
+
 def section(s: Section, photos_dir: Path) -> str:
     b = s.brief
-    ranked = rank(s.candidates)
+    ranked = rank(s.candidates, b)
+    eff = {c.listing.id: effective(c, b) for c in ranked}
+
+    def v(c: Candidate) -> str | None:
+        x = eff[c.listing.id]
+        return x.verdict if x else None
+
     live = [c for c in ranked if not c.excluded]
+    near = [c for c in ranked if c.excluded and c.facts.get("near_miss")]
     groups = [
-        ("Worth contacting", [c for c in live if c.evaluation and c.evaluation.verdict == "top"]),
-        ("Worth a question first", [c for c in live if c.evaluation and c.evaluation.verdict == "consider"]),
-        ("Just outside the limits", [c for c in ranked if c.excluded and c.facts.get("near_miss")
-                                     and not (c.evaluation and c.evaluation.verdict == "skip")]),
-        ("Not scored yet", [c for c in live if not c.evaluation]),
+        ("Worth contacting", [c for c in live if v(c) == "top"]),
+        ("Worth a question first", [c for c in live if v(c) == "consider"]),
+        ("Just outside the limits", [c for c in near if v(c) in ("top", "consider")]),
     ]
-    body = "".join(
-        f'<div class="group"><h3>{name} · {len(items)}</h3><div class="grid">'
-        + "".join(card(c, photos_dir) for c in items)
-        + "</div></div>"
-        for name, items in groups
-        if items
+    body = ""
+    for name, items in groups:
+        if not items:
+            continue
+        shown, rest = items[:MAX_CARDS], items[MAX_CARDS:]
+        body += (f'<div class="group"><h3>{name} · {len(items)}</h3><div class="grid">'
+                 + "".join(card(c, photos_dir, b) for c in shown) + "</div>"
+                 + _collapsed(f"{len(rest)} more", [_line(c, f"{eff[c.listing.id].score:.1f}: {c.evaluation.headline}") for c in rest])
+                 + "</div>")
+
+    # Promising on everything else, but a hard limit is unconfirmed.
+    confirm = [c for c in live if v(c) == "confirm" and eff[c.listing.id].score >= 5.0]
+    more = _collapsed(
+        f"{len(confirm)} worth a look once one thing is confirmed",
+        [_line(c, "; ".join(eff[c.listing.id].confirm)) for c in confirm],
     )
-    skipped = [c for c in live if c.evaluation and c.evaluation.verdict == "skip"]
-    excluded = [c for c in ranked if c.excluded and not (c.facts.get("near_miss")
-                                                         and not (c.evaluation and c.evaluation.verdict == "skip"))]
-    more = ""
-    if skipped:
-        more += (f'<details class="more"><summary>{len(skipped)} scored and skipped</summary><ul>'
-                 + "".join(f'<li><a href="{c.listing.url}" target="_blank" rel="noopener">{escape(c.listing.title)}</a> '
-                           f'{_price(c)}: {escape(c.evaluation.headline)}</li>' for c in skipped)
-                 + "</ul></details>")
-    if excluded:
-        more += (f'<details class="more"><summary>{len(excluded)} ruled out by the limits</summary><ul>'
-                 + "".join(f'<li><a href="{c.listing.url}" target="_blank" rel="noopener">{escape(c.listing.title)}</a> '
-                           f'{_price(c)}: {escape("; ".join(ch.detail for ch in c.failed_checks) or "skipped")}</li>'
-                           for c in excluded if c.detail)
-                 + "</ul></details>")
+    unscored = [c for c in live if v(c) is None]
+    more += _collapsed(f"{len(unscored)} not scored yet (next run)", [_line(c, c.judge_error or "waiting") for c in unscored])
+    skipped = [c for c in live + near if v(c) == "skip" or (v(c) == "confirm" and c not in confirm)]
+    more += _collapsed(
+        f"{len(skipped)} scored and skipped",
+        [_line(c, f"{eff[c.listing.id].score:.1f}" + (f" (capped: {', '.join(eff[c.listing.id].caps)})" if eff[c.listing.id].caps else "")
+               + f": {c.evaluation.headline}") for c in skipped],
+    )
+    out = [c for c in ranked if c.excluded and not c.facts.get("near_miss") and c.detail]
+    more += _collapsed(f"{len(out)} ruled out by the limits", [_line(c, "; ".join(ch.detail for ch in c.failed_checks)) for c in out])
     if not body:
         body = '<div class="more">Nothing matches yet.</div>'
     return (

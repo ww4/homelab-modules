@@ -23,6 +23,10 @@ from .models import Candidate, Evaluation
 
 log = logging.getLogger(__name__)
 
+# Bump when SYSTEM_PROMPT or the schema changes meaning: stored evaluations
+# made under an older version are re-judged on the next run.
+JUDGE_VERSION = 2
+
 EVALUATION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -55,7 +59,9 @@ Rules:
 - A check marked "unknown" is not a pass. List it in unknowns and say how to settle it (often: ask for the VIN).
 - Seller claims ("no rust", "runs great") are claims. Photos can support or contradict them; say which.
 - Judge photos for: rust (especially frame and rocker panels), body damage, mismatched paint, tire wear, dashboard warning lights, interior wear, and whether the photos match the description.
-- Score 0-10 for fit to THIS brief, weighing the brief's preferences. verdict: top = worth contacting today; consider = worth a question first; skip = not worth the drive.
+- Score 0-10 for fit to THIS brief, weighing the brief's preferences. Anchors: 8+ = would contact today, little doubt; 7 = contact today; 5-6 = worth one question before driving; 3-4 = poor fit; 0-2 = do not pursue. Set verdict to match (7+ top, 5-6.9 consider, below 5 skip); the page derives it from the score anyway.
+- A car whose drivetrain the listing does not establish cannot score above 6 on an AWD/4WD brief; say what would settle it.
+- Scam risk medium or high, financing / down-payment / buy-here-pay-here ads, and text copied across listings are near-disqualifying for a private buyer: score them 3 or below.
 - Be plain and specific. Short sentences. No hype."""
 
 
