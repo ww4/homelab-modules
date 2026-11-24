@@ -218,7 +218,9 @@ def _health(last: dict[str, Any] | None) -> str:
     if not last.get("searches_ok"):
         return f'<div class="health broken">Last run {when}: every search failed. The scraper is broken, not the market quiet.</div>'
     text = (f"Last run {when} · {last.get('seen', 0)} listings seen · {last.get('judged', 0)} newly scored"
-            + (f" · {len(failed)} searches failed" if failed else ""))
+            + (f" · {len(failed)} searches failed" if failed else "")
+            + (f" · {last['unread']} new listings not read yet (read cap reached)" if last.get("unread") else "")
+            + (f" · {last['unscored']} waiting to be scored next run" if last.get("unscored") else ""))
     return f'<div class="health">{text}</div>'
 
 

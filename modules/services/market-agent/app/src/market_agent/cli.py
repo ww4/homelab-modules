@@ -138,6 +138,8 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
         if result.broken:
             broken.append(b.title)
         sm = result.summary()
+        if sm.get("unread"):
+            failed.append(f"{b.title}: {sm['unread']} new listings not read (search.max_details reached)")
         if sm["searches_failed"] or sm["judge_failures"]:
             failed.append(f"{b.title}: {len(sm['searches_failed'])} searches and {sm['judge_failures']} scores failed")
 

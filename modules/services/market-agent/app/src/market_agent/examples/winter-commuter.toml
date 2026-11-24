@@ -52,6 +52,6 @@ transmission = "automatic"  # hard: no manuals. CVT-vs-conventional is a prefere
 min_year = 2000
 
 [judge]
-max_candidates = 40
-max_near_misses = 25
+max_candidates = 100
+max_near_misses = 50
 photos = 6

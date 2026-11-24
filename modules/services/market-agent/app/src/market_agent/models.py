@@ -49,6 +49,7 @@ class Detail(BaseModel):
     # Every vehicle_* field Facebook returned, as-is.
     vehicle: dict[str, Any] = Field(default_factory=dict)
     missing_parts: list[str] = Field(default_factory=list)
+    fetched_at: int | None = None  # unix seconds this page was read
 
 
 class Check(BaseModel):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 import json
 import logging
 from dataclasses import dataclass, field
@@ -19,7 +20,7 @@ from .config import Settings
 from .facebook.client import ListingGone, Marketplace
 from .facebook.transport import Transport
 from .geo import driving_miles, miles_between
-from .models import Candidate, Coordinates, Listing, Signal
+from .models import Candidate, Coordinates, Detail, Listing, Signal
 from .store import Store
 from .vehicles import checks as vchecks
 from .vehicles import knowledge
@@ -27,6 +28,7 @@ from .vehicles.extract import vehicle_facts
 
 log = logging.getLogger(__name__)
 GEO_CACHE_SECONDS = 180 * 86400
+RECHECK_SECONDS = 20 * 3600  # tracked listings: confirm they're still for sale about daily
 
 
 @dataclass
@@ -36,6 +38,8 @@ class RunResult:
     seen: int = 0
     new: int = 0
     detail_failures: int = 0
+    unread: int = 0  # new listings skipped because max_details was reached
+    unscored: int = 0  # candidates left for the next run because the judge budget ran out
     excluded: int = 0
     judged: int = 0
     judge_failures: int = 0
@@ -50,7 +54,7 @@ class RunResult:
         return {
             "searches_ok": sum(1 for s in self.searches if s["ok"]),
             "searches_failed": [s for s in self.searches if not s["ok"]],
-            "seen": self.seen, "new": self.new, "detail_failures": self.detail_failures,
+            "seen": self.seen, "new": self.new, "detail_failures": self.detail_failures, "unread": self.unread, "unscored": self.unscored,
             "excluded": self.excluded, "judged": self.judged, "judge_failures": self.judge_failures,
         }
 
@@ -117,50 +121,91 @@ async def run(
     mp = Marketplace(transport)
     http = httpx.AsyncClient(follow_redirects=True)
     result = RunResult(brief=brief.name)
+    carried: set[str] = set()
     try:
         home = await resolve_place(mp, store, brief.location.home)
         dests = [(p.name, await resolve_place(mp, store, p.place)) for p in brief.location.destinations]
 
-        # 1. Search every query.
+        # 1. Search every query, once per price band. Ask Facebook for a little
+        # past the ceiling so price near misses can be found at all.
         found: dict[str, Listing] = {}
         for q in brief.search.queries:
-            progress(f"search: {q}")
-            out = await mp.search(
-                q, brief.location.home, home,
-                radius_miles=brief.location.search_radius_miles,
-                min_price=brief.price.min, max_price=brief.price.max,
-                listed_within_days=brief.search.listed_within_days or None,
-            )
-            result.searches.append({"query": q, "ok": out.ok, "count": len(out.listings),
-                                    "source": out.source, "error": out.error})
-            for listing in out.listings:
-                found.setdefault(listing.id, listing)
+            for lo, hi in price_bands(brief):
+                label = q if (lo, hi) == (brief.price.min, brief.price.max) else f"{q} [{_money(lo)}-{_money(hi)}]"
+                progress(f"search: {label}")
+                out = await mp.search(
+                    q, brief.location.home, home,
+                    radius_miles=brief.location.search_radius_miles,
+                    min_price=lo, max_price=hi,
+                    listed_within_days=brief.search.listed_within_days or None,
+                )
+                result.searches.append({"query": label, "ok": out.ok, "count": len(out.listings),
+                                        "source": out.source, "error": out.error})
+                for listing in out.listings:
+                    found.setdefault(listing.id, listing)
         result.seen = len(found)
         if result.broken:
             store.record_run(brief.name, result.summary())
             return result
+
+        # Anything an earlier run found and nobody has seen sold stays tracked:
+        # Facebook's results vary run to run, and a listing that drops out of
+        # one search is not gone. Its page is re-read below, which is also how
+        # a sale is noticed.
+        cutoff = time.time() - brief.search.keep_days * 86400
+        for prior in store.recent(brief.name, since=cutoff):
+            # Only what is still in play: a listing already ruled out by a hard
+            # fact (FWD, rebuilt title) has nothing to track.
+            in_play = not prior.excluded or prior.facts.get("near_miss")
+            if prior.listing.id not in found and in_play:
+                found[prior.listing.id] = prior.listing.model_copy(update={"query": "(tracked)"})
+                carried.add(prior.listing.id)
 
         # 2. Cheap filter on the search-result price, then read listing pages.
         pending: list[Candidate] = []
         for listing in found.values():
             pc = general.price_check(brief, listing.price)
             c = Candidate(listing=listing, checks=[pc])
-            if pc.status == "fail":
+            # A price just over the ceiling is a near miss, judged later; only
+            # bait below the floor and prices well past the ceiling stop here.
+            over_but_near = (
+                pc.status == "fail" and brief.price.max is not None and listing.price is not None
+                and brief.price.max < listing.price <= brief.price.max * NEAR_MISS_PRICE
+            )
+            if pc.status == "fail" and not over_but_near:
                 result.excluded += 1
                 store.save(brief.name, c, None)
                 continue
             pending.append(c)
-        pending = pending[: brief.search.max_details]
 
         cands: list[Candidate] = []
+        fetched = 0
         for n, c in enumerate(pending, 1):
             prior = store.get(brief.name, c.listing.id)
-            if prior and not refresh and prior[0].detail and prior[2] == c.listing.price:
+            if prior and not prior[0].detail:
+                # A page read by a run that never finished is in the cache.
+                if cached := store.cache_get(f"detail:{c.listing.id}", max_age=None):
+                    prior[0].detail = Detail.model_validate(cached)
+            elif not prior and (cached := store.cache_get(f"detail:{c.listing.id}", max_age=None)):
+                prior = (Candidate(listing=c.listing, detail=Detail.model_validate(cached)), None, c.listing.price)
+            # A tracked listing is re-read about once a day to see if it sold.
+            stale = bool(prior and prior[0].detail and time.time() - (prior[0].detail.fetched_at or 0) > RECHECK_SECONDS)
+            reread = refresh or (c.listing.id in carried and stale)
+            if prior and prior[0].detail and (fetched >= brief.search.max_details
+                                              or (not reread and prior[2] == c.listing.price)):
+                # Cached page: unchanged, or the read budget is spent (stale beats missing).
                 c.detail = prior[0].detail
+            elif fetched >= brief.search.max_details:
+                # Never silently: counted, reported, and read first next run.
+                result.unread += 1
+                continue
             else:
+                fetched += 1
                 progress(f"read listing {n}/{len(pending)}: {c.listing.title}")
                 try:
                     c.detail = await mp.detail(c.listing.id)
+                    # Saved at once: a run that dies later must not cost these reads again.
+                    store.cache_put(f"detail:{c.listing.id}", c.detail.model_dump())
                 except ListingGone:
                     store.mark_gone(brief.name, c.listing.id)
                     continue
@@ -249,6 +294,8 @@ async def run(
                 elif judge and settings.judge != "none" and queued < budget:
                     to_judge.append((c, key))
                     queued += 1
+                elif judge and settings.judge != "none":
+                    result.unscored += 1  # over budget: shown unscored, scored next run
 
         sem = asyncio.Semaphore(settings.judge_concurrency)
 
@@ -292,6 +339,24 @@ async def run(
         await http.aclose()
         await transport.aclose()
         store.close()
+
+
+def _money(v: float | None) -> str:
+    return "any" if v is None else f"${v:,.0f}"
+
+
+def price_bands(brief: Brief) -> list[tuple[float | None, float | None]]:
+    """The price ranges each query runs over (see Search.price_bands)."""
+    lo = brief.price.min
+    hi = float(round(brief.price.max * NEAR_MISS_PRICE)) if brief.price.max is not None else None
+    n = max(1, brief.search.price_bands)
+    if n == 1 or hi is None:
+        return [(lo, hi)]
+    start = lo or 0.0
+    step = (hi - start) / n
+    edges = [round(start + step * i, -1) for i in range(n + 1)]
+    edges[0], edges[-1] = lo, round(hi)
+    return [(edges[i], edges[i + 1]) for i in range(n)]
 
 
 NEAR_MISS_DISTANCE = 1.25  # up to 25% past the distance limit
