@@ -155,4 +155,4 @@ async def apply_nhtsa(c: Candidate, http: httpx.AsyncClient, store: Store) -> No
         for r in found:
             c.references.append({"type": "nhtsa_recall", "title": f"Recall {r['campaign']}: {r['component']}",
                                  "detail": r["summary"], "remedy": r["remedy"], "source": r["source"],
-                                 "verified": True})
+                                 "date": r.get("date"), "verified": True})
