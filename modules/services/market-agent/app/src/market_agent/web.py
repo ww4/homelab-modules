@@ -7,8 +7,19 @@ serves exactly two things under /api/:
   GET  /api/favorites  -> {"<brief>": ["<listing id>", ...]}
   POST /api/favorites  <- {"brief": "...", "id": "...", "starred": true|false}
 
-and re-renders the page after a change, so a reload shows the Starred section
-the server now knows about. There is no authentication: it binds loopback and
+and watches (briefs), for the page's "+ New" and Edit form:
+
+  GET    /api/briefs                -> [{name, title, kind, paused}]
+  GET    /api/briefs/defaults       -> form fields for a new watch (home etc. from the last one)
+  GET    /api/briefs/<name>         -> form fields
+  POST   /api/briefs                <- form fields (+ "name" to update an existing one)
+  POST   /api/briefs/<name>/pause   <- {"paused": true|false}
+  DELETE /api/briefs/<name>         -> moved to briefs/.deleted/, results kept
+
+Saving a watch asks for a run of it: a file in <home>/requests/ that a systemd
+.path unit turns into a start of the normal market-agent service, so this
+endpoint never runs searches or the judge itself (and keeps its hardening).
+The page is re-rendered after any change. There is no authentication: it binds loopback and
 is meant to sit behind the same reverse proxy (and whatever gates it) as the
 page. Inputs are validated against the briefs that exist and numeric ids.
 """
@@ -19,17 +30,19 @@ import json
 import logging
 import re
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
+from . import brief as briefs
 from .config import Settings
 from .store import Store
 
 log = logging.getLogger(__name__)
 LISTING_ID = re.compile(r"^\d{5,25}$")
 BRIEF_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-MAX_BODY = 4096
+MAX_BODY = 32768
 
 
 class _Rerender:
@@ -71,7 +84,58 @@ def make_handler(settings: Settings, rerender: _Rerender) -> type[BaseHTTPReques
             self.end_headers()
             self.wfile.write(data)
 
+        def _brief_path(self, name: str) -> Path | None:
+            if not BRIEF_NAME.match(name):
+                return None
+            p = settings.briefs_dir / f"{name}.toml"
+            return p if p.is_file() else None
+
+        def _body(self) -> Any:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > MAX_BODY:
+                raise ValueError("body required, at most 32 KB")
+            return json.loads(self.rfile.read(length))
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            parts = self.path.split("?")[0].strip("/").split("/")
+            if len(parts) == 3 and parts[:2] == ["api", "briefs"]:
+                src = self._brief_path(parts[2])
+                if not src:
+                    self._send(404, {"error": "no such watch"})
+                    return
+                trash = settings.briefs_dir / ".deleted"
+                trash.mkdir(exist_ok=True)
+                src.rename(trash / f"{src.stem}-{int(time.time())}.toml")
+                rerender.poke()
+                self._send(200, {"ok": True, "deleted": parts[2]})
+                return
+            self._send(404, {"error": "not found"})
+
         def do_GET(self) -> None:  # noqa: N802
+            parts = self.path.split("?")[0].strip("/").split("/")
+            if parts[:2] == ["api", "briefs"]:
+                if len(parts) == 2:
+                    out = []
+                    for p in sorted(settings.briefs_dir.glob("*.toml")):
+                        try:
+                            b = briefs.load(p)
+                            out.append({"name": b.name, "title": b.title, "kind": b.kind, "paused": b.paused})
+                        except Exception as e:  # noqa: BLE001 - list broken ones too
+                            out.append({"name": p.stem, "title": p.stem, "error": str(e)[:200]})
+                    self._send(200, out)
+                elif parts[2] == "defaults":
+                    latest = sorted(settings.briefs_dir.glob("*.toml"), key=lambda p: p.stat().st_mtime)
+                    form: dict[str, Any] = {"kind": "general", "max_miles": 50}
+                    if latest:
+                        last = briefs.to_form(briefs.load(latest[-1]))
+                        # Home and range carry over; extra places (a friend's work) are per watch.
+                        form.update({k: last[k] for k in ("home", "max_miles")})
+                    self._send(200, form)
+                elif (p := self._brief_path(parts[2])):
+                    self._send(200, briefs.to_form(briefs.load(p)))
+                else:
+                    self._send(404, {"error": "no such watch"})
+                return
             if self.path.split("?")[0] == "/api/favorites":
                 store = Store(settings.db_path)
                 try:
@@ -84,6 +148,10 @@ def make_handler(settings: Settings, rerender: _Rerender) -> type[BaseHTTPReques
                 self._send(404, {"error": "not found"})
 
         def do_POST(self) -> None:  # noqa: N802
+            parts = self.path.split("?")[0].strip("/").split("/")
+            if parts[:2] == ["api", "briefs"]:
+                self._post_brief(parts[2:])
+                return
             if self.path.split("?")[0] != "/api/favorites":
                 self._send(404, {"error": "not found"})
                 return
@@ -111,7 +179,72 @@ def make_handler(settings: Settings, rerender: _Rerender) -> type[BaseHTTPReques
             rerender.poke()
             self._send(200, {"ok": True, "brief": brief, "id": lid, "starred": starred})
 
+        def _post_brief(self, rest: list[str]) -> None:
+            try:
+                body = self._body()
+            except ValueError as e:
+                self._send(400, {"error": str(e)})
+                return
+            if len(rest) == 2 and rest[1] == "pause":
+                p = self._brief_path(rest[0])
+                if not p:
+                    self._send(404, {"error": "no such watch"})
+                    return
+                b = briefs.load(p).model_copy(update={"paused": bool(body.get("paused"))})
+                briefs.save(b, settings.briefs_dir)
+                if not b.paused:
+                    request_run(settings, b.name)
+                rerender.poke()
+                self._send(200, {"ok": True, "name": b.name, "paused": b.paused})
+                return
+            if rest:
+                self._send(404, {"error": "not found"})
+                return
+            name = body.get("name") or None
+            base = None
+            if name:
+                p = self._brief_path(str(name))
+                if not p:
+                    self._send(404, {"error": f"no watch named {name!r}"})
+                    return
+                base = briefs.load(p)
+            try:
+                b = briefs.from_form(body, name=name, base=base)
+            except Exception as e:  # noqa: BLE001 - pydantic and value errors become a 400 the form shows
+                self._send(400, {"error": _plain(e)})
+                return
+            if base is None:  # new: never overwrite another watch by title collision
+                stem, n = b.name, 2
+                while (settings.briefs_dir / f"{b.name}.toml").exists():
+                    b = b.model_copy(update={"name": f"{stem}-{n}"})
+                    n += 1
+            briefs.save(b, settings.briefs_dir)
+            if not b.paused:
+                request_run(settings, b.name)
+            rerender.poke()
+            self._send(200, {"ok": True, "name": b.name, "searching": not b.paused})
+
     return Handler
+
+
+def _plain(e: Exception) -> str:
+    """A pydantic error as one line a person can act on."""
+    errs = getattr(e, "errors", None)
+    if callable(errs):
+        try:
+            first = errs()[0]
+            where = ".".join(str(x) for x in first.get("loc", ()))
+            return f"{where}: {first.get('msg')}" if where else str(first.get("msg"))
+        except Exception:  # noqa: BLE001
+            pass
+    return str(e)[:300]
+
+
+def request_run(settings: Settings, name: str) -> None:
+    """Ask the service to search one watch now (see module header)."""
+    d = settings.home / "requests"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(str(int(time.time())))
 
 
 def serve(settings: Settings, port: int, rebuild: Callable[[], None], host: str = "127.0.0.1") -> None:

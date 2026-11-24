@@ -44,6 +44,7 @@ class Section:
     last_run: dict[str, Any] | None
     favorites: set[str] = field(default_factory=set)
     first_seen: dict[str, int] = field(default_factory=dict)
+    pending: bool = False  # a run was requested from the page and hasn't happened yet
 
 
 GALLERY_WIDTH = 800
@@ -135,8 +136,43 @@ h1{font-size:clamp(26px,4.5vw,34px);font-weight:800}h2{font-size:24px;font-weigh
 h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .meta{font:12px var(--mono);color:var(--muted);letter-spacing:.03em}
 header.page{display:flex;flex-direction:column;gap:6px}
-nav{display:flex;flex-wrap:wrap;gap:8px}
-nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--surface)}
+.picker{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.picker button{font:inherit;font-size:13.5px;color:var(--fg);background:var(--surface);border:1px solid var(--line);
+border-radius:999px;padding:5px 14px;cursor:pointer;display:flex;gap:8px;align-items:center}
+.picker button[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.picker .n{font:600 11.5px var(--mono);opacity:.7}
+.picker .new-watch{color:var(--surface);background:var(--accent);border-color:var(--accent);font-weight:600}
+.brief[hidden]{display:none}
+.brief-title{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.watch-ctl{display:flex;gap:6px;margin-left:auto}
+.watch-ctl button{font:inherit;font-size:12.5px;color:var(--fg);background:var(--surface);border:1px solid var(--line);
+border-radius:6px;padding:3px 10px;cursor:pointer}
+.watch-ctl .danger{color:var(--bad)}.watch-ctl .danger.armed{background:var(--bad);color:var(--surface);border-color:var(--bad)}
+dialog.watch-form{border:1px solid var(--line);border-radius:12px;padding:0;width:min(760px,calc(100vw - 24px));
+max-height:min(92vh,1000px);background:var(--surface);color:var(--fg);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+dialog.watch-form[open]{display:flex;flex-direction:column;overflow:hidden}
+dialog.watch-form::backdrop{background:rgba(10,14,16,.55)}
+dialog.watch-form form{display:flex;flex-direction:column;min-height:0;margin:0}
+.wf-body{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;padding:16px 18px;overflow:auto;min-height:0}
+.wf-body label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted);min-width:0}
+.wf-body label span{font-weight:400}
+.wf-body .wide{grid-column:1/-1}
+.wf-body input,.wf-body textarea,.wf-body select{font:inherit;font-size:14px;font-weight:400;color:var(--fg);
+background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
+.wf-body textarea{resize:vertical}
+.wf-body label.check{flex-direction:row;align-items:center;gap:8px;color:var(--fg);font-weight:500}
+.wf-body fieldset{border:1px solid var(--line);border-radius:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;padding:10px 14px}
+.wf-body fieldset[hidden]{display:none}
+.wf-body legend{font-size:12.5px;font-weight:600;color:var(--muted);padding:0 4px}
+.wf-body .opts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px}
+.wf-error{grid-column:1/-1;margin:0;color:var(--bad);font-size:13px}
+.wf-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+.wf-actions button{font:inherit;font-size:14px;border-radius:6px;padding:7px 14px;cursor:pointer;border:1px solid var(--line);
+background:var(--surface);color:var(--fg)}
+.wf-actions .wf-save{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:600}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:50;
+background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+@media (max-width:600px){.wf-body,.wf-body fieldset{grid-template-columns:1fr}}
 .brief{display:flex;flex-direction:column;gap:18px;scroll-margin-top:16px}
 .brief-head{display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--line);padding-bottom:10px}
 .limits{font-size:13px;color:var(--muted);max-width:80ch}
@@ -563,6 +599,70 @@ def _full(c: Candidate, eff: Effective | None, interactive: bool) -> str:
             '<button type="button" data-page="1" aria-label="More columns">▸</button></span></div></div>')
 
 
+def _requirements(b: Brief) -> str:
+    if not b.requirements:
+        return ""
+    return '<div class="limits">Must have: ' + " · ".join(escape(r) for r in b.requirements) + "</div>"
+
+
+def _picker(sections: list[Section], interactive: bool) -> str:
+    """Tabs across the top: every watch on one page, or one watch at a time."""
+    if len(sections) < 2 and not interactive:
+        return ""
+    tabs = ['<button type="button" role="tab" data-show="" aria-selected="true">All</button>']
+    for s in sections:
+        n = sum(1 for c in s.candidates
+                if not c.excluded and (e := effective(c, s.brief)) and e.verdict in ("top", "consider"))
+        tabs.append(f'<button type="button" role="tab" data-show="{escape(s.brief.name)}">{escape(s.brief.title)}'
+                    f'{" · paused" if s.brief.paused else ""}<span class="n">{n}</span></button>')
+    new = '<button type="button" class="new-watch">+ New</button>' if interactive else ""
+    return f'<nav class="picker" role="tablist" aria-label="Watches">{"".join(tabs)}{new}</nav>'
+
+
+WATCH_FORM = """
+<dialog class="watch-form" aria-labelledby="wf-title"><form method="dialog" novalidate>
+<div class="rc-top"><h3 id="wf-title">New watch</h3><button type="button" class="wf-cancel" aria-label="Close">×</button></div>
+<div class="wf-body">
+<input type="hidden" name="name">
+<label class="wide">What are you looking for?<input name="title" required placeholder="Cabinet table saw for the shop"></label>
+<label class="wide">Who it's for, and why <span>the scorer reads this</span>
+<textarea name="notes" rows="2" placeholder="Occasional shop use; would rather pay more for a complete, working saw."></textarea></label>
+<label class="wide">Searches <span>one Facebook search per line</span>
+<textarea name="queries" rows="3" placeholder="table saw&#10;cabinet saw&#10;delta table saw"></textarea></label>
+<label>Requirements <span>must-haves, one per line</span>
+<textarea name="requirements" rows="4" placeholder="Fence included&#10;Runs (seen or video)"></textarea></label>
+<label>Preferences <span>nice-to-haves, one per line</span>
+<textarea name="preferences" rows="4" placeholder="Cabinet or hybrid over jobsite&#10;Seller shows it running"></textarea></label>
+<label>Price from<input name="price_min" type="number" min="0" step="1" inputmode="numeric" placeholder="50"></label>
+<label>to<input name="price_max" type="number" min="0" step="1" inputmode="numeric" placeholder="900"></label>
+<label>Measure distance from<input name="home" placeholder="City, ST"></label>
+<label>Within (miles)<input name="max_miles" type="number" min="0" step="1" inputmode="numeric"></label>
+<label class="wide">Also show distance to <span>optional, "Name: City, ST" per line</span>
+<textarea name="destinations" rows="1" placeholder="Work: Walton, KY"></textarea></label>
+<label class="wide">Skip listings that say <span>one per line</span>
+<textarea name="exclude_words" rows="2" placeholder="parts only&#10;wanted"></textarea></label>
+<label class="check wide"><input type="checkbox" name="is_vehicle"> This is a vehicle <span>adds checks done in code, not by the scorer</span></label>
+<fieldset class="vehicle wide" hidden><legend>Vehicle limits</legend>
+<div class="opts">Drive: <label class="check"><input type="checkbox" name="dt" value="awd"> AWD</label>
+<label class="check"><input type="checkbox" name="dt" value="4wd"> 4WD</label>
+<label class="check"><input type="checkbox" name="dt" value="fwd"> FWD</label>
+<label class="check"><input type="checkbox" name="dt" value="rwd"> RWD</label> <span>(none = any)</span></div>
+<label class="check"><input type="checkbox" name="clean_title"> Clean title only</label>
+<label>Transmission<select name="transmission"><option value="any">Any</option><option value="automatic">Automatic</option>
+<option value="conventional-automatic">Automatic, no CVT</option><option value="manual">Manual</option></select></label>
+<label>Max miles<input name="max_mileage" type="number" min="0" step="1000" inputmode="numeric"></label>
+<label>Years from<input name="min_year" type="number" min="1950" max="2100" inputmode="numeric"></label>
+<label>to<input name="max_year" type="number" min="1950" max="2100" inputmode="numeric"></label>
+</fieldset>
+<p class="wf-error" role="alert" hidden></p>
+</div>
+<div class="wf-actions"><button type="button" class="wf-cancel">Cancel</button>
+<button type="submit" class="wf-save">Save and search</button></div>
+</form></dialog>
+<div class="toast" role="status" hidden></div>
+"""
+
+
 def _limits(b: Brief) -> str:
     parts = []
     if b.price.min is not None or b.price.max is not None:
@@ -584,7 +684,9 @@ def _limits(b: Brief) -> str:
     return " · ".join(parts)
 
 
-def _health(last: dict[str, Any] | None) -> str:
+def _health(last: dict[str, Any] | None, pending: bool = False) -> str:
+    if pending:
+        return '<div class="health">Searching now; results appear here in a few minutes.</div>'
     if not last:
         return '<div class="health">Not run yet.</div>'
     when = time.strftime("%b %-d, %-I:%M %p", time.localtime(last["ts"]))
@@ -672,12 +774,20 @@ def section(s: Section, photos: "Photos", *, interactive: bool) -> str:
         + "".join(f'<option value="{escape(m)}">{escape(m)}</option>' for m in models)
         + '</select></label><button type="button" data-mark-seen>Mark all seen</button></div>'
     )
-    legend = ('<div class="legend"><span class="chip recall">recall</span><span class="chip bulletin">service bulletin</span>'
+    legend = "" if b.kind != "vehicle" else ('<div class="legend"><span class="chip recall">recall</span><span class="chip bulletin">service bulletin</span>'
               '<span class="chip pattern">reported pattern?</span><span>tags apply to every listing of that model; '
               'hover for the question to ask</span></div>')
+    controls = ""
+    if interactive:
+        controls = (f'<div class="watch-ctl"><button type="button" data-edit="{escape(b.name)}">Edit</button>'
+                    f'<button type="button" data-pause="{escape(b.name)}" data-paused="{str(b.paused).lower()}">'
+                    f'{"Resume" if b.paused else "Pause"}</button>'
+                    f'<button type="button" class="danger" data-delete="{escape(b.name)}">Delete</button></div>')
+    paused = '<span class="chip near">paused: kept, not searched</span>' if b.paused else ""
     return (
         f'<section class="brief" id="{escape(b.name)}" data-brief="{escape(b.name)}"><div class="brief-head">'
-        f'<h2>{escape(b.title)}</h2><div class="limits">{_limits(b)}</div>{_health(s.last_run)}</div>'
+        f'<div class="brief-title"><h2>{escape(b.title)}</h2>{paused}{controls}</div>'
+        f'<div class="limits">{_limits(b)}</div>{_requirements(b)}{_health(s.last_run, s.pending)}</div>'
         f'{toolbar}{legend}{body or "<div class=more>Nothing matches yet.</div>"}{more}</section>'
     )
 
@@ -734,6 +844,108 @@ SCRIPT = """
     });
   });
   markNew();
+
+  // Picker: all watches on one page, or one at a time (kept in the address: #name).
+  function showWatch(name) {
+    document.querySelectorAll("section.brief").forEach(s => { s.hidden = !!name && s.dataset.brief !== name; });
+    document.querySelectorAll(".picker [data-show]").forEach(b =>
+      b.setAttribute("aria-selected", String(b.dataset.show === (name || ""))));
+  }
+  const fromHash = () => {
+    const h = decodeURIComponent(location.hash.slice(1));
+    return document.querySelector(`section.brief[data-brief="${CSS.escape(h)}"]`) ? h : "";
+  };
+  showWatch(fromHash());
+  addEventListener("hashchange", () => showWatch(fromHash()));
+  document.addEventListener("click", e => {
+    const t = e.target.closest(".picker [data-show]");
+    if (!t) return;
+    const name = t.dataset.show;
+    history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname);
+    showWatch(name);
+  });
+
+  // Watches: + New, Edit, Pause/Resume, Delete. Only on the interactive page.
+  const form = document.querySelector("dialog.watch-form");
+  const toast = msg => { const t = document.querySelector(".toast"); if (!t) return;
+    t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 6000); };
+  async function api(method, path, body) {
+    const r = await fetch(path, {method, headers: body ? {"Content-Type": "application/json"} : {},
+                                 body: body ? JSON.stringify(body) : undefined});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+  }
+  function fill(f) {
+    const el = form.querySelector("form").elements;
+    for (const k of ["name", "title", "notes", "queries", "requirements", "preferences", "exclude_words",
+                     "home", "destinations", "max_miles", "price_min", "price_max"]) {
+      el[k].value = f[k] ?? "";
+    }
+    const v = f.vehicle || {};
+    el.is_vehicle.checked = f.kind === "vehicle";
+    form.querySelector("fieldset.vehicle").hidden = f.kind !== "vehicle";
+    form.querySelectorAll('input[name="dt"]').forEach(c => { c.checked = (v.drivetrain || []).includes(c.value); });
+    el.clean_title.checked = v.title === "clean";
+    el.transmission.value = v.transmission || "any";
+    for (const k of ["max_mileage", "min_year", "max_year"]) el[k].value = v[k] ?? "";
+    form.querySelector("#wf-title").textContent = f.name ? "Edit watch" : "New watch";
+    form.querySelector(".wf-error").hidden = true;
+  }
+  function collect() {
+    const el = form.querySelector("form").elements;
+    const out = {};
+    for (const k of ["name", "title", "notes", "queries", "requirements", "preferences", "exclude_words",
+                     "home", "destinations", "max_miles", "price_min", "price_max"]) out[k] = el[k].value;
+    out.kind = el.is_vehicle.checked ? "vehicle" : "general";
+    if (out.kind === "vehicle") out.vehicle = {
+      drivetrain: [...form.querySelectorAll('input[name="dt"]:checked')].map(c => c.value),
+      title: el.clean_title.checked ? "clean" : "any", transmission: el.transmission.value,
+      max_mileage: el.max_mileage.value, min_year: el.min_year.value, max_year: el.max_year.value,
+    };
+    return out;
+  }
+  if (form) {
+    form.querySelector('input[name="is_vehicle"]').addEventListener("change", e => {
+      form.querySelector("fieldset.vehicle").hidden = !e.target.checked; });
+    form.querySelectorAll(".wf-cancel").forEach(b => b.addEventListener("click", () => form.close()));
+    form.querySelector("form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const err = form.querySelector(".wf-error"), save = form.querySelector(".wf-save");
+      save.disabled = true;
+      try {
+        const res = await api("POST", "api/briefs", collect());
+        form.close();
+        toast(res.searching ? "Saved. Searching now; results appear in a few minutes." : "Saved.");
+        setTimeout(() => { location.hash = res.name; location.reload(); }, 3000);
+      } catch (x) { err.textContent = x.message; err.hidden = false; }
+      finally { save.disabled = false; }
+    });
+  }
+  document.addEventListener("click", async e => {
+    if (!form) return;
+    const nw = e.target.closest(".new-watch"), ed = e.target.closest("[data-edit]");
+    const pa = e.target.closest("[data-pause]"), de = e.target.closest("[data-delete]");
+    try {
+      if (nw) { fill(await api("GET", "api/briefs/defaults")); form.showModal(); }
+      else if (ed) { fill(await api("GET", "api/briefs/" + encodeURIComponent(ed.dataset.edit))); form.showModal(); }
+      else if (pa) {
+        const resume = pa.dataset.paused === "true";
+        await api("POST", `api/briefs/${encodeURIComponent(pa.dataset.pause)}/pause`, {paused: !resume});
+        toast(resume ? "Resumed. Searching now." : "Paused. Results are kept.");
+        setTimeout(() => location.reload(), 3000);
+      } else if (de) {
+        if (!de.classList.contains("armed")) {   // two-step: no confirm() dialogs
+          de.classList.add("armed"); de.textContent = "Really delete?";
+          setTimeout(() => { de.classList.remove("armed"); de.textContent = "Delete"; }, 4000);
+          return;
+        }
+        await api("DELETE", "api/briefs/" + encodeURIComponent(de.dataset.delete));
+        toast("Deleted. Its results are kept in the database.");
+        setTimeout(() => { location.hash = ""; location.reload(); }, 3000);
+      }
+    } catch (x) { toast("That didn't work: " + x.message); }
+  });
 
   // Expand a card across the row: click anywhere on it except a link, star or control.
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -911,9 +1123,7 @@ def render(sections: list[Section], photos_dir: Path, title: str = "Marketplace 
     embedding them; the page then needs that directory published next to it.
     """
     photos = Photos(photos_dir, photo_files)
-    nav = ""
-    if len(sections) > 1:
-        nav = "<nav>" + "".join(f'<a href="#{escape(s.brief.name)}">{escape(s.brief.title)}</a>' for s in sections) + "</nav>"
+    nav = _picker(sections, interactive)
     when = time.strftime("%b %-d, %Y %-I:%M %p")
     body = "".join(section(s, photos, interactive=interactive) for s in sections)
     photos.sweep()
@@ -933,14 +1143,17 @@ the contenders get the full evaluation. Colored tags are model-wide facts (recal
 reported pattern, not a verified one. Seller claims are the sellers'. Get anything with an engine inspected
 before buying.</footer>
 </div>
+{WATCH_FORM if interactive else ""}
 <dialog class="recalls" aria-labelledby="rc-title"><div class="rc-top"><h3 id="rc-title"></h3>
 <button type="button" class="rc-close" aria-label="Close">×</button></div><div class="rc-body"></div></dialog>
 <script>{SCRIPT}</script>"""
 
 
-def sections_from_store(store: Any, briefs_list: list[Brief]) -> list[Section]:
+def sections_from_store(store: Any, briefs_list: list[Brief], requests_dir: Path | None = None) -> list[Section]:
+    pending = {p.name for p in requests_dir.iterdir()} if requests_dir and requests_dir.is_dir() else set()
     return [
-        Section(b, store.all(b.name), store.last_run(b.name), store.favorites(b.name), store.first_seen(b.name))
+        Section(b, store.all(b.name), store.last_run(b.name), store.favorites(b.name), store.first_seen(b.name),
+                pending=b.name in pending)
         for b in briefs_list
     ]
 
