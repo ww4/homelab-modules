@@ -89,3 +89,32 @@ def test_watch_runs_only_requested_and_skips_paused(tmp_path, monkeypatch):
     ran.clear()
     cli.cmd_watch(s, args)
     assert ran == ["a"] and not any((tmp_path / "requests").iterdir())  # request consumed
+
+
+def test_watch_for_others_is_kept_but_not_notified(tmp_path: Path, monkeypatch):
+    s = Settings(home=tmp_path, judge="none")
+    s.ensure_dirs()
+    from market_agent import brief as briefs
+
+    b = briefs.load(briefs.new_brief("winter", s.briefs_dir, "winter-commuter"))
+    briefs.save(b.model_copy(update={"for_others": True}), s.briefs_dir)
+    assert briefs.load(s.briefs_dir / "winter.toml").for_others  # round-trips through the file
+    top = Candidate(listing=Listing(id="9", title="2008 Honda CR-V", price_text="$4,200", price=4200),
+                    evaluation=Evaluation(score=8.0, verdict="top", headline="good"),
+                    detail=Detail(id="9", description="AWD, clean title"))
+    st = Store(s.db_path)
+    st.save(b.name, top, "k")
+    st.close()
+    ran = []
+
+    async def fake_run(settings, brief, **_kw):
+        ran.append(brief.name)
+        return RunResult(brief=brief.name, searches=[{"query": "q", "ok": True, "count": 1, "source": "graphql", "error": None}])
+
+    sent = []
+    monkeypatch.setattr(cli, "run", fake_run)
+    monkeypatch.setattr(cli, "_notify", lambda cmd, title, body: sent.append(title))
+    args = argparse.Namespace(page=str(tmp_path / "www/index.html"), page_url=None, notify_cmd="x", title="t")
+    assert cli.cmd_watch(s, args) == 0
+    assert ran == ["winter"] and sent == []  # still searched; nothing sent
+    assert "CR-V" in (tmp_path / "www/index.html").read_text()

@@ -145,6 +145,9 @@ header.page{display:flex;flex-direction:column;gap:6px}
 border-radius:999px;padding:5px 14px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .picker button[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .picker .n{font:600 11.5px var(--mono);opacity:.7}
+details.others{margin-top:28px;border-top:1px solid var(--line);padding-top:12px}
+details.others>summary{cursor:pointer;font-weight:600;font-size:15px;color:var(--muted);padding:6px 0}
+details.others>summary span{font-weight:400;font-size:13px;margin-left:6px}
 .picker .new-watch{color:var(--surface);background:var(--accent);border-color:var(--accent);font-weight:600}
 .brief[hidden]{display:none}
 .brief-title{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
@@ -703,6 +706,7 @@ WATCH_FORM = """
 <textarea name="destinations" rows="1" placeholder="Work: Walton, KY"></textarea></label>
 <label class="wide">Skip listings that say <span>one per line</span>
 <textarea name="exclude_words" rows="2" placeholder="parts only&#10;wanted"></textarea></label>
+<label class="check wide"><input type="checkbox" name="for_others"> For someone else <span>no notifications; shown collapsed under "Watching for others"</span></label>
 <label class="check wide"><input type="checkbox" name="is_vehicle"> This is a vehicle <span>adds checks done in code, not by the scorer</span></label>
 <fieldset class="vehicle wide" hidden><legend>Vehicle limits</legend>
 <div class="opts">Drive: <label class="check"><input type="checkbox" name="dt" value="awd"> AWD</label>
@@ -967,6 +971,11 @@ SCRIPT = """
   // Picker: all watches on one page, or one at a time (kept in the address: #name).
   function showWatch(name) {
     document.querySelectorAll("section.brief").forEach(s => { s.hidden = !!name && s.dataset.brief !== name; });
+    document.querySelectorAll("details.others").forEach(d => {
+      const inside = !!name && !!d.querySelector(`section.brief[data-brief="${CSS.escape(name)}"]`);
+      d.hidden = !!name && !inside;
+      if (inside) d.open = true;
+    });
     document.querySelectorAll(".picker [data-show]").forEach(b =>
       b.setAttribute("aria-selected", String(b.dataset.show === (name || ""))));
   }
@@ -1003,6 +1012,7 @@ SCRIPT = """
     }
     const v = f.vehicle || {};
     el.is_vehicle.checked = f.kind === "vehicle";
+    el.for_others.checked = !!f.for_others;
     form.querySelector("fieldset.vehicle").hidden = f.kind !== "vehicle";
     form.querySelectorAll('input[name="dt"]').forEach(c => { c.checked = (v.drivetrain || []).includes(c.value); });
     el.clean_title.checked = v.title === "clean";
@@ -1017,6 +1027,7 @@ SCRIPT = """
     for (const k of ["name", "title", "notes", "queries", "requirements", "preferences", "exclude_words",
                      "home", "destinations", "max_miles", "price_min", "price_max"]) out[k] = el[k].value;
     out.kind = el.is_vehicle.checked ? "vehicle" : "general";
+    out.for_others = el.for_others.checked;
     if (out.kind === "vehicle") out.vehicle = {
       drivetrain: [...form.querySelectorAll('input[name="dt"]:checked')].map(c => c.value),
       title: el.clean_title.checked ? "clean" : "any", transmission: el.transmission.value,
@@ -1269,9 +1280,19 @@ def render(sections: list[Section], photos_dir: Path, title: str = "Marketplace 
     embedding them; the page then needs that directory published next to it.
     """
     photos = Photos(photos_dir, photo_files)
-    nav = _picker(sections, interactive)
+    # Watches run for someone else go last, folded under one heading. A page of
+    # only those (the shared one-watch copy) shows them as normal.
+    mine = [s for s in sections if not s.brief.for_others]
+    others = [s for s in sections if s.brief.for_others] if mine else []
+    if not others:
+        mine = sections
+    nav = _picker(mine + others, interactive)
     when = time.strftime("%b %-d, %Y %-I:%M %p")
-    body = "".join(section(s, photos, interactive=interactive) for s in sections)
+    body = "".join(section(s, photos, interactive=interactive) for s in mine)
+    if others:
+        names = " · ".join(escape(s.brief.title) for s in others)
+        body += (f'<details class="others"><summary>Watching for others <span>{names}</span></summary>'
+                 + "".join(section(s, photos, interactive=interactive) for s in others) + "</details>")
     photos.sweep()
     # Served as-is by nginx too, so it carries its own charset and viewport.
     return f"""<meta charset="utf-8">

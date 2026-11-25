@@ -109,6 +109,10 @@ class Brief(Strict):
     requirements: list[str] = Field(default_factory=list)
     preferences: list[str] = Field(default_factory=list)
     paused: bool = False  # kept, shown, not searched
+    # Run for someone else: searched and kept as usual, but no "worth contacting"
+    # or price-drop notifications, and collapsed under "Watching for others" on
+    # the page. Its own one-watch page (the shared copy) is unaffected.
+    for_others: bool = False
     location: Location
     price: Price = Field(default_factory=Price)
     search: Search
@@ -227,6 +231,7 @@ def from_form(form: dict, name: str | None = None, base: "Brief | None" = None) 
         "requirements": _lines(form.get("requirements")),
         "preferences": _lines(form.get("preferences")),
         "paused": bool(form.get("paused")),
+        "for_others": bool(form.get("for_others")),
         "location": {
             "home": str(form.get("home") or "").strip(),
             "destinations": dests,
@@ -266,6 +271,7 @@ def to_form(b: Brief) -> dict:
     v = b.vehicle
     return {
         "name": b.name, "title": b.title, "kind": b.kind, "notes": b.notes, "paused": b.paused,
+        "for_others": b.for_others,
         "queries": "\n".join(b.search.queries), "requirements": "\n".join(b.requirements),
         "preferences": "\n".join(b.preferences), "exclude_words": "\n".join(b.search.exclude_words),
         "home": b.location.home, "max_miles": b.location.max_miles,
