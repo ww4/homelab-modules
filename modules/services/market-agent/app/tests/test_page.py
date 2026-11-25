@@ -99,3 +99,17 @@ def test_phone_settings_drawer(tmp_path: Path):
     assert 'class="watch-ctl desk"' in html
     # The drawer's state class must not be "open": an older ".open{background:none}" rule wiped its background.
     assert 'classList.add("is-open")' in html and ".brief-panel.open" not in html
+
+
+def test_watches_for_others_fold_under_a_heading(tmp_path: Path):
+    mine = _brief()
+    theirs = mine.model_copy(update={"name": "f", "title": "Friend's car", "for_others": True})
+    c = Candidate(listing=Listing(id="1", title="2008 Honda CR-V", price_text="$4,200", price=4200),
+                  evaluation=Evaluation(score=8.2, verdict="top", headline="ok"))
+    html = render([Section(theirs, [c], None), Section(mine, [c], None)], tmp_path, interactive=True)
+    fold = html.index('<details class="others">')
+    assert html.index('data-brief="w"') < fold < html.index('data-brief="f"')
+    assert "Friend&#x27;s car" in html[fold:fold + 200] or "Friend's car" in html[fold:fold + 200]
+    # Its own shared page is a normal page, not a folded one.
+    alone = render([Section(theirs, [c], None)], tmp_path)
+    assert '<details class="others">' not in alone and 'data-brief="f"' in alone
