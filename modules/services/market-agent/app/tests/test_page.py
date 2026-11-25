@@ -85,3 +85,17 @@ def test_photos_as_files_gallery_and_sweep(tmp_path: Path):
     assert html.count('class="shot') == 6 and 'data-full="photos/9-3-800.jpg"' in html
     assert not (out / "stale-1-240.jpg").exists()  # unreferenced photos are removed
     assert (out / "9-6-800.jpg").stat().st_mode & 0o044  # nginx can read them
+
+
+def test_phone_settings_drawer(tmp_path: Path):
+    ev = Evaluation(score=6.0, verdict="consider", headline="ok")
+    c = Candidate(listing=Listing(id="1", title="2008 Honda CR-V", price_text="$4,200", price=4200), evaluation=ev)
+    html = render([Section(_brief(), [c], None)], tmp_path, interactive=True)
+    # One drawer per watch, opened by its own button, holding the settings.
+    assert html.count('class="brief-panel"') == 1 and 'aria-controls="panel-w"' in html and 'id="panel-w"' in html
+    panel = html[html.index('class="brief-panel"'):html.index('class="group')]
+    assert "data-sort" in panel and "data-edit" in panel and 'class="limits"' in panel
+    # Desktop keeps Edit/Pause/Delete in the title row.
+    assert 'class="watch-ctl desk"' in html
+    # The drawer's state class must not be "open": an older ".open{background:none}" rule wiped its background.
+    assert 'classList.add("is-open")' in html and ".brief-panel.open" not in html
