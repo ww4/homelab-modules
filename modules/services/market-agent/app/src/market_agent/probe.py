@@ -85,8 +85,8 @@ async def session(settings: Settings, store: Store, interval: float, *, max_requ
         return {"completed": False, "reason": "no stored listings to read"}
     label = f"probe@{interval:g}s"
     via = "proxy" if settings.proxy else "direct"
-    t = Transport(proxy=settings.proxy, pace=Pace(interval=interval),
-                  on_request=lambda kind, outcome, iv: store.log_request(label, via, kind, outcome, iv))
+    t = Transport(proxy=settings.proxy, pace=Pace(interval=interval, job=f"{label}-{int(clock())}"),
+                  on_request=lambda rec: store.log_request(label, via, rec))
     n = 0
     errors = 0
 

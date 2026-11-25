@@ -118,6 +118,17 @@ in
       '';
     };
 
+    catchUp = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "*-*-* 09:30:00" "*-*-* 14:30:00" "*-*-* 19:30:00" ];
+      description = ''
+        Between the scheduled runs: if a watch's last run left listings
+        unread (Facebook rate-limited it, or it hit search.max_details), run
+        that watch again now instead of waiting for the next scheduled run.
+        Does nothing when nothing is behind. [ ] turns it off.
+      '';
+    };
+
     proxy = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -290,6 +301,29 @@ in
         SystemCallArchitectures = "native";
         CapabilityBoundingSet = [ ];
       };
+    };
+
+    # Catch-up: only checks the database and, for a watch that is behind,
+    # leaves a request file; the path unit above runs the normal service.
+    systemd.services.market-agent-catchup = lib.mkIf (cfg.catchUp != [ ]) {
+      description = "market-agent: re-run any watch the last run left behind";
+      environment = { HOME = home; MARKET_AGENT_HOME = cfg.stateDir; MARKET_AGENT_JUDGE = "none"; };
+      serviceConfig = {
+        Type = "oneshot";
+        User = cfg.user;
+        Group = group;
+        ExecStart = lib.escapeShellArgs [ (lib.getExe market-agent) "catch-up" ];
+        ProtectSystem = "strict";
+        ReadWritePaths = [ cfg.stateDir ];
+        ProtectHome = true;
+        PrivateTmp = true;
+        PrivateNetwork = true;  # it never talks to anything
+        NoNewPrivileges = true;
+      };
+    };
+    systemd.timers.market-agent-catchup = lib.mkIf (cfg.catchUp != [ ]) {
+      wantedBy = [ "timers.target" ];
+      timerConfig.OnCalendar = cfg.catchUp;
     };
 
     systemd.timers.market-agent = {

@@ -126,8 +126,8 @@ async def run(
     store = Store(settings.db_path)
     via = "proxy" if settings.proxy else "direct"
     transport = Transport(
-        proxy=settings.proxy, pace=pace or Pace(interval=settings.fb_interval),
-        on_request=lambda kind, outcome, interval: store.log_request(brief.name, via, kind, outcome, interval))
+        proxy=settings.proxy, pace=pace or Pace(interval=settings.fb_interval, job=f"run-{brief.name}-{int(time.time())}"),
+        on_request=lambda rec: store.log_request(brief.name, via, rec))
     mp = Marketplace(transport)
     http = httpx.AsyncClient(follow_redirects=True)
     result = RunResult(brief=brief.name)

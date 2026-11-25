@@ -23,7 +23,8 @@ def _transport(handler, **kw) -> tr.Transport:
 
 def _no_pacing(monkeypatch):
     async def instant(self):
-        return None
+        self.pace.seq += 1
+        return self.pace.seq, None
 
     monkeypatch.setattr(tr.Transport, "_pace", instant)
 
@@ -97,15 +98,18 @@ def test_every_request_is_logged(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(tr, "RATE_LIMIT_WAITS_S", ())
     st = Store(tmp_path / "db.sqlite")
     replies = iter([OK, LIMITED])
-    t = _transport(lambda r: httpx.Response(200, json=next(replies)),
-                   on_request=lambda kind, outcome, iv: st.log_request("w", "proxy", kind, outcome, iv))
+    t = _transport(lambda r: httpx.Response(200, json=next(replies)), pace=tr.Pace(job="j1"),
+                   on_request=lambda rec: st.log_request("w", "proxy", rec))
     asyncio.run(t.graphql("doc", {}, kind="info"))
     try:
         asyncio.run(t.graphql("doc", {}, kind="photos"))
     except tr.RateLimited:
         pass
-    rows = st.db.execute("SELECT brief, via, kind, outcome FROM fb_requests ORDER BY ts").fetchall()
-    assert [tuple(r) for r in rows] == [("w", "proxy", "info", "ok"), ("w", "proxy", "photos", "rate_limit")]
+    rows = st.db.execute("SELECT job, seq, brief, via, kind, outcome, status FROM fb_requests ORDER BY ts").fetchall()
+    assert [tuple(r) for r in rows] == [("j1", 1, "w", "proxy", "info", "ok", 200),
+                                        ("j1", 2, "w", "proxy", "photos", "rate_limit", 200)]
+    detail = st.db.execute("SELECT detail, latency_ms FROM fb_requests WHERE outcome = 'rate_limit'").fetchone()
+    assert "Rate limit" in detail[0] and detail[1] >= 0
     assert st.last_request_ts() is not None
 
 
@@ -171,7 +175,7 @@ def test_probe_auto_refuses_without_proxy_and_while_a_watch_runs(tmp_path: Path,
         assert "watch run" in probe.run_auto(s)["skipped"]
     # Recent Facebook traffic: wait for quiet.
     st = Store(s.db_path)
-    st.log_request("w", "proxy", "info", "ok", 1.5)
+    st.log_request("w", "proxy", {"job": "j", "kind": "info", "outcome": "ok"})
     st.close()
     assert "quiet" in probe.run_auto(s)["skipped"]
 
@@ -189,3 +193,49 @@ def test_probe_schedule_advances_then_stops(tmp_path: Path, monkeypatch):
         probe.run_auto(s)
     assert seen == list(probe.SCHEDULE)
     assert "complete" in probe.run_auto(s)["skipped"]
+
+
+def test_jitter_never_a_metronome_and_pauses_sometimes(monkeypatch):
+    slept = []
+
+    async def fake_sleep(s):
+        slept.append(s)
+
+    monkeypatch.setattr(tr.asyncio, "sleep", fake_sleep)
+    clock = [1000.0]
+    monkeypatch.setattr(tr.time, "monotonic", lambda: clock[0])
+    t = tr.Transport(pace=tr.Pace(interval=2.0))
+
+    async def go():
+        for _ in range(200):
+            await t._pace()
+
+    asyncio.run(go())
+    gaps = [s for s in slept]  # the clock never moves, so each wait is the whole target gap
+    assert len(set(round(g, 3) for g in gaps)) > 150  # not a metronome
+    assert min(gaps) >= 2.0 * tr.JITTER[0] - 1e-9
+    assert sum(1 for g in gaps if g > 2.0 * tr.JITTER[1]) >= 200 // tr.PAUSE_EVERY[1]  # reading pauses
+
+
+def test_pace_is_learned_across_jobs(tmp_path: Path):
+    from market_agent import pacing
+
+    st = Store(tmp_path / "db.sqlite")
+    p = pacing.load(st, 1.5)
+    assert p.interval == 1.5
+    p.seq, p.walls, p.interval = 40, 1, 3.0  # this job hit the wall once
+    assert pacing.save(st, p, 1.5)["next_interval"] == 3.0
+    p = pacing.load(st, 1.5)
+    assert p.interval == 3.0  # the next job starts slow
+    p.seq = 40  # a clean job
+    pacing.save(st, p, 1.5)
+    assert pacing.load(st, 1.5).interval == 2.7  # then speeds up gently
+    q = pacing.load(st, 1.5)
+    assert pacing.save(st, q, 1.5) is None  # no requests: no change
+    for _ in range(30):
+        q = pacing.load(st, 1.5)
+        q.seq = 5
+        pacing.save(st, q, 1.5)
+    assert pacing.load(st, 1.5).interval == 1.5  # never faster than the base
+    rows = st.db.execute("SELECT count(*) FROM runs WHERE brief = '_pace'").fetchone()[0]
+    assert rows == 32

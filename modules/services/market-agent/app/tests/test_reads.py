@@ -41,7 +41,7 @@ def test_rate_limit_backs_off_then_succeeds_and_slows_the_run(monkeypatch):
 
     t = _transport(handler)
     t.pace.interval = 1.0
-    monkeypatch.setattr(tr.Transport, "_pace", lambda self: asyncio.sleep(0))
+    monkeypatch.setattr(tr.Transport, "_pace", lambda self: asyncio.sleep(0, (1, None)))
     assert asyncio.run(t.graphql("doc", {}))["data"] == {"ok": True}
     assert len(calls) == 2
     assert t.pace.interval == 2.0  # slower for the rest of the run
