@@ -83,6 +83,9 @@ class Vehicle(Strict):
     must_confirm: list[str] = Field(default_factory=lambda: ["drivetrain"])
     min_year: int | None = None
     max_year: int | None = None
+    # Electric cars and plug-ins: EPA-rated electric range when new, in miles.
+    # A used battery has less; the scorer weighs what the listing says about it.
+    min_range: int | None = None
 
 
 class Judge(Strict):
@@ -248,6 +251,7 @@ def from_form(form: dict, name: str | None = None, base: "Brief | None" = None) 
             "max_mileage": int(_num(v.get("max_mileage")) or 0) or None,
             "min_year": int(_num(v.get("min_year")) or 0) or None,
             "max_year": int(_num(v.get("max_year")) or 0) or None,
+            "min_range": int(_num(v.get("min_range")) or 0) or None,
         }
         data["vehicle"] = {**{k: x for k, x in keep.items() if k not in data["vehicle"]}, **data["vehicle"]}
     if base is not None:
@@ -270,6 +274,7 @@ def to_form(b: Brief) -> dict:
         "vehicle": None if v is None else {
             "drivetrain": v.drivetrain, "title": v.title, "transmission": v.transmission,
             "max_mileage": v.max_mileage, "min_year": v.min_year, "max_year": v.max_year,
+            "min_range": v.min_range,
         },
     }
 

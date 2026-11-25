@@ -132,3 +132,13 @@ def test_bad_watch_is_a_readable_400(tmp_path):
                 assert e.code == 400 and needle in json.load(e)["error"].lower()
     finally:
         httpd.shutdown()
+
+
+def test_min_range_round_trips_through_the_form():
+    from market_agent.brief import from_form, to_form
+
+    form = {"title": "Commuter EV", "kind": "vehicle", "home": "Springfield, IL", "max_miles": "60",
+            "queries": "leaf\nbolt", "vehicle": {"drivetrain": [], "min_range": "150"}}
+    b = from_form(form)
+    assert b.vehicle.min_range == 150
+    assert to_form(b)["vehicle"]["min_range"] == 150

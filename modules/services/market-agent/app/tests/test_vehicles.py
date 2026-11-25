@@ -5,8 +5,16 @@ from market_agent.brief import Vehicle
 from market_agent.checks import dealer_signals, price_check, shared_text_signals, age_signal
 from market_agent.models import Candidate, Detail, Listing
 from market_agent.vehicles import knowledge
-from market_agent.vehicles.checks import apply_knowledge, vehicle_checks
+from market_agent.vehicles import configs
+from market_agent.vehicles.checks import apply_knowledge as _apply_table, vehicle_checks
 from market_agent.vehicles.extract import drivetrain_mentions, mileage_from_text, vehicle_facts, vin_from
+
+
+
+def apply_knowledge(c, kb):
+    """The pipeline's order: facts table (issues), then the EPA model-year facts."""
+    _apply_table(c, kb)
+    configs.apply(c.facts, c.detail.title if c.detail and c.detail.title else c.listing.title)
 
 
 def test_drivetrain_words():

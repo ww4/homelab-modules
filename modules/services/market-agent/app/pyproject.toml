@@ -25,7 +25,7 @@ market-agent = "market_agent.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-market_agent = ["data/*.toml", "examples/*.toml"]
+market_agent = ["data/*.toml", "data/*.json", "examples/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

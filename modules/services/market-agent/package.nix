@@ -36,7 +36,7 @@ python3Packages.buildPythonApplication {
   # assert they landed.
   postInstall = ''
     pkg="$out/${python3Packages.python.sitePackages}/market_agent"
-    for f in data/vehicles.toml examples/winter-commuter.toml examples/general.toml; do
+    for f in data/vehicles.toml data/vehicle_configs.json examples/winter-commuter.toml examples/general.toml; do
       if [ ! -s "$pkg/$f" ]; then
         echo "market-agent: $f missing from the wheel" >&2
         exit 1

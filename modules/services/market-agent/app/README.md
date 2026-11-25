@@ -94,8 +94,22 @@ src/market_agent/
 
 ## Maintaining the facts table
 
+**What each model year was sold as** comes from `data/vehicle_configs.json`:
+every US engine × transmission × drive configuration since 2000, from EPA's
+public-domain fueleconomy.gov dataset. A fact is implied only when every
+configuration agrees (no manual was offered on a 2008 CR-V; every Murano is a
+CVT; no Mazda5 was AWD), and the options are recorded otherwise (CR-V: FWD or
+AWD, so the listing has to say). EPA doesn't rate vehicles over 8,500 lb GVWR,
+so heavy-duty pickups and the Hummer H2 stay with the listing. Refresh it once
+a year or so:
+
+```
+curl -LO https://www.fueleconomy.gov/feg/epadata/vehicles.csv.zip && unzip vehicles.csv.zip
+python3 tools/build_vehicle_configs.py vehicles.csv src/market_agent/data/vehicle_configs.json
+```
+
 `data/vehicles.toml` holds two kinds of data. **Generations** (drivetrain and
-transmission type by year range) are spec-sheet facts; check them against the
-manufacturer before adding. **Issues** need a source URL that was actually
+transmission type by year range) are the fallback for models the EPA list
+doesn't cover; check them against the manufacturer before adding. **Issues** need a source URL that was actually
 read before they get `verified = true`. Unverified entries reach the judge as
 leads only, and it turns them into seller questions.
