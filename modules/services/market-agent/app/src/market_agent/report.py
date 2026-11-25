@@ -453,9 +453,13 @@ def _status_chips(c: Candidate, eff: Effective | None) -> str:
         chips.append(f'<span class="chip sold">{"sold" if c.detail.is_sold else "pending"}</span>')
     if c.facts.get("near_miss"):
         chips.append(f'<span class="chip near">{escape(c.facts["near_miss"])}</span>')
+    hints = c.facts.get("manual_hints") if not c.facts.get("transmission") else None
     for ch in c.checks:
-        if ch.status == "unknown":
+        if ch.status == "unknown" and not (hints and ch.name == "transmission"):
             chips.append(f'<span class="chip">{escape(ch.name)} unknown</span>')
+    if hints:
+        # Worth a look for anyone hunting manuals; not proof ("5-speed" can be an automatic).
+        chips.append(f'<span class="chip near" title="the listing says: {escape(", ".join(hints))}">manual?</span>')
     for s in c.signals:
         if s.severity == "warning" or s.name == "dealer or flipper":
             chips.append(f'<span class="chip bad">{escape(s.name)}</span>')

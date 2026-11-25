@@ -207,6 +207,16 @@ def apply(facts: dict[str, Any], text: str) -> bool:
         # The text said "manual" but no manual was ever offered: the text loses.
         facts["transmission_note"] = "the listing text reads as manual, but none was offered"
         facts["transmission"] = None
+    if not facts.get("transmission") and facts.get("manual_hint_speeds") and "manual" in classes:
+        # "5-speed" in the listing: a manual if that year's automatics never had 5 speeds.
+        speeds = lambda c: int(g.group(1)) if (g := re.match(r"(\d+)-speed", c.spec)) else None  # noqa: E731
+        manual_n = {speeds(c) for c in cs if c.trans == "manual"}
+        auto_n = {speeds(c) for c in cs if c.trans != "manual"}  # a CVT/EV has no speed count (None)
+        said = [n for n in facts["manual_hint_speeds"] if n in manual_n and n not in auto_n]
+        if said:
+            facts["transmission"], facts["transmission_source"] = "manual", "listing text + EPA model-year list"
+            auto_specs = " or ".join(sorted({c.spec for c in cs if c.trans != "manual"}))
+            facts["transmission_evidence"] = f"the listing says {said[0]}-speed; a {name}'s automatic was a {auto_specs}"
     if not facts.get("transmission"):
         if "manual" not in classes:
             facts["transmission"], facts["transmission_source"] = "automatic", "EPA model-year list"

@@ -100,3 +100,36 @@ def test_card_row_shows_the_known_transmission_and_where_it_was_seen():
         ("Transmission", "4-speed automatic or 5-speed manual — not stated")]
     assert _transmission_row({"transmission": "automatic", "transmission_spec": "5-speed automatic"}) == [
         ("Transmission", "5-speed automatic")]
+
+
+def test_manual_hints():
+    # "5-speed" on a 2004 CR-V: its automatic was a 4-speed, so it's the manual.
+    f = _facts("2004 Honda CR-V EX 5-speed", "")
+    assert f["transmission"] == "manual" and "4-speed automatic" in f["transmission_evidence"]
+    # 2005: automatic and manual were both 5-speeds, so it stays a hint.
+    f = _facts("2005 Honda CR-V EX", "5 speed, runs great")
+    assert f.get("transmission") is None and f["manual_hints"] == ["5 speed"]
+    # A CVT has no speeds: "6-speed" on a 2010 Outback 2.5i is the manual.
+    assert _facts("2010 Subaru Outback 2.5i", "6spd, new tires")["transmission"] == "manual"
+    for desc in ("new clutch last year", "5MT", "M/T", "3 pedals and a stick"):
+        f = _facts("2003 Toyota Tacoma", desc)
+        assert f.get("manual_hints") or f.get("transmission") == "manual", desc
+    for desc in ("new A/C clutch", "5-speed automatic", "clutch fan replaced"):
+        f = _facts("2003 Toyota Tacoma", desc)
+        assert not f.get("manual_hints") and f.get("transmission") != "manual", desc
+
+
+def test_manual_hint_chip():
+    from market_agent.models import Check
+    from market_agent.report import _status_chips
+
+    c = Candidate(listing=Listing(id="1", title="2005 Honda CR-V", price_text="$4000"),
+                  checks=[Check(name="transmission", status="unknown", detail="not stated")])
+    c.facts = {"manual_hints": ["5 speed"]}
+    html = _status_chips(c, None)
+    assert "manual?" in html and "transmission unknown" not in html
+
+
+def test_speed_and_clutch_together_is_a_manual():
+    f = _facts("Honda element", "08 Needs a clutch  5 speed i have it just havent had time")
+    assert f["transmission"] == "manual" and "clutch" in f["transmission_evidence"]
