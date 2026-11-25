@@ -11,7 +11,7 @@ import httpx
 from ..brief import Vehicle
 from ..models import Candidate, Check, Signal
 from ..store import Store
-from . import nhtsa
+from . import configs, nhtsa
 from .knowledge import Knowledge
 
 log = logging.getLogger(__name__)
@@ -58,7 +58,8 @@ def vehicle_checks(rules: Vehicle, facts: dict[str, Any]) -> list[Check]:
         elif rules.transmission == "conventional-automatic" and ttype == "cvt":
             checks.append(Check(name="transmission", status="fail", detail="CVT for this model year"))
         elif trans == "automatic":
-            detail = "automatic" + (f" ({facts['transmission_spec']})" if facts.get("transmission_spec") else "")
+            notes = [x for x in (facts.get("transmission_spec"), facts.get("transmission_evidence")) if x]
+            detail = "automatic" + (f" ({'; '.join(notes)})" if notes else "")
             checks.append(Check(name="transmission", status="pass", detail=detail))
         else:
             checks.append(Check(name="transmission", status="unknown", detail="not stated"))
@@ -95,7 +96,10 @@ def apply_knowledge(c: Candidate, kb: Knowledge) -> None:
         return
     f["make"], f["model"] = entry.make, entry.model
     gen = entry.generation(f.get("year"))
-    if gen:
+    # The EPA list (configs.py, applied after the VIN decode) is the source for
+    # drivetrain and transmission whenever it covers the model; these
+    # hand-written generations are the fallback for what it doesn't.
+    if gen and configs.lookup(text, f.get("year"), entry.make, entry.model) is None:
         f["transmission_spec"] = gen.transmission
         f["transmission_type"] = gen.transmission_type
         if gen.transmission_type == "depends-on-engine":

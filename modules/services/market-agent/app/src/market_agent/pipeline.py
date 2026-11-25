@@ -24,6 +24,7 @@ from .models import Candidate, Coordinates, Detail, Listing, Signal, readable
 from .policy import effective
 from .store import Store
 from .vehicles import checks as vchecks
+from .vehicles import configs as vconfigs
 from .vehicles import knowledge
 from .vehicles.extract import vehicle_facts
 
@@ -304,6 +305,8 @@ async def run(
             lookups = [c for c in cands if all(ch.name in ("distance", "price") for ch in c.failed_checks)]
             for c in lookups:
                 await vchecks.apply_nhtsa(c, http, store)
+                # What the model year was sold as (after the VIN, which can settle drivetrain).
+                vconfigs.apply(c.facts, (c.detail.title if c.detail else None) or c.listing.title)
             for c in cands:
                 c.checks.extend(vchecks.vehicle_checks(brief.vehicle, c.facts))
             survivors = [c for c in cands if not c.excluded]

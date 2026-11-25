@@ -5,6 +5,11 @@
 # from-memory "ask about head gaskets" was wrong for a 2011 Forester (it has
 # the FB25 engine; the real issue is oil consumption).
 #
+# Drivetrain and transmission options come from vehicle_configs.json (every US
+# configuration, from EPA's fueleconomy.gov list; rebuilt by
+# tools/build_vehicle_configs.py) whenever it covers the model. The
+# `generations` below are only the fallback for models it doesn't.
+#
 # generations: drivetrain and transmission type by year range. These are
 #   spec-sheet facts; check a generation against the maker's spec page before
 #   adding it. transmission_type: conventional | cvt | depends-on-engine.
