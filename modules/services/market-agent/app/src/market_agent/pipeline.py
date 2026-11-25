@@ -159,11 +159,27 @@ async def run(
         # a sale is noticed.
         cutoff = time.time() - brief.search.keep_days * 86400
         starred_ids = store.favorites(brief.name)
-        # Starred listings are tracked however old, until they are gone.
-        for prior in store.recent(brief.name, since=cutoff) + store.get_many(brief.name, starred_ids):
+        # Starred listings, and any listing that was ever worth a look, are
+        # tracked however old until they sell or vanish: a bookmark, not a
+        # search result. "Not interested" ones are dropped for good.
+        kept = store.kept(brief.name)
+        if not kept:
+            # First run with bookmarks: everything already scored worth a look counts.
+            for prior in store.all(brief.name):
+                e = effective(prior, brief) if prior.evaluation else None
+                if not prior.excluded and e and e.verdict in ("top", "consider"):
+                    store.keep(brief.name, prior.listing.id)
+            kept = store.kept(brief.name)
+        bookmarked = starred_ids | kept
+        dismissed = store.dismissed(brief.name)
+        for lid in dismissed:
+            found.pop(lid, None)
+        for prior in store.recent(brief.name, since=cutoff) + store.get_many(brief.name, bookmarked):
+            if prior.listing.id in dismissed or (prior.detail and prior.detail.is_sold):
+                continue
             # Only what is still in play: a listing already ruled out by a hard
             # fact (FWD, rebuilt title) has nothing to track.
-            in_play = not prior.excluded or prior.facts.get("near_miss") or prior.listing.id in starred_ids
+            in_play = not prior.excluded or prior.facts.get("near_miss") or prior.listing.id in bookmarked
             if prior.listing.id not in found and in_play:
                 found[prior.listing.id] = prior.listing.model_copy(update={"query": "(tracked)"})
                 carried.add(prior.listing.id)
@@ -333,6 +349,9 @@ async def run(
         starred = [c for c in cands if c.listing.id in favs and c.listing.id not in in_pool and c.detail]
         judging = judge and settings.judge != "none"
         keys: dict[str, str] = {}
+        # A listing waiting for a new score keeps its last one on the page
+        # (marked re-scoring) instead of vanishing into "not scored yet".
+        fallback: dict[str, tuple[Any, str]] = {}
 
         # Stage 1: every candidate gets a quick screen (or keeps one nothing has invalidated).
         screen_q: list[Candidate] = []
@@ -345,11 +364,14 @@ async def run(
                 if (prior and prior[0].evaluation and not refresh
                         and prior[1] == f"{prior[0].evaluation.depth}:{key}"):
                     c.evaluation = prior[0].evaluation
-                elif judging and (budget is None or queued < budget or c.listing.id in favs):
+                    continue
+                if prior and prior[0].evaluation and prior[1]:
+                    fallback[c.listing.id] = (prior[0].evaluation, prior[1])
+                if judging and (budget is None or queued < budget or c.listing.id in favs):
                     screen_q.append(c)
                     queued += 1
                 elif judging:
-                    result.unscored += 1  # over budget: shown unscored, scored next run
+                    result.unscored += 1  # over budget: scored next run (keeps its last score meanwhile)
 
         sem = asyncio.Semaphore(settings.judge_concurrency)
 
@@ -371,6 +393,11 @@ async def run(
                 result.judge_failures += 1
 
         await asyncio.gather(*(one(c, "screen") for c in screen_q))
+        stale_keys: dict[str, str] = {}
+        for c in survivors + near + starred:
+            if c.evaluation is None and c.listing.id in fallback:
+                c.evaluation, stale_keys[c.listing.id] = fallback[c.listing.id]
+                c.facts["rescore_pending"] = True
 
         # Stage 2: the full read, only for contenders and starred listings.
         full_q: list[Candidate] = []
@@ -391,9 +418,13 @@ async def run(
         for c in cands:
             k = None
             if c.evaluation:
-                k = f"{c.evaluation.depth}:{keys.get(c.listing.id) or _eval_key(brief, c)}"
+                # A kept-over score keeps its old key, so the next run re-scores it.
+                k = stale_keys.get(c.listing.id) or f"{c.evaluation.depth}:{keys.get(c.listing.id) or _eval_key(brief, c)}"
             if store.save(brief.name, c, k):
                 result.new += 1
+            eff = effective(c, brief) if c.evaluation else None
+            if not c.excluded and eff and eff.verdict in ("top", "consider"):
+                store.keep(brief.name, c.listing.id)
         result.candidates = cands
         store.record_run(brief.name, result.summary())
         return result
