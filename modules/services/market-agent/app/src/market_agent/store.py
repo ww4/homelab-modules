@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE TABLE IF NOT EXISTS favorites (
     brief TEXT NOT NULL, id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (brief, id)
 );
+-- Listings that were ever worth a look: tracked until sold or gone (a bookmark).
+CREATE TABLE IF NOT EXISTS kept (
+    brief TEXT NOT NULL, id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (brief, id)
+);
+-- "Not interested": hidden for good, never re-read or re-judged.
+CREATE TABLE IF NOT EXISTS dismissed (
+    brief TEXT NOT NULL, id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (brief, id)
+);
 CREATE TABLE IF NOT EXISTS notified (
     brief TEXT NOT NULL, id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (brief, id)
 );
@@ -116,6 +124,30 @@ class Store:
     def all(self, brief: str, include_gone: bool = False) -> list[Candidate]:
         q = "SELECT candidate FROM listings WHERE brief = ?" + ("" if include_gone else " AND status != 'gone'")
         return [Candidate.model_validate_json(r["candidate"]) for r in self.db.execute(q, (brief,))]
+
+    def gone_ids(self, brief: str) -> set[str]:
+        return {r["id"] for r in self.db.execute("SELECT id FROM listings WHERE brief = ? AND status = 'gone'", (brief,))}
+
+    def last_seen(self, brief: str) -> dict[str, int]:
+        return {r["id"]: r["last_seen"] for r in self.db.execute("SELECT id, last_seen FROM listings WHERE brief = ?", (brief,))}
+
+    # -- kept (ever worth a look) and dismissed ---------------------------------------
+    def keep(self, brief: str, listing_id: str) -> None:
+        self.db.execute("INSERT OR IGNORE INTO kept VALUES (?, ?, ?)", (brief, listing_id, int(time.time())))
+        self.db.commit()
+
+    def kept(self, brief: str) -> set[str]:
+        return {r["id"] for r in self.db.execute("SELECT id FROM kept WHERE brief = ?", (brief,))}
+
+    def set_dismissed(self, brief: str, listing_id: str, dismissed: bool) -> None:
+        if dismissed:
+            self.db.execute("INSERT OR IGNORE INTO dismissed VALUES (?, ?, ?)", (brief, listing_id, int(time.time())))
+        else:
+            self.db.execute("DELETE FROM dismissed WHERE brief = ? AND id = ?", (brief, listing_id))
+        self.db.commit()
+
+    def dismissed(self, brief: str) -> set[str]:
+        return {r["id"] for r in self.db.execute("SELECT id FROM dismissed WHERE brief = ?", (brief,))}
 
     # -- favorites ----------------------------------------------------------------
     def favorites(self, brief: str) -> set[str]:

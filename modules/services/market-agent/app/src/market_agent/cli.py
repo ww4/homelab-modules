@@ -177,9 +177,11 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
         drops: list[str] = []
         for b in loaded:
             tops = []
+            dismissed = store.dismissed(b.name)
             for c in store.all(b.name):
                 eff = effective(c, b)
-                if not c.excluded and not awaiting_read(c) and eff and eff.verdict == "top":
+                if (not c.excluded and not awaiting_read(c) and eff and eff.verdict == "top"
+                        and c.listing.id not in dismissed):
                     tops.append((c, eff))
             fresh = store.unnotified(b.name, [c.listing.id for c, _ in tops])
             for c, eff in tops:

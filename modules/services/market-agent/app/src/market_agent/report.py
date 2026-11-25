@@ -46,6 +46,9 @@ class Section:
     first_seen: dict[str, int] = field(default_factory=dict)
     pending: bool = False  # a run was requested from the page and hasn't happened yet
     awaiting: int = 0  # stored listings whose page hasn't been read properly yet (not shown)
+    gone: list[Candidate] = field(default_factory=list)  # once worth a look, now sold or removed
+    dismissed: list[Candidate] = field(default_factory=list)  # "not interested"
+    last_seen: dict[str, int] = field(default_factory=dict)
 
 
 GALLERY_WIDTH = 800
@@ -225,6 +228,11 @@ padding:3px 9px;border-radius:6px;background:rgba(15,20,23,.82);color:#fff}
 background:rgba(15,20,23,.6);color:#fff;font-size:19px;line-height:34px;text-align:center;padding:0}
 .star[aria-pressed="true"]{color:var(--star);background:rgba(15,20,23,.82)}
 .star:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.dismiss{position:absolute;top:10px;right:80px;z-index:3;width:30px;height:30px;border-radius:50%;border:0;cursor:pointer;
+background:rgba(15,20,23,.6);color:#fff;font-size:14px;line-height:30px;text-align:center;padding:0;opacity:.75}
+.dismiss:hover,.dismiss:focus-visible{opacity:1}.dismiss:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.undismiss{font:inherit;font-size:12px;margin-left:6px;cursor:pointer;background:var(--surface);color:var(--fg);
+border:1px solid var(--line);border-radius:6px;padding:1px 8px}
 .body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:7px;flex:1}
 .title{font-weight:650;font-size:15px;line-height:1.3;color:var(--fg);text-decoration:none}
 .title:hover{color:var(--accent);text-decoration:underline}
@@ -453,6 +461,9 @@ def _status_chips(c: Candidate, eff: Effective | None) -> str:
         chips.append(f'<span class="chip sold">{"sold" if c.detail.is_sold else "pending"}</span>')
     if c.facts.get("near_miss"):
         chips.append(f'<span class="chip near">{escape(c.facts["near_miss"])}</span>')
+    if c.facts.get("rescore_pending"):
+        chips.append('<span class="chip" title="the facts changed; this is the last score until the next run '
+                     'scores it again">re-scoring</span>')
     hints = c.facts.get("manual_hints") if not c.facts.get("transmission") else None
     for ch in c.checks:
         if ch.status == "unknown" and not (hints and ch.name == "transmission"):
@@ -482,7 +493,9 @@ def card(c: Candidate, photos: "Photos | Path", brief: Brief, *, starred: bool, 
     if interactive:
         star = (f'<button class="star" type="button" aria-pressed="{str(starred).lower()}" '
                 f'aria-label="Star this listing" data-brief="{escape(brief.name)}" data-id="{escape(c.listing.id)}">'
-                f'{"★" if starred else "☆"}</button>')
+                f'{"★" if starred else "☆"}</button>'
+                f'<button class="dismiss" type="button" aria-label="Not interested: hide this listing" '
+                f'title="Not interested" data-brief="{escape(brief.name)}" data-id="{escape(c.listing.id)}">✕</button>')
     words = ""
     if e:
         words = f'<div class="headline">{escape(e.headline)}</div>'
@@ -819,6 +832,21 @@ def section(s: Section, photos: "Photos", *, interactive: bool) -> str:
     out = [c for c in ranked if c.excluded and not c.facts.get("near_miss") and c.detail and c.listing.id not in s.favorites]
     more += _collapsed(f"{len(out)} ruled out by the limits",
                        [_line(c, "; ".join(ch.detail for ch in c.failed_checks)) for c in out])
+
+    def when(c: Candidate) -> str:
+        ts = s.last_seen.get(c.listing.id)
+        return time.strftime("%b %-d", time.localtime(ts)) if ts else "?"
+
+    gone_rows = sorted(s.gone, key=lambda c: -(s.last_seen.get(c.listing.id) or 0))
+    more += _collapsed(f"{len(gone_rows)} you'd have wanted, now sold or removed",
+                       [_line(c, f"{'sold' if c.detail and c.detail.is_sold else 'removed'} (last seen {when(c)})"
+                              + (f"; was {c.evaluation.score:.1f}" if c.evaluation else ""))
+                        for c in gone_rows])
+    if interactive and s.dismissed:
+        more += _collapsed(f"{len(s.dismissed)} marked not interested",
+                           [_line(c, "hidden").replace("</li>", f' <button type="button" class="undismiss" '
+                                  f'data-brief="{escape(b.name)}" data-id="{escape(c.listing.id)}">Show again</button></li>')
+                            for c in s.dismissed])
 
     models = sorted({make_model(c) for _, items, _ in groups for c in items})
     toolbar = (
@@ -1166,6 +1194,32 @@ SCRIPT = """
     }
   });
 
+  // "Not interested": hidden for good (the server stops re-reading it). Undo from the list at the bottom.
+  document.addEventListener("click", async e => {
+    const b = e.target.closest(".dismiss, .undismiss");
+    if (!b) return;
+    const on = b.classList.contains("dismiss");
+    b.disabled = true;
+    try {
+      const r = await fetch("api/dismissed", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({brief: b.dataset.brief, id: b.dataset.id, dismissed: on})});
+      if (!r.ok) throw new Error(await r.text());
+      if (on) {
+        b.closest("section.brief").querySelectorAll(`.card[data-id="${b.dataset.id}"]`).forEach(c => c.remove());
+        const t = document.querySelector(".toast");
+        if (t) { t.textContent = "Hidden. \"Marked not interested\" at the bottom brings it back.";
+                 t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 6000); }
+      } else {
+        b.closest("li").remove();
+        setTimeout(() => location.reload(), 1500);  // the server re-renders with the card back
+      }
+    } catch (err) {
+      b.disabled = false;
+      const t = document.querySelector(".toast");
+      if (t) { t.textContent = "Couldn't save that: " + err.message; t.hidden = false; }
+    }
+  });
+
   // Stars: shared on the server. A card starred here is copied into Starred at once;
   // the server re-renders the page so a reload agrees.
   async function setStar(btn, on) {
@@ -1246,10 +1300,19 @@ def sections_from_store(store: Any, briefs_list: list[Brief], requests_dir: Path
     pending = {p.name for p in requests_dir.iterdir()} if requests_dir and requests_dir.is_dir() else set()
     out = []
     for b in briefs_list:
-        rows = store.all(b.name)
-        shown = [c for c in rows if not awaiting_read(c)]
-        out.append(Section(b, shown, store.last_run(b.name), store.favorites(b.name), store.first_seen(b.name),
-                           pending=b.name in pending, awaiting=len(rows) - len(shown)))
+        rows = store.all(b.name, include_gone=True)
+        gone_ids, kept, dismissed = store.gone_ids(b.name), store.kept(b.name), store.dismissed(b.name)
+        favs = store.favorites(b.name)
+        bookmarked = kept | favs
+        sold_or_gone = lambda c: c.listing.id in gone_ids or bool(c.detail and c.detail.is_sold)  # noqa: E731
+        gone = [c for c in rows if c.listing.id in bookmarked and sold_or_gone(c)]
+        live = [c for c in rows if c.listing.id not in gone_ids and c not in gone]
+        shown = [c for c in live if not awaiting_read(c) and c.listing.id not in dismissed]
+        out.append(Section(b, shown, store.last_run(b.name), favs, store.first_seen(b.name),
+                           pending=b.name in pending,
+                           awaiting=sum(1 for c in live if awaiting_read(c) and c.listing.id not in dismissed),
+                           gone=gone, dismissed=[c for c in live if c.listing.id in dismissed],
+                           last_seen=store.last_seen(b.name)))
     return out
 
 

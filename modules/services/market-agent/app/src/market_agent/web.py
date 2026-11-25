@@ -6,6 +6,7 @@ serves exactly two things under /api/:
 
   GET  /api/favorites  -> {"<brief>": ["<listing id>", ...]}
   POST /api/favorites  <- {"brief": "...", "id": "...", "starred": true|false}
+  POST /api/dismissed  <- {"brief": "...", "id": "...", "dismissed": true|false}  ("not interested")
 
 and watches (briefs), for the page's "+ New" and Edit form:
 
@@ -152,18 +153,20 @@ def make_handler(settings: Settings, rerender: _Rerender) -> type[BaseHTTPReques
             if parts[:2] == ["api", "briefs"]:
                 self._post_brief(parts[2:])
                 return
-            if self.path.split("?")[0] != "/api/favorites":
+            route = self.path.split("?")[0]
+            if route not in ("/api/favorites", "/api/dismissed"):
                 self._send(404, {"error": "not found"})
                 return
+            field_name = "starred" if route == "/api/favorites" else "dismissed"
             length = int(self.headers.get("Content-Length") or 0)
             if length <= 0 or length > MAX_BODY:
                 self._send(400, {"error": "body required, at most 4 KB"})
                 return
             try:
                 body = json.loads(self.rfile.read(length))
-                brief, lid, starred = body["brief"], str(body["id"]), bool(body["starred"])
+                brief, lid, on = body["brief"], str(body["id"]), bool(body[field_name])
             except (ValueError, KeyError, TypeError):
-                self._send(400, {"error": "expected {brief, id, starred}"})
+                self._send(400, {"error": f"expected {{brief, id, {field_name}}}"})
                 return
             if not BRIEF_NAME.match(str(brief)) or not (settings.briefs_dir / f"{brief}.toml").is_file():
                 self._send(400, {"error": f"no brief named {brief!r}"})
@@ -173,11 +176,14 @@ def make_handler(settings: Settings, rerender: _Rerender) -> type[BaseHTTPReques
                 return
             store = Store(settings.db_path)
             try:
-                store.set_favorite(brief, lid, starred)
+                if field_name == "starred":
+                    store.set_favorite(brief, lid, on)
+                else:
+                    store.set_dismissed(brief, lid, on)
             finally:
                 store.close()
             rerender.poke()
-            self._send(200, {"ok": True, "brief": brief, "id": lid, "starred": starred})
+            self._send(200, {"ok": True, "brief": brief, "id": lid, field_name: on})
 
         def _post_brief(self, rest: list[str]) -> None:
             try:
