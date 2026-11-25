@@ -1207,7 +1207,7 @@ SCRIPT = """
       if (on) {
         b.closest("section.brief").querySelectorAll(`.card[data-id="${b.dataset.id}"]`).forEach(c => c.remove());
         const t = document.querySelector(".toast");
-        if (t) { t.textContent = "Hidden. \"Marked not interested\" at the bottom brings it back.";
+        if (t) { t.textContent = 'Hidden. "Marked not interested" at the bottom brings it back.';
                  t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 6000); }
       } else {
         b.closest("li").remove();

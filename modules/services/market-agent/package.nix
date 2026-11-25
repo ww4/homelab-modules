@@ -3,7 +3,7 @@
 # and built here. It holds no secrets: configuration is environment variables
 # (see app/.env.example and app/src/market_agent/config.py), which
 # ./default.nix sets from homelab.marketAgent.*.
-{ lib, python3Packages }:
+{ lib, python3Packages, nodejs }:
 
 python3Packages.buildPythonApplication {
   pname = "market-agent";
@@ -21,7 +21,9 @@ python3Packages.buildPythonApplication {
     anthropic # only used when homelab.marketAgent.judge = "api"
   ];
 
-  nativeCheckInputs = [ python3Packages.pytestCheckHook ];
+  # nodejs: the tests syntax-check the watch page's script (one bad quote
+  # once disabled every button on the page while all the Python tests passed).
+  nativeCheckInputs = [ python3Packages.pytestCheckHook nodejs ];
 
   # The parsing and checking tests carry the listings that once slipped
   # through (a labelled "Mileage: 193,000", a car excluded on an invented
