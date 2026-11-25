@@ -176,6 +176,31 @@ background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-si
 @media (max-width:600px){.wf-body,.wf-body fieldset{grid-template-columns:1fr}}
 .brief{display:flex;flex-direction:column;gap:18px;scroll-margin-top:16px}
 .brief-head{display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.brief-panel{display:contents}.panel-top,.panel-open,.watch-ctl.mob,.panel-backdrop{display:none}
+.brief-panel>.brief-head{margin-top:-14px}
+@media (max-width:640px){
+.wrap{padding-block:14px 48px;gap:22px}header.page{gap:4px}.meta{font-size:10.5px}h1{font-size:21px}
+.picker{flex-wrap:nowrap;overflow-x:auto;margin:2px -16px 0;padding:2px 16px;scrollbar-width:none}
+.picker::-webkit-scrollbar{display:none}.picker button{flex:none;font-size:13px;padding:5px 11px}
+.brief{gap:12px}h2{font-size:19px}.brief-title{flex-wrap:nowrap;gap:8px}.brief-title h2{flex:1;min-width:0}
+.watch-ctl.desk{display:none}
+.panel-open{display:inline-flex;flex:none;align-items:center;font:inherit;font-size:13px;color:var(--fg);
+background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+.brief-panel{display:flex;flex-direction:column;gap:14px;position:fixed;inset:0 0 0 auto;width:min(88vw,380px);
+z-index:40;background:var(--bg);border-left:1px solid var(--line);box-shadow:-12px 0 32px rgba(0,0,0,.18);
+padding:14px 16px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto;overscroll-behavior:contain;
+transform:translateX(105%);visibility:hidden;transition:transform .22s ease,visibility 0s linear .22s}
+.brief-panel.is-open{transform:none;visibility:visible;transition:transform .22s ease}
+.panel-top{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:17px}
+.panel-top strong{flex:1}.panel-close{font-size:22px;line-height:1;background:none;border:0;color:var(--muted);
+cursor:pointer;padding:4px 8px}
+.watch-ctl.mob{display:flex;margin-left:0}.brief-panel>.brief-head{border-bottom:0;padding-bottom:0;gap:8px;margin-top:0}
+.brief-panel .toolbar{flex-direction:column;align-items:stretch;gap:10px}
+.brief-panel .toolbar label{justify-content:space-between}.brief-panel .toolbar select{flex:1;max-width:70%}
+.panel-backdrop{display:block;position:fixed;inset:0;z-index:39;background:rgba(0,0,0,.35);opacity:0;
+pointer-events:none;transition:opacity .22s}.panel-backdrop.is-open{opacity:1;pointer-events:auto}
+.group.empty{display:none}}
+@media (max-width:640px) and (prefers-reduced-motion:reduce){.brief-panel,.panel-backdrop{transition:none}}
 .limits{font-size:13px;color:var(--muted);max-width:80ch}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:13px;color:var(--muted)}
 .toolbar label{display:flex;gap:6px;align-items:center}
@@ -760,7 +785,7 @@ def section(s: Section, photos: "Photos", *, interactive: bool) -> str:
         rest = items[MAX_CARDS:] if cap else []
         empty = ('<p class="more" data-empty>Star a listing to keep it here. Starred listings are tracked until they '
                  'sell and always get the full evaluation.</p>' if name == "Starred" and not items else "")
-        body += (f'<div class="group" data-group="{escape(name)}"><h3>{name} · <span class="count">{len(items)}</span></h3>'
+        body += (f'<div class="group{" empty" if not items else ""}" data-group="{escape(name)}"><h3>{name} · <span class="count">{len(items)}</span></h3>'
                  f'{empty}<div class="grid">{cards(shown)}</div>'
                  + _collapsed(f"{len(rest)} more", [_line(c, f"{eff[c.listing.id].score:.1f}: {c.evaluation.headline}")
                                                    for c in rest if c.evaluation])
@@ -790,7 +815,7 @@ def section(s: Section, photos: "Photos", *, interactive: bool) -> str:
     )
     legend = "" if b.kind != "vehicle" else ('<div class="legend"><span class="chip recall">recall</span><span class="chip bulletin">service bulletin</span>'
               '<span class="chip pattern">reported pattern?</span><span>tags apply to every listing of that model; '
-              'hover for the question to ask</span></div>')
+              'tap or hover for the question to ask</span></div>')
     controls = ""
     if interactive:
         controls = (f'<div class="watch-ctl"><button type="button" data-edit="{escape(b.name)}">Edit</button>'
@@ -798,16 +823,51 @@ def section(s: Section, photos: "Photos", *, interactive: bool) -> str:
                     f'{"Resume" if b.paused else "Pause"}</button>'
                     f'<button type="button" class="danger" data-delete="{escape(b.name)}">Delete</button></div>')
     paused = '<span class="chip near">paused: kept, not searched</span>' if b.paused else ""
+    # Phones: everything but the title goes in a drawer behind the ☰ button, so
+    # listings start above the fold. Desktop: the drawer is laid out inline.
+    pid = f"panel-{escape(b.name)}"
     return (
-        f'<section class="brief" id="{escape(b.name)}" data-brief="{escape(b.name)}"><div class="brief-head">'
-        f'<div class="brief-title"><h2>{escape(b.title)}</h2>{paused}{controls}</div>'
+        f'<section class="brief" id="{escape(b.name)}" data-brief="{escape(b.name)}">'
+        f'<div class="brief-title"><h2>{escape(b.title)}</h2>{paused}'
+        f'{controls.replace("watch-ctl", "watch-ctl desk", 1)}'
+        f'<button type="button" class="panel-open" aria-controls="{pid}" aria-expanded="false">☰ Settings</button></div>'
+        f'<div class="brief-panel" id="{pid}" role="region" aria-label="{escape(b.title)} settings">'
+        f'<div class="panel-top"><strong>{escape(b.title)}</strong>'
+        f'<button type="button" class="panel-close" aria-label="Close settings">×</button></div>'
+        f'<div class="brief-head">{controls.replace("watch-ctl", "watch-ctl mob", 1)}'
         f'<div class="limits">{_limits(b)}</div>{_requirements(b)}{_health(s.last_run, s.pending, s.awaiting)}</div>'
-        f'{toolbar}{legend}{body or "<div class=more>Nothing matches yet.</div>"}{more}</section>'
+        f'{toolbar}{legend}</div>'
+        f'{body or "<div class=more>Nothing matches yet.</div>"}{more}</section>'
     )
 
 
 SCRIPT = """
 (() => {
+  // Phone settings drawer (one per watch).
+  const backdrop = document.querySelector(".panel-backdrop");
+  let openPanel = null, opener = null;
+  function closePanel() {
+    if (!openPanel) return;
+    openPanel.classList.remove("is-open"); backdrop?.classList.remove("is-open");
+    opener?.setAttribute("aria-expanded", "false"); opener?.focus();
+    openPanel = opener = null;
+  }
+  document.addEventListener("click", e => {
+    const o = e.target.closest(".panel-open");
+    if (o) {
+      closePanel();
+      openPanel = document.getElementById(o.getAttribute("aria-controls")); opener = o;
+      openPanel.classList.add("is-open"); backdrop?.classList.add("is-open"); o.setAttribute("aria-expanded", "true");
+      openPanel.querySelector(".panel-close")?.focus();
+    } else if (e.target.closest(".panel-close") || e.target === backdrop
+               || e.target.closest(".brief-panel [data-edit], .brief-panel [data-mark-seen]")) {
+      closePanel();
+    }
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closePanel(); });
+  // Picking a sort or a model closes the drawer so the result is visible.
+  document.addEventListener("change", e => { if (e.target.closest(".brief-panel.is-open [data-sort], .brief-panel.is-open [data-filter]")) closePanel(); });
+
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -1159,6 +1219,7 @@ reported pattern, not a verified one. Seller claims are the sellers'. Get anythi
 before buying.</footer>
 </div>
 {WATCH_FORM if interactive else ""}
+<div class="panel-backdrop"></div>
 <dialog class="recalls" aria-labelledby="rc-title"><div class="rc-top"><h3 id="rc-title"></h3>
 <button type="button" class="rc-close" aria-label="Close">×</button></div><div class="rc-body"></div></dialog>
 <script>{SCRIPT}</script>"""
