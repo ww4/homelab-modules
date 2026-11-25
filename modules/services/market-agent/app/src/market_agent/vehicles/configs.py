@@ -201,12 +201,18 @@ def apply(facts: dict[str, Any], text: str) -> bool:
     qual = f" ({', '.join(notes)})" if notes else ""
     classes = {c.trans for c in cs}
     autos = [c for c in cs if c.trans != "manual"]
+    facts["manual_offered"] = "manual" in classes
+    if facts.get("transmission") == "manual" and facts.get("transmission_source") == "listing text" \
+            and "manual" not in classes:
+        # The text said "manual" but no manual was ever offered: the text loses.
+        facts["transmission_note"] = "the listing text reads as manual, but none was offered"
+        facts["transmission"] = None
     if not facts.get("transmission"):
         if "manual" not in classes:
-            facts["transmission"] = "automatic"
+            facts["transmission"], facts["transmission_source"] = "automatic", "EPA model-year list"
             facts["transmission_evidence"] = f"no manual was offered on a {name}{qual}"
         elif not autos:
-            facts["transmission"] = "manual"
+            facts["transmission"], facts["transmission_source"] = "manual", "EPA model-year list"
             facts["transmission_evidence"] = f"every {name}{qual} was a manual"
     if autos:
         kinds = {c.trans for c in autos}

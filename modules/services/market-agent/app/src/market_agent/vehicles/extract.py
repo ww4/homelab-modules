@@ -116,6 +116,15 @@ def vin_from(text: str, field: str | None) -> str | None:
     return None
 
 
+# A bare "manual" in a TITLE is the transmission ("2005 Tacoma 4x4 manual").
+# In a description it is as often "manual handbrake", "owner's manual",
+# "manual seats" or "manual shift mode", so there it needs transmission words.
+MANUAL_IN_TITLE = re.compile(r"\b(manual|stick(\s*shift)?|\d[\s-]*(speed|spd)\s*manual)\b", re.I)
+MANUAL_IN_TEXT = re.compile(
+    r"\b(manual\s+(transmission|trans|tranny|gearbox)|\d[\s-]*(speed|spd)\s+manual|stick\s*shift"
+    r"|standard\s+transmission|(three|3)\s+pedals)\b", re.I)
+
+
 def vehicle_facts(listing: Listing, detail: Detail | None) -> dict[str, Any]:
     d = detail
     v = d.vehicle if d else {}
@@ -150,11 +159,13 @@ def vehicle_facts(listing: Listing, detail: Detail | None) -> dict[str, Any]:
         facts["title_status"], facts["title_source"] = None, None
 
     facts["transmission"] = (v.get("vehicle_transmission_type") or "").lower() or None
+    facts["transmission_source"] = "Facebook field" if facts["transmission"] else None
     if not facts["transmission"]:
-        if re.search(r"\b(manual|stick ?shift|\d[\s-]*speed manual)\b", text, re.I):
-            facts["transmission"] = "manual"
+        desc = d.description if d else ""
+        if MANUAL_IN_TITLE.search(title) or MANUAL_IN_TEXT.search(desc):
+            facts["transmission"], facts["transmission_source"] = "manual", "listing text"
         elif re.search(r"\bautomatic\b", text, re.I):
-            facts["transmission"] = "automatic"
+            facts["transmission"], facts["transmission_source"] = "automatic", "listing text"
     if re.search(r"\bcvt\b", text, re.I):
         facts["transmission_note"] = "listing mentions CVT"
 

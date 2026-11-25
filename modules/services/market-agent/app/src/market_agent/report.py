@@ -531,6 +531,21 @@ def _strip(c: Candidate, photos: "Photos") -> str:
     return '<div class="strip">' + "".join(shots) + "</div>"
 
 
+def _transmission_row(f: dict[str, Any]) -> list[tuple[str, str]]:
+    """The known transmission (with where it was seen), else the model year's options."""
+    known, spec = f.get("transmission"), str(f.get("transmission_spec") or "")
+    options = [o for o in re.sub(r"\s*\(.*?\)", "", spec).split(" or ") if o.strip()]
+    if known in ("automatic", "manual"):
+        match = [o for o in options if ("manual" in o) == (known == "manual")]
+        text = " or ".join(match) if match else known
+        if f.get("transmission_source") == "photos":
+            text += f" (seen in photo {f['transmission_photo']})" if f.get("transmission_photo") else " (from photos)"
+        return [("Transmission", text[:1].upper() + text[1:])]
+    if options:
+        return [("Transmission", " or ".join(options) + (" — not stated" if len(options) > 1 else ""))]
+    return []
+
+
 def _spec(c: Candidate, eff: Effective | None) -> str:
     """The facts a buyer compares across cars, in one strip."""
     f, d, e = c.facts, c.detail, c.evaluation
@@ -545,9 +560,7 @@ def _spec(c: Candidate, eff: Effective | None) -> str:
     elif f.get("drivetrain_options") and " or " in str(f["drivetrain_options"]):
         # What this model year came as, so it's clear why the seller is being asked.
         rows.append(("Drive", f"{f['drivetrain_options']} — not stated"))
-    trans = f.get("transmission_spec") or f.get("transmission")
-    if trans:
-        rows.append(("Transmission", re.sub(r"\s*\(.*?\)", "", str(trans)).strip()))
+    rows.extend(_transmission_row(f))
     if rated := f.get("rated_range_miles"):
         lo, hi = rated
         rows.append(("Rated range", f"{lo}{'' if lo == hi else f'–{hi}'} mi new"))
