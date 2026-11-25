@@ -176,6 +176,8 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
         news: list[str] = []
         drops: list[str] = []
         for b in loaded:
+            if b.for_others:  # someone else's watch: nothing to tell the owner
+                continue
             tops = []
             dismissed = store.dismissed(b.name)
             for c in store.all(b.name):
