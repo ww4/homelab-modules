@@ -18,7 +18,7 @@ from . import judge as judge_mod
 from .brief import Brief
 from .config import Settings
 from .facebook.client import ListingGone, Marketplace
-from .facebook.transport import RateLimited, Transport
+from .facebook.transport import Pace, RateLimited, Transport
 from .geo import driving_miles, miles_between
 from .models import Candidate, Coordinates, Detail, Listing, Signal, readable
 from .policy import effective
@@ -119,10 +119,15 @@ async def run(
     judge: bool = True,
     refresh: bool = False,
     progress: Progress = lambda _msg: None,
+    pace: Pace | None = None,
 ) -> RunResult:
+    """pace: shared by the watches of one job, so a slowdown carries over."""
     settings.ensure_dirs()
     store = Store(settings.db_path)
-    transport = Transport(proxy=settings.proxy, min_interval=settings.fb_interval)
+    via = "proxy" if settings.proxy else "direct"
+    transport = Transport(
+        proxy=settings.proxy, pace=pace or Pace(interval=settings.fb_interval, job=f"run-{brief.name}-{int(time.time())}"),
+        on_request=lambda rec: store.log_request(brief.name, via, rec))
     mp = Marketplace(transport)
     http = httpx.AsyncClient(follow_redirects=True)
     result = RunResult(brief=brief.name)

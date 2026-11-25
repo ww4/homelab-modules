@@ -118,3 +118,53 @@ def test_watch_for_others_is_kept_but_not_notified(tmp_path: Path, monkeypatch):
     assert cli.cmd_watch(s, args) == 0
     assert ran == ["winter"] and sent == []  # still searched; nothing sent
     assert "CR-V" in (tmp_path / "www/index.html").read_text()
+
+
+def test_watch_shares_one_pace_and_hands_it_to_the_next_job(tmp_path: Path, monkeypatch):
+    s = Settings(home=tmp_path, judge="none")
+    s.ensure_dirs()
+    from market_agent import brief as briefs
+
+    briefs.new_brief("a", s.briefs_dir, "winter-commuter")
+    briefs.new_brief("b", s.briefs_dir, "winter-commuter")
+    paces = []
+
+    async def fake_run(settings, brief, pace=None, **_kw):
+        paces.append(pace)
+        pace.seq += 10
+        if brief.name == "a":  # the first watch hits the wall
+            pace.walls, pace.interval = 1, pace.interval * 2
+        return RunResult(brief=brief.name, searches=[{"query": "q", "ok": True, "count": 1, "source": "graphql", "error": None}])
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    monkeypatch.setattr(cli, "_notify", lambda *a: None)
+    args = argparse.Namespace(page=str(tmp_path / "www/index.html"), page_url=None, notify_cmd=None, title="t")
+    assert cli.cmd_watch(s, args) == 0
+    assert paces[0] is paces[1]  # watch b ran at the pace a slowed to
+    paces.clear()
+    assert cli.cmd_watch(s, args) == 0
+    assert paces[0].start_interval == 3.0  # the next job started slow too
+
+
+def test_catch_up_requests_only_watches_left_behind(tmp_path: Path):
+    s = Settings(home=tmp_path, judge="none")
+    s.ensure_dirs()
+    from market_agent import brief as briefs
+
+    for n in ("a", "b", "c"):
+        briefs.new_brief(n, s.briefs_dir, "winter-commuter")
+    c = briefs.load(s.briefs_dir / "c.toml")
+    briefs.save(c.model_copy(update={"paused": True}), s.briefs_dir)
+    st = Store(s.db_path)
+    st.record_run("a", {"rate_limited": 12, "unread": 0})
+    st.record_run("b", {"rate_limited": 0, "unread": 0})
+    st.record_run("c", {"rate_limited": 3})  # paused: left alone
+    st.close()
+    assert cli.cmd_catch_up(s, argparse.Namespace()) == 0
+    assert sorted(p.name for p in (tmp_path / "requests").iterdir()) == ["a"]
+    (tmp_path / "requests" / "a").unlink()
+    st = Store(s.db_path)
+    st.record_run("a", {"rate_limited": 0, "unread": 0})  # caught up
+    st.close()
+    cli.cmd_catch_up(s, argparse.Namespace())
+    assert list((tmp_path / "requests").iterdir()) == []

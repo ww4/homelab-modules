@@ -46,6 +46,18 @@ CREATE TABLE IF NOT EXISTS notified (
 CREATE TABLE IF NOT EXISTS cache (
     key TEXT PRIMARY KEY, ts INTEGER NOT NULL, value TEXT NOT NULL
 );
+-- Every Facebook request: where the rate limit sits is read from this.
+--   job: one watch job (or probe session); seq: order within it
+--   via: direct | proxy; kind: search | search_page | photos | info
+--   outcome: ok | rate_limit | refusal | error
+--   interval: the pace's base interval then; gap: actual seconds since the
+--   previous request (jitter and pauses included); latency_ms; HTTP status
+CREATE TABLE IF NOT EXISTS fb_requests (
+    ts REAL NOT NULL, job TEXT NOT NULL, seq INTEGER, brief TEXT NOT NULL, via TEXT NOT NULL,
+    kind TEXT NOT NULL, outcome TEXT NOT NULL, interval REAL, gap REAL, latency_ms INTEGER,
+    status INTEGER, detail TEXT
+);
+CREATE INDEX IF NOT EXISTS fb_requests_ts ON fb_requests (ts);
 """
 
 
@@ -188,6 +200,19 @@ class Store:
         self.db.executemany("INSERT OR IGNORE INTO notified VALUES (?, ?, ?)", [(brief, i, now) for i in ids])
         self.db.commit()
 
+    # -- Facebook requests --------------------------------------------------------
+    def log_request(self, brief: str, via: str, rec: dict[str, Any]) -> None:
+        self.db.execute(
+            "INSERT INTO fb_requests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), rec.get("job") or "", rec.get("seq"), brief, via, rec.get("kind") or "",
+             rec.get("outcome") or "", rec.get("interval"), rec.get("gap"), rec.get("latency_ms"),
+             rec.get("status"), rec.get("detail") or ""))
+        self.db.commit()
+
+    def last_request_ts(self) -> float | None:
+        row = self.db.execute("SELECT max(ts) FROM fb_requests").fetchone()
+        return row[0] if row else None
+
     # -- runs -------------------------------------------------------------------
     def record_run(self, brief: str, summary: dict[str, Any]) -> None:
         self.db.execute("INSERT INTO runs VALUES (?, ?, ?)", (brief, int(time.time()), json.dumps(summary)))
@@ -195,6 +220,6 @@ class Store:
 
     def last_run(self, brief: str) -> dict[str, Any] | None:
         row = self.db.execute(
-            "SELECT ts, summary FROM runs WHERE brief = ? ORDER BY ts DESC LIMIT 1", (brief,)
+            "SELECT ts, summary FROM runs WHERE brief = ? ORDER BY ts DESC, rowid DESC LIMIT 1", (brief,)
         ).fetchone()
         return {"ts": row["ts"], **json.loads(row["summary"])} if row else None

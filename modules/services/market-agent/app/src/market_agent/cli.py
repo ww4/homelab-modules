@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import brief as briefs
 from .config import Settings
+from . import pacing
 from .pipeline import run
 from .models import awaiting_read
 from .policy import effective, rank
@@ -124,6 +125,48 @@ def cmd_serve(s: Settings, a: argparse.Namespace) -> int:
     return 0
 
 
+def behind(s: Settings) -> list[str]:
+    """Watches whose last run left listings unread (rate-limited, or the read cap)."""
+    out = []
+    store = Store(s.db_path)
+    try:
+        for p in sorted(s.briefs_dir.glob("*.toml")):
+            try:
+                b = briefs.load(p)
+            except Exception:  # noqa: BLE001 - a broken brief is reported by watch
+                continue
+            last = store.last_run(b.name) or {}
+            if not b.paused and (last.get("rate_limited") or last.get("unread")):
+                out.append(b.name)
+    finally:
+        store.close()
+    return out
+
+
+def cmd_catch_up(s: Settings, a: argparse.Namespace) -> int:
+    """Between scheduled runs: ask for a run of each watch that is behind, if any.
+
+    The request files start the normal service (its path unit), which runs only
+    the requested watches; with nothing behind this does nothing at all.
+    """
+    names = behind(s)
+    reqdir = s.home / "requests"
+    reqdir.mkdir(parents=True, exist_ok=True)
+    for n in names:
+        (reqdir / n).touch()
+    print(f"catch-up: {', '.join(names)}" if names else "catch-up: nothing behind")
+    return 0
+
+
+def cmd_probe(s: Settings, a: argparse.Namespace) -> int:
+    """Measure Facebook's rate limit (see market_agent.probe)."""
+    from .probe import run_auto
+
+    res = run_auto(s, allow_direct=a.allow_direct, interval=a.interval, max_requests=a.max_requests)
+    print(json.dumps(res, indent=1))
+    return 1 if res.get("aborted") else 0
+
+
 def _notify(cmd: str | None, title: str, body: str) -> None:
     if not cmd:
         return
@@ -135,6 +178,13 @@ def _notify(cmd: str | None, title: str, body: str) -> None:
 
 def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
     """Run every brief, rebuild the page, notify about new top listings."""
+    from .probe import facebook_lock
+
+    with facebook_lock(s.home):  # waits out a probe session rather than racing it
+        return _watch(s, a)
+
+
+def _watch(s: Settings, a: argparse.Namespace) -> int:
     names = [p.stem for p in sorted(s.briefs_dir.glob("*.toml"))]
     if not names:
         return _err(f"no briefs in {s.briefs_dir}")
@@ -148,6 +198,9 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
     broken: list[str] = []
     failed: list[str] = []
     loaded = []
+    # One pace for the whole job, starting where the last job left off.
+    pstore = Store(s.db_path)
+    pace = pacing.load(pstore, s.fb_interval)
     for name in names:
         try:
             b = briefs.load(briefs.resolve(name, s.briefs_dir))
@@ -158,7 +211,7 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
         if b.paused or (only and b.name not in only):
             continue
         try:
-            result = asyncio.run(run(s, b))
+            result = asyncio.run(run(s, b, pace=pace))
         except Exception as e:  # noqa: BLE001
             failed.append(f"{b.title}: run failed ({e})")
             continue
@@ -170,6 +223,10 @@ def cmd_watch(s: Settings, a: argparse.Namespace) -> int:
         if sm["searches_failed"] or sm["judge_failures"]:
             failed.append(f"{b.title}: {len(sm['searches_failed'])} searches and {sm['judge_failures']} scores failed")
 
+    try:
+        pacing.save(pstore, pace, s.fb_interval)  # what the next job starts at
+    finally:
+        pstore.close()
     write_page(s, Path(a.page), a.title, [b.name for b in loaded], interactive=True)
     store = Store(s.db_path)
     try:
@@ -256,6 +313,11 @@ def main(argv: list[str] | None = None) -> int:
     ps.add_argument("--page", required=True, metavar="FILE.html", help="page to re-render after a star changes")
     ps.add_argument("--title", default="Marketplace Watch")
 
+    sub.add_parser("catch-up", help="request a run of every watch whose last run left listings unread")
+    pq = sub.add_parser("probe-limit", help="measure Facebook's rate limit: the next scheduled probe session")
+    pq.add_argument("--interval", type=float, help="seconds between requests (default: the next in the schedule)")
+    pq.add_argument("--max-requests", type=int, default=400)
+    pq.add_argument("--allow-direct", action="store_true", help="probe without a proxy (from this machine's own IP)")
     pw = sub.add_parser("watch", help="run every brief, rebuild the page, notify about new top listings")
     pw.add_argument("--page", required=True, metavar="FILE.html")
     pw.add_argument("--page-url", help="link included in notifications")
@@ -272,6 +334,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_run(s, a)
         if a.cmd == "page":
             return cmd_page(s, a)
+        if a.cmd == "catch-up":
+            return cmd_catch_up(s, a)
+        if a.cmd == "probe-limit":
+            return cmd_probe(s, a)
         if a.cmd == "watch":
             return cmd_watch(s, a)
         if a.cmd == "serve":

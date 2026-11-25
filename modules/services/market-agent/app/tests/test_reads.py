@@ -32,7 +32,7 @@ def _transport(handler) -> tr.Transport:
 
 
 def test_rate_limit_backs_off_then_succeeds_and_slows_the_run(monkeypatch):
-    monkeypatch.setattr(tr, "RATE_LIMIT_BACKOFF_S", (0.0, 0.0))
+    monkeypatch.setattr(tr, "RATE_LIMIT_WAITS_S", (0.0, 0.0))
     calls = []
 
     def handler(request):
@@ -40,15 +40,15 @@ def test_rate_limit_backs_off_then_succeeds_and_slows_the_run(monkeypatch):
         return httpx.Response(200, json=RATE_LIMITED if len(calls) == 1 else {"data": {"ok": True}})
 
     t = _transport(handler)
-    t._min_interval = 1.0
-    monkeypatch.setattr(tr.Transport, "_pace", lambda self: asyncio.sleep(0))
+    t.pace.interval = 1.0
+    monkeypatch.setattr(tr.Transport, "_pace", lambda self: asyncio.sleep(0, (1, None)))
     assert asyncio.run(t.graphql("doc", {}))["data"] == {"ok": True}
     assert len(calls) == 2
-    assert t._min_interval == 2.0  # slower for the rest of the run
+    assert t.pace.interval == 2.0  # slower for the rest of the run
 
 
 def test_persistent_rate_limit_raises_rate_limited_not_refusal(monkeypatch):
-    monkeypatch.setattr(tr, "RATE_LIMIT_BACKOFF_S", (0.0, 0.0))
+    monkeypatch.setattr(tr, "RATE_LIMIT_WAITS_S", (0.0, 0.0))
     t = _transport(lambda r: httpx.Response(200, json=RATE_LIMITED))
     with pytest.raises(tr.RateLimited):
         asyncio.run(t.graphql("doc", {}))
@@ -66,7 +66,7 @@ class _T:
     def __init__(self, info, photos):
         self.info, self.photos = info, photos
 
-    async def graphql(self, doc_id, variables):
+    async def graphql(self, doc_id, variables, kind=""):
         part = self.info if doc_id == fb_client.DETAIL_INFO_DOC_ID else self.photos
         if isinstance(part, Exception):
             raise part
