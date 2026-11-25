@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS notified (
 CREATE TABLE IF NOT EXISTS cache (
     key TEXT PRIMARY KEY, ts INTEGER NOT NULL, value TEXT NOT NULL
 );
+-- Every Facebook request: where the rate limit sits is read from this.
+CREATE TABLE IF NOT EXISTS fb_requests (
+    ts REAL NOT NULL, brief TEXT NOT NULL, via TEXT NOT NULL, kind TEXT NOT NULL,
+    outcome TEXT NOT NULL, interval REAL
+);
+CREATE INDEX IF NOT EXISTS fb_requests_ts ON fb_requests (ts);
 """
 
 
@@ -187,6 +193,16 @@ class Store:
         now = int(time.time())
         self.db.executemany("INSERT OR IGNORE INTO notified VALUES (?, ?, ?)", [(brief, i, now) for i in ids])
         self.db.commit()
+
+    # -- Facebook requests --------------------------------------------------------
+    def log_request(self, brief: str, via: str, kind: str, outcome: str, interval: float | None) -> None:
+        self.db.execute("INSERT INTO fb_requests VALUES (?, ?, ?, ?, ?, ?)",
+                        (time.time(), brief, via, kind, outcome, interval))
+        self.db.commit()
+
+    def last_request_ts(self) -> float | None:
+        row = self.db.execute("SELECT max(ts) FROM fb_requests").fetchone()
+        return row[0] if row else None
 
     # -- runs -------------------------------------------------------------------
     def record_run(self, brief: str, summary: dict[str, Any]) -> None:

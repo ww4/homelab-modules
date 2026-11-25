@@ -13,7 +13,8 @@ import json
 import logging
 import random
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
 import httpx
 
@@ -26,11 +27,29 @@ PAGE_ATTEMPTS = 2
 ATTEMPT_TIMEOUT_S = 8.0
 TOTAL_BUDGET_S = 15.0
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
-# Facebook rate-limits with HTTP 200 + a data-less GraphQL error. Back off for
-# real (seconds, not the sub-second retry above), then slow the whole run down.
-RATE_LIMIT_BACKOFF_S = (20.0, 60.0)
+# Facebook rate-limits with HTTP 200 + a data-less GraphQL error. On the wall,
+# retry the one request after growing waits (a block has cleared within ~7 min,
+# 2026-11-25), and slow every later request down. The waits come out of one
+# budget per job (Pace), so a wall can't stall each watch in turn.
+RATE_LIMIT_WAITS_S = (60.0, 120.0, 240.0, 480.0, 960.0)
 RATE_LIMIT_SLOWDOWN = 2.0
 RATE_LIMIT_MAX_INTERVAL_S = 12.0
+
+
+@dataclass
+class Pace:
+    """Request pacing shared by every watch in one job.
+
+    Each watch used to start a fresh Transport at full speed, so the watch after
+    one that hit the wall ran straight back into it.
+    """
+
+    interval: float = 1.5
+    backoff_left_s: float = sum(RATE_LIMIT_WAITS_S)
+
+
+# on_request(kind, outcome, interval): outcome is "ok", "rate_limit", "refusal" or "error".
+RequestHook = Callable[[str, str, float], None]
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -82,36 +101,69 @@ def _is_rate_limit(message: str | None) -> bool:
 
 
 class Transport:
-    def __init__(self, proxy: str | None = None, min_interval: float = 1.5) -> None:
+    def __init__(self, proxy: str | None = None, min_interval: float = 1.5, *,
+                 pace: Pace | None = None, on_request: RequestHook | None = None) -> None:
         self._http = httpx.AsyncClient(proxy=proxy, follow_redirects=True)
-        self._min_interval = min_interval
+        self.pace = pace or Pace(interval=min_interval)
+        self._on_request = on_request
         self._lock = asyncio.Lock()
+        self._wall_lock = asyncio.Lock()
+        self._walls = 0  # walls waited out so far; concurrent requests share one wait
         self._last = 0.0
+
+    def _record(self, kind: str, outcome: str) -> None:
+        if self._on_request:
+            try:
+                self._on_request(kind, outcome, self.pace.interval)
+            except Exception as e:  # noqa: BLE001 - logging must never break a read
+                log.warning("couldn't log a Facebook request: %s", e)
 
     async def aclose(self) -> None:
         await self._http.aclose()
 
     async def _pace(self) -> None:
         async with self._lock:
-            wait = self._last + self._min_interval - time.monotonic()
+            wait = self._last + self.pace.interval - time.monotonic()
             if wait > 0:
                 await asyncio.sleep(wait)
             self._last = time.monotonic()
 
-    async def graphql(self, doc_id: str, variables: dict[str, Any]) -> dict[str, Any]:
-        for wait in (*RATE_LIMIT_BACKOFF_S, None):
+    async def graphql(self, doc_id: str, variables: dict[str, Any], kind: str = "") -> dict[str, Any]:
+        waits = iter(RATE_LIMIT_WAITS_S)
+        while True:
+            seen = self._walls
             try:
-                return await self._graphql_once(doc_id, variables)
+                return await self._graphql_once(doc_id, variables, kind)
             except _RateLimitReply:
-                # Every request after this one goes slower, for the rest of the run.
-                self._min_interval = min(self._min_interval * RATE_LIMIT_SLOWDOWN, RATE_LIMIT_MAX_INTERVAL_S)
-                if wait is None:
+                pass
+            async with self._wall_lock:
+                if self._walls != seen:
+                    continue  # another request already waited this wall out; retry now
+                p = self.pace
+                p.interval = min(p.interval * RATE_LIMIT_SLOWDOWN, RATE_LIMIT_MAX_INTERVAL_S)
+                wait = next(waits, None)
+                if wait is None or wait > p.backoff_left_s:
                     break
-                log.warning("Facebook rate limit; waiting %.0fs, then one request per %.1fs", wait, self._min_interval)
+                p.backoff_left_s -= wait
+                log.warning("Facebook rate limit; waiting %.0fs, then one request per %.1fs "
+                            "(%.0f min of backoff left this job)", wait, p.interval, p.backoff_left_s / 60)
                 await asyncio.sleep(wait)
+                self._walls += 1
         raise RateLimited("Facebook rate limit exceeded (still limited after backing off)")
 
-    async def _graphql_once(self, doc_id: str, variables: dict[str, Any]) -> dict[str, Any]:
+    async def request_once(self, doc_id: str, variables: dict[str, Any], kind: str = "") -> bool:
+        """One paced request, no rate-limit retry: True if answered, False if rate-limited.
+
+        For the probe, which needs to see every refusal. Other refusals raise.
+        """
+        try:
+            await self._graphql_once(doc_id, variables, kind)
+            return True
+        except _RateLimitReply:
+            return False
+
+    async def _graphql_once(self, doc_id: str, variables: dict[str, Any], kind: str = "") -> dict[str, Any]:
+        kind = kind or doc_id
         body = {"variables": json.dumps(variables, separators=(",", ":")), "doc_id": doc_id}
         deadline = time.monotonic() + TOTAL_BUDGET_S
         last: Exception | None = None
@@ -121,12 +173,19 @@ class Transport:
                 break
             try:
                 await self._pace()
-                return await asyncio.wait_for(
+                payload = await asyncio.wait_for(
                     self._attempt(body, min(ATTEMPT_TIMEOUT_S, remaining)), timeout=remaining
                 )
-            except (RefusalError, _RateLimitReply):
+                self._record(kind, "ok")
+                return payload
+            except _RateLimitReply:
+                self._record(kind, "rate_limit")
+                raise
+            except RefusalError:
+                self._record(kind, "refusal")
                 raise
             except (httpx.HTTPError, asyncio.TimeoutError, _Retryable, ValueError) as e:
+                self._record(kind, "error")
                 last = e
                 backoff = 2 ** (attempt - 1) * (0.5 + random.random())
                 if attempt == MAX_ATTEMPTS or time.monotonic() + backoff >= deadline:
@@ -157,13 +216,17 @@ class Transport:
                 await self._pace()
                 r = await self._http.get(url, headers=SEARCH_PAGE_HEADERS, timeout=ATTEMPT_TIMEOUT_S)
                 if r.status_code >= 400:
+                    self._record("search_page", "refusal")
                     raise RefusalError(f"Facebook page returned status {r.status_code}")
                 html = r.text
                 # A blocked or login-walled page is a 200 without the search payload.
                 if "marketplace_search" not in html:
+                    self._record("search_page", "refusal")
                     raise RefusalError("Facebook served the search page without results")
+                self._record("search_page", "ok")
                 return html
             except (httpx.TimeoutException, httpx.TransportError) as e:
+                self._record("search_page", "error")
                 last = e
         raise last or RuntimeError("Facebook search page failed")
 

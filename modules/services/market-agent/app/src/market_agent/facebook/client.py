@@ -76,6 +76,7 @@ class Marketplace:
                 search_variables(
                     query, coords.latitude, coords.longitude, limit, min_price, max_price, radius, listed_within_days
                 ),
+                kind="search",
             )
             feed = (((payload.get("data") or {}).get("marketplace_search")) or {}).get("feed_units")
             reading = read_feed_units(feed, limit, query)
@@ -129,8 +130,8 @@ class Marketplace:
 
     async def detail(self, listing_id: str) -> Detail:
         photos, info = await asyncio.gather(
-            self.t.graphql(DETAIL_PHOTOS_DOC_ID, detail_photos_variables(listing_id)),
-            self.t.graphql(DETAIL_INFO_DOC_ID, detail_info_variables(listing_id)),
+            self.t.graphql(DETAIL_PHOTOS_DOC_ID, detail_photos_variables(listing_id), kind="photos"),
+            self.t.graphql(DETAIL_INFO_DOC_ID, detail_info_variables(listing_id), kind="info"),
             return_exceptions=True,
         )
         # The info half is the listing: description, price, place, vehicle fields.

@@ -118,6 +118,32 @@ in
       '';
     };
 
+    proxy = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "http://127.0.0.1:8888";
+      description = ''
+        HTTP proxy for every Facebook request (MARKET_AGENT_PROXY), e.g. a
+        VPN container's built-in proxy, so a Facebook rate limit or block
+        lands on the VPN's address instead of the host's. A proxy URL with a
+        password belongs in environmentFile instead.
+      '';
+    };
+
+    probe = {
+      enable = lib.mkEnableOption ''
+        the rate-limit probe: a few nightly sessions that read listings at a
+        fixed pace until Facebook refuses, then measure how long the block
+        lasts (market_agent/probe.py). It runs only through `proxy`, only
+        after 3 quiet hours, never alongside a watch run, and stops after
+        its schedule of three paces'';
+      schedule = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 01:00:00";
+        description = "When to try the next probe session (systemd OnCalendar). A session can take ~4 h.";
+      };
+    };
+
     notifyCommand = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -168,7 +194,7 @@ in
         MARKET_AGENT_JUDGE = cfg.judge;
         MARKET_AGENT_MODEL = cfg.model;
         MARKET_AGENT_CLAUDE_BIN = cfg.claudeBin;
-      };
+      } // lib.optionalAttrs (cfg.proxy != null) { MARKET_AGENT_PROXY = cfg.proxy; };
       serviceConfig = {
         Type = "oneshot";
         User = cfg.user;
@@ -195,6 +221,39 @@ in
         LockPersonality = true;
         # No MemoryDenyWriteExecute: the claude CLI is Node, and V8's JIT needs W+X pages.
       };
+    };
+
+    systemd.services.market-agent-probe = lib.mkIf cfg.probe.enable {
+      description = "market-agent: measure Facebook's rate limit (one session)";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      environment = {
+        HOME = home;
+        MARKET_AGENT_HOME = cfg.stateDir;
+        MARKET_AGENT_JUDGE = "none";
+      } // lib.optionalAttrs (cfg.proxy != null) { MARKET_AGENT_PROXY = cfg.proxy; };
+      serviceConfig = {
+        Type = "oneshot";
+        User = cfg.user;
+        Group = group;
+        # Without a proxy it refuses and exits 0: it never probes from the host's IP.
+        ExecStart = lib.escapeShellArgs [ (lib.getExe market-agent) "probe-limit" ];
+        EnvironmentFile = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
+        TimeoutStartSec = "5h";
+        ProtectSystem = "strict";
+        ReadWritePaths = [ cfg.stateDir ];
+        ProtectHome = true;
+        PrivateTmp = true;
+        PrivateDevices = true;
+        NoNewPrivileges = true;
+        RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
+        RestrictNamespaces = true;
+        LockPersonality = true;
+      };
+    };
+    systemd.timers.market-agent-probe = lib.mkIf cfg.probe.enable {
+      wantedBy = [ "timers.target" ];
+      timerConfig.OnCalendar = cfg.probe.schedule;
     };
 
     # Stars. Unauthenticated by design, like the page: it refuses to bind
