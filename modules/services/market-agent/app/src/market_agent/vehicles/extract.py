@@ -116,6 +116,23 @@ def vin_from(text: str, field: str | None) -> str | None:
     return None
 
 
+# A bare "manual" in a TITLE is the transmission ("2005 Tacoma 4x4 manual").
+# In a description it is as often "manual handbrake", "owner's manual",
+# "manual seats" or "manual shift mode", so there it needs transmission words.
+MANUAL_IN_TITLE = re.compile(r"\b(manual|stick(\s*shift)?|\d[\s-]*(speed|spd)\s*manual)\b", re.I)
+MANUAL_IN_TEXT = re.compile(
+    r"\b(manual\s+(transmission|trans|tranny|gearbox)|\d[\s-]*(speed|spd)\s+manual|stick\s*shift"
+    r"|standard\s+transmission|(three|3)\s+pedals)\b", re.I)
+# Hints, not proof: "5-speed" is often an automatic, "clutch" often the A/C's.
+# Recorded as manual_hints; configs.apply settles "N-speed" when the model
+# year's automatics never had N speeds, and the card shows "manual?" otherwise.
+MANUAL_HINTS = re.compile(
+    r"(?<![\w-])(?:(?P<speeds>[4-7])[\s-]*(?:speed|spd)\b(?!\s*(?:auto|automatic|a/t|at\b))"
+    r"|[4-7]\s*mt\b|m/t\b|row(ing)?\s+(your|my)\s+own|(?:three|3)[\s-]*pedal"
+    r"|(?<!a/c\s)(?<!ac\s)(?<!a/c\scompressor\s)\bclutch\b(?!\s*(?:fan|compressor|relay|coil)))",
+    re.I)
+
+
 def vehicle_facts(listing: Listing, detail: Detail | None) -> dict[str, Any]:
     d = detail
     v = d.vehicle if d else {}
@@ -150,11 +167,24 @@ def vehicle_facts(listing: Listing, detail: Detail | None) -> dict[str, Any]:
         facts["title_status"], facts["title_source"] = None, None
 
     facts["transmission"] = (v.get("vehicle_transmission_type") or "").lower() or None
+    facts["transmission_source"] = "Facebook field" if facts["transmission"] else None
     if not facts["transmission"]:
-        if re.search(r"\b(manual|stick ?shift|\d[\s-]*speed manual)\b", text, re.I):
-            facts["transmission"] = "manual"
+        desc = d.description if d else ""
+        if MANUAL_IN_TITLE.search(title) or MANUAL_IN_TEXT.search(desc):
+            facts["transmission"], facts["transmission_source"] = "manual", "listing text"
         elif re.search(r"\bautomatic\b", text, re.I):
-            facts["transmission"] = "automatic"
+            facts["transmission"], facts["transmission_source"] = "automatic", "listing text"
+        else:
+            hints = [m.group(0).strip() for m in MANUAL_HINTS.finditer(text)]
+            if hints:
+                facts["manual_hints"] = sorted({h.lower() for h in hints})
+                facts["manual_hint_speeds"] = sorted({int(m.group("speeds")) for m in MANUAL_HINTS.finditer(text)
+                                                      if m.group("speeds")})
+                # "Needs a clutch, 5 speed": a speed count and a clutch together is a manual.
+                if facts["manual_hint_speeds"] and "clutch" in facts["manual_hints"]:
+                    facts["transmission"], facts["transmission_source"] = "manual", "listing text"
+                    facts["transmission_evidence"] = "the listing mentions both a clutch and a " \
+                                                     f"{facts['manual_hint_speeds'][0]}-speed"
     if re.search(r"\bcvt\b", text, re.I):
         facts["transmission_note"] = "listing mentions CVT"
 

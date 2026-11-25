@@ -453,9 +453,13 @@ def _status_chips(c: Candidate, eff: Effective | None) -> str:
         chips.append(f'<span class="chip sold">{"sold" if c.detail.is_sold else "pending"}</span>')
     if c.facts.get("near_miss"):
         chips.append(f'<span class="chip near">{escape(c.facts["near_miss"])}</span>')
+    hints = c.facts.get("manual_hints") if not c.facts.get("transmission") else None
     for ch in c.checks:
-        if ch.status == "unknown":
+        if ch.status == "unknown" and not (hints and ch.name == "transmission"):
             chips.append(f'<span class="chip">{escape(ch.name)} unknown</span>')
+    if hints:
+        # Worth a look for anyone hunting manuals; not proof ("5-speed" can be an automatic).
+        chips.append(f'<span class="chip near" title="the listing says: {escape(", ".join(hints))}">manual?</span>')
     for s in c.signals:
         if s.severity == "warning" or s.name == "dealer or flipper":
             chips.append(f'<span class="chip bad">{escape(s.name)}</span>')
@@ -531,6 +535,21 @@ def _strip(c: Candidate, photos: "Photos") -> str:
     return '<div class="strip">' + "".join(shots) + "</div>"
 
 
+def _transmission_row(f: dict[str, Any]) -> list[tuple[str, str]]:
+    """The known transmission (with where it was seen), else the model year's options."""
+    known, spec = f.get("transmission"), str(f.get("transmission_spec") or "")
+    options = [o for o in re.sub(r"\s*\(.*?\)", "", spec).split(" or ") if o.strip()]
+    if known in ("automatic", "manual"):
+        match = [o for o in options if ("manual" in o) == (known == "manual")]
+        text = " or ".join(match) if match else known
+        if f.get("transmission_source") == "photos":
+            text += f" (seen in photo {f['transmission_photo']})" if f.get("transmission_photo") else " (from photos)"
+        return [("Transmission", text[:1].upper() + text[1:])]
+    if options:
+        return [("Transmission", " or ".join(options) + (" — not stated" if len(options) > 1 else ""))]
+    return []
+
+
 def _spec(c: Candidate, eff: Effective | None) -> str:
     """The facts a buyer compares across cars, in one strip."""
     f, d, e = c.facts, c.detail, c.evaluation
@@ -545,9 +564,7 @@ def _spec(c: Candidate, eff: Effective | None) -> str:
     elif f.get("drivetrain_options") and " or " in str(f["drivetrain_options"]):
         # What this model year came as, so it's clear why the seller is being asked.
         rows.append(("Drive", f"{f['drivetrain_options']} — not stated"))
-    trans = f.get("transmission_spec") or f.get("transmission")
-    if trans:
-        rows.append(("Transmission", re.sub(r"\s*\(.*?\)", "", str(trans)).strip()))
+    rows.extend(_transmission_row(f))
     if rated := f.get("rated_range_miles"):
         lo, hi = rated
         rows.append(("Rated range", f"{lo}{'' if lo == hi else f'–{hi}'} mi new"))

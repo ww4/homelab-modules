@@ -147,12 +147,11 @@ def _to_evaluation(raw: dict[str, Any], depth: str) -> Evaluation:
     return Evaluation.model_validate(raw)
 
 
-async def judge_cli(
-    settings: Settings, brief: Brief, c: Candidate, photos: list[Path], workdir: Path, depth: str = "full"
-) -> Evaluation:
-    schema, system, effort = _stage(depth)
+async def ask_cli(settings: Settings, *, prompt: str, schema: dict[str, Any], system: str, effort: str,
+                  workdir: Path) -> dict[str, Any]:
+    """One structured answer from the claude CLI; photos are read from `workdir`."""
     args = [
-        settings.claude_bin, "-p", _prompt(brief, c, photos, inline_images=False),
+        settings.claude_bin, "-p", prompt,
         "--output-format", "json",
         "--json-schema", json.dumps(schema),
         "--model", settings.model,
@@ -191,13 +190,12 @@ async def judge_cli(
         raise JudgeError("claude CLI returned no structured_output")
     if result.get("permission_denials"):
         log.warning("judge was denied tools: %s", result["permission_denials"])
-    return _to_evaluation(structured, depth)
+    return structured
 
 
-async def judge_api(
-    settings: Settings, brief: Brief, c: Candidate, photos: list[Path], depth: str = "full"
-) -> Evaluation:
-    schema, system, effort = _stage(depth)
+async def ask_api(settings: Settings, *, prompt: str, schema: dict[str, Any], system: str, effort: str,
+                  photos: list[Path]) -> dict[str, Any]:
+    """One structured answer from the API, photos sent inline."""
     try:
         import anthropic
     except ImportError as e:
@@ -207,7 +205,7 @@ async def judge_api(
         media = mimetypes.guess_type(p.name)[0] or "image/jpeg"
         content.append({"type": "image", "source": {"type": "base64", "media_type": media,
                                                      "data": base64.standard_b64encode(p.read_bytes()).decode()}})
-    content.append({"type": "text", "text": _prompt(brief, c, photos, inline_images=True)})
+    content.append({"type": "text", "text": prompt})
     client = anthropic.AsyncAnthropic()
     response = await client.beta.messages.create(
         model=settings.model,
@@ -224,7 +222,32 @@ async def judge_api(
     text = next((b.text for b in response.content if b.type == "text"), None)
     if not text:
         raise JudgeError(f"no text in response (stop_reason={response.stop_reason})")
-    return _to_evaluation(json.loads(text), depth)
+    return json.loads(text)
+
+
+async def ask(settings: Settings, *, prompt_cli: str, prompt_api: str, schema: dict[str, Any], system: str,
+              effort: str, photos: list[Path], workdir: Path) -> dict[str, Any]:
+    if settings.judge == "api":
+        return await ask_api(settings, prompt=prompt_api, schema=schema, system=system, effort=effort, photos=photos)
+    return await ask_cli(settings, prompt=prompt_cli, schema=schema, system=system, effort=effort, workdir=workdir)
+
+
+async def judge_cli(
+    settings: Settings, brief: Brief, c: Candidate, photos: list[Path], workdir: Path, depth: str = "full"
+) -> Evaluation:
+    schema, system, effort = _stage(depth)
+    raw = await ask_cli(settings, prompt=_prompt(brief, c, photos, inline_images=False), schema=schema,
+                        system=system, effort=effort, workdir=workdir)
+    return _to_evaluation(raw, depth)
+
+
+async def judge_api(
+    settings: Settings, brief: Brief, c: Candidate, photos: list[Path], depth: str = "full"
+) -> Evaluation:
+    schema, system, effort = _stage(depth)
+    raw = await ask_api(settings, prompt=_prompt(brief, c, photos, inline_images=True), schema=schema,
+                        system=system, effort=effort, photos=photos)
+    return _to_evaluation(raw, depth)
 
 
 async def evaluate(

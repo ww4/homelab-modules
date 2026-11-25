@@ -25,6 +25,7 @@ from .policy import effective
 from .store import Store
 from .vehicles import checks as vchecks
 from .vehicles import configs as vconfigs
+from .vehicles import photo_transmission
 from .vehicles import knowledge
 from .vehicles.extract import vehicle_facts
 
@@ -307,6 +308,10 @@ async def run(
                 await vchecks.apply_nhtsa(c, http, store)
                 # What the model year was sold as (after the VIN, which can settle drivetrain).
                 vconfigs.apply(c.facts, (c.detail.title if c.detail else None) or c.listing.title)
+                # Still open (or "manual" from the text alone)? The photos often show the shifter.
+                if judge and settings.judge != "none" and photo_transmission.needs_check(c.facts):
+                    await photo_transmission.apply(
+                        c, settings, store, lambda cand, dest, n: _download_photos(transport, cand, dest, n))
             for c in cands:
                 c.checks.extend(vchecks.vehicle_checks(brief.vehicle, c.facts))
             survivors = [c for c in cands if not c.excluded]
