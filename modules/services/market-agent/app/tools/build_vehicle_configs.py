@@ -12,7 +12,7 @@ government data (public domain). It does NOT cover vehicles over 8,500 lb
 GVWR: heavy-duty pickups (2500/3500, F-250+), the Hummer H2, big vans. Those
 stay "unknown" and the listing has to say.
 
-Output: {"source", "built", "first_year", "models": {"Make|Model": [[y0, y1, [[displ, drive, trans, spec, kind], ...]], ...]}}
+Output: {"source", "built", "first_year", "models": {"Make|Model": [[y0, y1, [[displ, drive, trans, spec, kind, electric_range_mi, ev_trim], ...]], ...]}}
 (kind: "" | hybrid | phev | ev; drive: fwd rwd 2wd awd 4wd 4x4, where 4x4 is EPA's pre-2010 "4WD or AWD")
 with consecutive years merged when the set of configurations is identical.
 """
@@ -62,6 +62,21 @@ def trans(trany: str) -> tuple[str, str] | None:
     return "auto", f"{n}-speed automatic"
 
 
+def _miles(v: str) -> int:
+    try:
+        return int(round(float(v)))
+    except (TypeError, ValueError):
+        return 0
+
+
+DRIVE_WORDS = re.compile(r"\b(2WD|4WD|AWD|FWD|RWD|4x4)\b", re.I)
+
+
+def _variant(model: str, base: str) -> str:
+    rest = model[len(base):] if model.startswith(base) else model
+    return re.sub(r"\s+", " ", DRIVE_WORDS.sub("", rest)).strip()
+
+
 def build(csv_path: str) -> dict:
     by_model: dict[str, dict[int, set]] = defaultdict(lambda: defaultdict(set))
     for r in csv.DictReader(open(csv_path, encoding="utf-8")):
@@ -77,8 +92,12 @@ def build(csv_path: str) -> dict:
         kind = {"Hybrid": "hybrid", "Plug-in Hybrid": "phev", "EV": "ev"}.get(r["atvType"], "")
         if kind == "ev":
             tr = ("single", "single-speed (electric)")  # EPA files some EVs as "variable gear ratios"
+        # Electric range when new: an EV's whole range, a plug-in hybrid's battery-only range.
+        erange = _miles(r["range"]) if kind == "ev" else _miles(r["rangeA"]) if kind == "phev" else 0
         model = re.sub(r"\s+Pickup$", "", r["baseModel"].strip())
-        by_model[f"{r['make'].strip()}|{model}"][year].add((displ, drive, tr[0], tr[1], kind))
+        # The trim decides an EV's range (Model 3 Standard 220 mi vs Long Range 310): keep it for those.
+        variant = _variant(r["model"], r["baseModel"]) if kind in ("ev", "phev") else ""
+        by_model[f"{r['make'].strip()}|{model}"][year].add((displ, drive, tr[0], tr[1], kind, erange, variant))
     models: dict[str, list] = {}
     for key, years in sorted(by_model.items()):
         ranges: list = []

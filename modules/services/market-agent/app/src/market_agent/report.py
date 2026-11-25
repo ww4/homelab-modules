@@ -517,9 +517,15 @@ def _spec(c: Candidate, eff: Effective | None) -> str:
         rows.append(("Miles", f"{f['mileage']:,}{src}"))
     if f.get("drivetrain"):
         rows.append(("Drive", str(f["drivetrain"]).upper()))
+    elif f.get("drivetrain_options") and " or " in str(f["drivetrain_options"]):
+        # What this model year came as, so it's clear why the seller is being asked.
+        rows.append(("Drive", f"{f['drivetrain_options']} — not stated"))
     trans = f.get("transmission_spec") or f.get("transmission")
     if trans:
         rows.append(("Transmission", re.sub(r"\s*\(.*?\)", "", str(trans)).strip()))
+    if rated := f.get("rated_range_miles"):
+        lo, hi = rated
+        rows.append(("Rated range", f"{lo}{'' if lo == hi else f'–{hi}'} mi new"))
     rows.append(("Title", str(f.get("title_status") or "not stated")))
     for k, v in f.items():
         if k.startswith("miles_from_") and v is not None:
@@ -654,6 +660,7 @@ WATCH_FORM = """
 <label>Max miles<input name="max_mileage" type="number" min="0" step="1000" inputmode="numeric"></label>
 <label>Years from<input name="min_year" type="number" min="1950" max="2100" inputmode="numeric"></label>
 <label>to<input name="max_year" type="number" min="1950" max="2100" inputmode="numeric"></label>
+<label>Min range (EVs, mi)<input name="min_range" type="number" min="0" step="10" inputmode="numeric"></label>
 </fieldset>
 <p class="wf-error" role="alert" hidden></p>
 </div>
@@ -682,6 +689,8 @@ def _limits(b: Brief) -> str:
             parts.append(v.transmission.replace("-", " "))
         if v.max_mileage:
             parts.append(f"under {v.max_mileage:,} mi")
+        if v.min_range:
+            parts.append(f"EV range {v.min_range}+ mi rated")
     return " · ".join(parts)
 
 
@@ -893,7 +902,7 @@ SCRIPT = """
     form.querySelectorAll('input[name="dt"]').forEach(c => { c.checked = (v.drivetrain || []).includes(c.value); });
     el.clean_title.checked = v.title === "clean";
     el.transmission.value = v.transmission || "any";
-    for (const k of ["max_mileage", "min_year", "max_year"]) el[k].value = v[k] ?? "";
+    for (const k of ["max_mileage", "min_year", "max_year", "min_range"]) el[k].value = v[k] ?? "";
     form.querySelector("#wf-title").textContent = f.name ? "Edit watch" : "New watch";
     form.querySelector(".wf-error").hidden = true;
   }
@@ -907,6 +916,7 @@ SCRIPT = """
       drivetrain: [...form.querySelectorAll('input[name="dt"]:checked')].map(c => c.value),
       title: el.clean_title.checked ? "clean" : "any", transmission: el.transmission.value,
       max_mileage: el.max_mileage.value, min_year: el.min_year.value, max_year: el.max_year.value,
+      min_range: el.min_range.value,
     };
     return out;
   }

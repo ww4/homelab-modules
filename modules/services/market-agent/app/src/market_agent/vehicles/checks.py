@@ -76,6 +76,18 @@ def vehicle_checks(rules: Vehicle, facts: dict[str, Any]) -> list[Check]:
         else:
             checks.append(Check(name="mileage", status="pass", detail=f"{miles:,} mi"))
 
+    rated = facts.get("rated_range_miles")
+    if rules.min_range and rated:
+        lo, hi = rated
+        why = facts.get("range_evidence") or "EPA rating when new"
+        if hi < rules.min_range:
+            checks.append(Check(name="range", status="fail", detail=f"under {rules.min_range} mi: {why}"))
+        elif lo >= rules.min_range:
+            checks.append(Check(name="range", status="pass", detail=why))
+        else:
+            checks.append(Check(name="range", status="unknown",
+                                detail=f"depends on the version: {why}; ask which battery/trim"))
+
     year = facts.get("year")
     if rules.min_year or rules.max_year:
         if year is None:

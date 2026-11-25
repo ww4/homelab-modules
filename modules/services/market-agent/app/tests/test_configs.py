@@ -75,3 +75,35 @@ def test_check_reports_the_evidence():
     f = _facts("2009 Honda CR-V LX", 2009)
     [t] = [c for c in vehicle_checks(Vehicle(transmission="automatic"), f) if c.name == "transmission"]
     assert t.status == "pass" and "no manual was offered on a 2009 Honda CR-V" in t.detail
+
+
+def test_ev_range_and_trim():
+    f = _facts("2013 Nissan Leaf SV", 2013)
+    assert f["powertrain"] == "electric" and f["rated_range_miles"] == [75, 75]
+    assert f["drivetrain"] == "fwd" and f["transmission"] == "automatic" and f["transmission_type"] == "electric"
+    f = _facts("2019 Tesla Model 3", 2019)
+    assert f["rated_range_miles"] == [220, 310]  # trim not named: every version
+    f = _facts("2019 Tesla Model 3 Long Range AWD", 2019)
+    assert f["rated_range_miles"] == [310, 310] and "Long Range" in f["range_evidence"]
+    f = _facts("2019 Tesla Model 3 Standard Range Plus", 2019)
+    assert f["rated_range_miles"] == [240, 240]  # the longer trim name that matches, not "Standard Range"
+
+
+def test_plugin_hybrid_range_is_battery_only():
+    f = _facts("2013 Chevrolet Volt", 2013)
+    assert f["powertrain"] == "plug-in hybrid" and f["rated_range_miles"] == [38, 38]
+
+
+def test_gas_car_has_no_range():
+    assert "rated_range_miles" not in _facts("2013 Toyota RAV4 XLE", 2013)
+
+
+def test_min_range_check():
+    rules = Vehicle(min_range=200)
+    def status(title, year):
+        [r] = [c for c in vehicle_checks(rules, _facts(title, year)) if c.name == "range"]
+        return r.status
+    assert status("2013 Nissan Leaf SV", 2013) == "fail"
+    assert status("2019 Tesla Model 3", 2019) == "pass"  # every 2019 version is rated 220+
+    assert status("2019 Nissan Leaf", 2019) == "unknown"  # 150 (40 kWh) or 226 (Plus): ask
+    assert not [c for c in vehicle_checks(rules, _facts("2013 Toyota RAV4 XLE", 2013)) if c.name == "range"]

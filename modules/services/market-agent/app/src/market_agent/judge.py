@@ -79,6 +79,7 @@ Rules:
 - Score 0-10 for fit to THIS brief, weighing the brief's preferences. Anchors: 8+ = would contact today, little doubt; 7 = contact today; 5-6 = worth one question before driving; 3-4 = poor fit; 0-2 = do not pursue. Set verdict to match (7+ top, 5-6.9 consider, below 5 skip); the page derives it from the score anyway.
 - A car whose drivetrain the listing does not establish cannot score above 6 on an AWD/4WD brief; say what would settle it.
 - Facts with a `*_evidence` saying every US version of that model year was built one way (from the EPA configuration list) are settled: do not ask the seller about them. `drivetrain_options` and `transmission_spec` list what that model year was actually sold with; ask only about what those options leave open (e.g. FWD or AWD), and name the options.
+- Electric cars and plug-ins: `rated_range_miles` is the EPA range when NEW. A used battery holds less, so weigh what the listing says (battery health %, capacity bars, a range the seller actually gets, a battery replacement) against it, and ask for battery health when the listing doesn't say.
 - Scam risk medium or high, financing / down-payment / buy-here-pay-here ads, and text copied across listings are near-disqualifying for a private buyer: score them 3 or below.
 - Be plain and specific. Short sentences. No hype. At most four items per list; skip a list rather than pad it."""
 

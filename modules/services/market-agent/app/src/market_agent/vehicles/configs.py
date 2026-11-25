@@ -54,6 +54,8 @@ class Config:
     trans: str  # manual | auto | cvt | dct | single
     spec: str
     kind: str = ""  # "" | hybrid | phev | ev
+    erange: int = 0  # electric range when new, miles (EV: all of it; plug-in: battery only)
+    variant: str = ""  # EV/plug-in trim as EPA names it ("Long Range")
 
 
 @lru_cache(maxsize=1)
@@ -163,6 +165,7 @@ def apply(facts: dict[str, Any], text: str) -> bool:
     facts.setdefault("model", found.model)
     facts["spec_source"] = "EPA fueleconomy.gov configurations"
     cs = found.configs
+    grams = _grams(text)
     notes: list[str] = []
     # A gas model's facts, unless the title says hybrid or electric (a RAV4
     # Hybrid's eCVT shares the 2.5L with the gas car's 6-speed automatic).
@@ -172,6 +175,13 @@ def apply(facts: dict[str, Any], text: str) -> bool:
         cs = _narrow(cs, lambda c: c.kind == "ev", "electric", notes)
     else:
         cs = _narrow(cs, lambda c: c.kind == "", "gas", [])
+    trims = [c for c in cs if c.variant]
+    if trims:
+        # "2019 Tesla Model 3 Long Range": the trim settles the range. Longest named trim wins.
+        named = {c.variant for c in trims if all(_squash(w) in grams for w in c.variant.split())}
+        if named:
+            best = max(named, key=len)
+            cs = _narrow(cs, lambda c: c.variant == best, best, notes)
     if m := DISPL.search(text):
         cs = _narrow(cs, lambda c: c.displ == m.group(1), f"{m.group(1)}L engine", notes)
 
@@ -200,7 +210,9 @@ def apply(facts: dict[str, Any], text: str) -> bool:
             facts["transmission_evidence"] = f"every {name}{qual} was a manual"
     if autos:
         kinds = {c.trans for c in autos}
-        if kinds == {"cvt"}:
+        if kinds == {"single"}:
+            facts["transmission_type"] = "electric"
+        elif kinds == {"cvt"}:
             facts["transmission_type"] = "cvt"
         elif "cvt" in kinds:
             facts["transmission_type"] = "depends-on-engine"
@@ -211,6 +223,17 @@ def apply(facts: dict[str, Any], text: str) -> bool:
         else:
             facts["transmission_type"] = "conventional"
     facts["transmission_spec"] = " or ".join(sorted({c.spec for c in cs}))
+
+    electric = [c for c in cs if c.kind in ("ev", "phev")]
+    if electric and len(electric) == len(cs):
+        facts["powertrain"] = "electric" if all(c.kind == "ev" for c in electric) else "plug-in hybrid"
+        ranges = sorted({c.erange for c in electric if c.erange})
+        if ranges:
+            lo, hi = ranges[0], ranges[-1]
+            facts["rated_range_miles"] = [lo, hi]
+            what = "range" if facts["powertrain"] == "electric" else "electric-only range"
+            span = f"{lo}" if lo == hi else f"{lo}-{hi}"
+            facts["range_evidence"] = f"EPA-rated {what} {span} mi when new ({name}{qual}); a used battery has less"
     return True
 
 
