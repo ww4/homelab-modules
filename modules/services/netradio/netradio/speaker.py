@@ -127,6 +127,26 @@ class Output:
         """
         return True
 
+    def list_targets(self) -> list[dict]:
+        """Where this output could send sound, for a picker.
+
+        `[{"id", "name", "default"}]`. One entry is a perfectly good answer —
+        a card that is wired to one pair of speakers has exactly one — and an
+        empty list means "not something you choose".
+        """
+        return []
+
+    def target(self) -> str:
+        """The id of the one currently in use."""
+        return ""
+
+    def set_target(self, target: str) -> bool:
+        """Choose a different one. The caller restarts the player afterwards:
+        where the audio goes is an argument to ffmpeg, not something that can
+        be changed under a running stream.
+        """
+        return False
+
     def read_state(self) -> tuple[int | None, bool]:
         """(level 0-100 or None, muted-by-something-else).
 
@@ -191,6 +211,16 @@ class AlsaOutput(Output):
             if want in names:
                 return want
         return names[0] if names else ""
+
+    def list_targets(self) -> list[dict]:
+        # One card, one device, wired to one pair of speakers. Reported rather
+        # than left empty so a page can show what it is driving, but there is
+        # nothing to choose between — switching ALSA devices at runtime is a
+        # different feature from picking a sink, and not one anybody asked for.
+        return [{"id": self.device, "name": self.device, "default": True}]
+
+    def target(self) -> str:
+        return self.device
 
     def read_state(self) -> tuple[int | None, bool]:
         control = self.control_name()
@@ -297,6 +327,45 @@ class PulseOutput(Output):
             log.debug("no stream to set the level on yet")
             return
         self._run("set-sink-input-volume", str(si.get("index")), f"{pct}%")
+
+    def list_targets(self) -> list[dict]:
+        """The sinks this session can see.
+
+        `description` is the human-readable one ("Built-in Audio Analogue
+        Stereo"); `name` is the stable id to pass back. An HDMI output that is
+        not connected still appears, because PipeWire lists the port either
+        way — so the page shows what the machine has, not what is plugged in.
+        """
+        try:
+            sinks = json.loads(self._run("-f", "json", "list", "sinks") or "[]") or []
+        except ValueError:
+            log.warning("pactl did not return JSON for sinks")
+            return []
+        default = (self._run("get-default-sink") or "").strip()
+        out = []
+        for s in sinks:
+            name = s.get("name") or ""
+            if not name:
+                continue
+            out.append({
+                "id": name,
+                "name": s.get("description") or name,
+                # The session's default, which is what an empty --sink follows.
+                "default": name == default,
+            })
+        return out
+
+    def target(self) -> str:
+        if self.sink:
+            return self.sink
+        return (self._run("get-default-sink") or "").strip()
+
+    def set_target(self, target: str) -> bool:
+        # "" means go back to following the session's default.
+        if target and target not in [t["id"] for t in self.list_targets()]:
+            return False
+        self.sink = target
+        return True
 
 
 class Mixer:
@@ -697,8 +766,74 @@ class Player:
                     self.play(mount)
 
 
+class Bed:
+    """A second stream playing under the station — rain, usually.
+
+    The page has had a bed for a while, but it mixes it in the BROWSER, which
+    makes it the browser's sound: it does nothing for speakers in another
+    room, and nothing at all for a device being driven from a phone. This
+    mixes it at the device, which is the only place it can be heard from the
+    sofa.
+
+    Only possible on an output that mixes. An exclusive ALSA device cannot be
+    opened a second time, so this is a capability a device DECLARES rather
+    than something every device has — the page should not offer a rain toggle
+    that cannot work.
+
+    It is its own Player with its own Output, which is what keeps the levels
+    independent: on PulseAudio the level is found by the stream's application
+    name, so the bed carries a different one and the station's volume slider
+    cannot move the rain.
+    """
+
+    def __init__(self, player: Player, output: Output, mount: str = "", level: int = 25):
+        self.player = player
+        self.out = output
+        self.mount = mount
+        self.level = max(0, min(100, int(level)))
+        self.lock = threading.RLock()
+
+    def available(self) -> bool:
+        return bool(self.out.mixes and self.mount)
+
+    def on(self) -> bool:
+        return self.player.alive()
+
+    def apply_level(self) -> None:
+        """Called after the bed's own stream appears."""
+        self.out.await_ready()
+        self.out.write_level(self.level)
+
+    def start(self, mount: str = "", level: int | None = None) -> None:
+        with self.lock:
+            if mount:
+                self.mount = mount
+            if level is not None:
+                self.level = max(0, min(100, int(level)))
+            if not self.available():
+                return
+            if not self.player.alive():
+                self.player.play(self.mount)
+            else:
+                self.apply_level()
+
+    def stop(self) -> None:
+        with self.lock:
+            self.player.stop()
+
+    def set_level(self, level: int) -> None:
+        with self.lock:
+            self.level = max(0, min(100, int(level)))
+            if self.player.alive():
+                self.out.write_level(self.level)
+
+    def state(self) -> dict:
+        return {"available": self.available(), "on": self.on(),
+                "mount": self.mount, "level": self.level}
+
+
 def make_handler(player: Player, mixer: Mixer, disconnect_when_muted: bool = True,
-                 token: str = ""):
+                 token: str = "", bed: "Bed | None" = None):
     """`token`, when set, is required as `Authorization: Bearer <token>`.
 
     Empty means no check, which is right for a loopback endpoint behind the
@@ -758,13 +893,20 @@ def make_handler(player: Player, mixer: Mixer, disconnect_when_muted: bool = Tru
                     # What this endpoint is driving, so a client does not have
                     # to be told out of band. `mixes` is whether a second
                     # stream can play alongside the station.
-                    "output": mixer.out.kind, "mixes": mixer.out.mixes}
+                    "output": mixer.out.kind, "mixes": mixer.out.mixes,
+                    "target": mixer.out.target(),
+                    "bed": bed.state() if bed is not None
+                           else {"available": False, "on": False, "mount": "", "level": 0}}
 
         def do_GET(self):
             if not self._authorised():
                 return self._deny()
-            if urlparse(self.path).path in ("/state", "/"):
+            path = urlparse(self.path).path
+            if path in ("/state", "/"):
                 return self._reply(200, self._state())
+            if path == "/outputs":
+                return self._reply(200, {"outputs": mixer.out.list_targets(),
+                                         "current": mixer.out.target()})
             self._reply(404, {"error": "not found"})
 
         def do_POST(self):
@@ -802,6 +944,34 @@ def make_handler(player: Player, mixer: Mixer, disconnect_when_muted: bool = Tru
                         if disconnect_when_muted:
                             player.resume()
                         mixer.mute(False)
+                elif path == "/bed":
+                    if bed is None or not bed.out.mixes:
+                        # Not a 500: the device is answering correctly that it
+                        # cannot do this. The page should not have offered it.
+                        return self._reply(400, {
+                            "error": "this output cannot mix a second stream"})
+                    if "level" in body:
+                        bed.set_level(int(body["level"]))
+                    if "on" in body:
+                        if body.get("on"):
+                            bed.start(str(body.get("mount") or ""))
+                        else:
+                            bed.stop()
+                elif path == "/output":
+                    target = str(body.get("target") or "")
+                    if not mixer.out.set_target(target):
+                        return self._reply(400, {"error": "no such output"})
+                    # Where the audio goes is an ffmpeg argument, so the
+                    # stream has to be rebuilt to move it.
+                    if player.mount and not player.suspended:
+                        player.play(player.mount)
+                    # The bed has its own Output object, so it has to be moved
+                    # too or the rain stays on the old speakers.
+                    if bed is not None:
+                        bed.out.set_target(target)
+                        if bed.on():
+                            bed.stop()
+                            bed.start()
                 else:
                     return self._reply(404, {"error": "not found"})
             except Exception as e:
@@ -862,6 +1032,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "holding it costs a continuous MP3 encode — 9.7%% of a core, measured — "
                          "to feed a jack at -64 dB. Set this if unmute latency matters more.")
     ap.add_argument("--ffmpeg", default=shutil.which("ffmpeg") or "ffmpeg")
+    ap.add_argument("--bed-mount", default="",
+                    help="a station to play UNDER the chosen one (rain, usually), mixed "
+                         "at this device rather than in a browser. Needs an output that "
+                         "mixes, which --output pulse does and alsa does not.")
+    ap.add_argument("--bed-level", type=int, default=25,
+                    help="the bed's own level, independent of the station's")
     ap.add_argument("-v", "--verbose", action="store_true")
     return ap
 
@@ -922,6 +1098,22 @@ def main(argv: list[str] | None = None) -> int:
         log.info("starting muted")
     player = Player(args.icecast, args.ffmpeg, args.device, args.wake,
                     output=out, on_start=mixer.reapply)
+
+    # The bed is a second stream with its own output object, which is what
+    # keeps the two levels apart: on PulseAudio a stream's level is found by
+    # its application name, so the bed carries a different one and the
+    # station's slider cannot move the rain.
+    if args.output == "pulse":
+        bed_out: Output = PulseOutput(sink=args.sink, pactl=args.pactl,
+                                      stream_name=f"{args.stream_name}-bed")
+    else:
+        bed_out = AlsaOutput(args.card, control=args.control, device=args.device)
+    bed_player = Player(args.icecast, args.ffmpeg, args.device, args.wake, output=bed_out)
+    bed = Bed(bed_player, bed_out, mount=args.bed_mount, level=args.bed_level)
+    bed_player.on_start = bed.apply_level
+    if args.bed_mount and not bed_out.mixes:
+        log.warning("--bed-mount %s was given but the %s output cannot mix a second "
+                    "stream, so the bed will stay unavailable", args.bed_mount, out.kind)
     disconnect_when_muted = not args.hold_stream_while_muted
     if args.start_muted and disconnect_when_muted:
         # Suspend BEFORE the default mount is chosen below, so a box that boots
@@ -930,6 +1122,9 @@ def main(argv: list[str] | None = None) -> int:
     stop = threading.Event()
     threading.Thread(target=player.watch, args=(stop,), daemon=True).start()
     threading.Thread(target=mixer.watch, args=(stop,), daemon=True).start()
+    # The bed gets the same treatment: a station restarting on the server must
+    # not end the night's rain.
+    threading.Thread(target=bed_player.watch, args=(stop,), daemon=True).start()
 
     if args.default_mount:
         # At boot this races Liquidsoap, which needs a good ten seconds
@@ -938,7 +1133,7 @@ def main(argv: list[str] | None = None) -> int:
         player.play(args.default_mount, wake_wait=120.0)
 
     srv = ThreadingHTTPServer((args.listen, args.port),
-                              make_handler(player, mixer, disconnect_when_muted, token))
+                              make_handler(player, mixer, disconnect_when_muted, token, bed))
     # Serve on a THREAD and wait here. The obvious shape — serve_forever() in
     # the main thread with a SIGTERM handler that calls srv.shutdown() —
     # deadlocks: Python runs signal handlers on the main thread, so shutdown()
@@ -963,6 +1158,7 @@ def main(argv: list[str] | None = None) -> int:
         pass
     stop.set()
     player.stop()
+    bed.stop()
     srv.shutdown()          # safe from here: the loop is on another thread
     srv.server_close()
     return 0

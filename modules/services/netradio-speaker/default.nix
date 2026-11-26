@@ -68,6 +68,8 @@ let
   ++ lib.optional cfg.holdStreamWhileMuted "--hold-stream-while-muted"
   ++ lib.optional (cfg.tokenFile != null) "--token-file ${cfg.tokenFile}"
   ++ lib.optional cfg.allowUnauthenticated "--allow-unauthenticated"
+  ++ lib.optional (cfg.bedMount != "") "--bed-mount ${cfg.bedMount}"
+  ++ lib.optional (cfg.bedMount != "") "--bed-level ${toString cfg.bedLevel}"
   ++ lib.optionals isPulse ([
        "--pactl ${pkgs.pulseaudio}/bin/pactl"
        "--stream-name ${lib.escapeShellArg cfg.streamName}"
@@ -230,6 +232,34 @@ in
       default = [ ];
       example = [ "tailscale0" ];
       description = "Open `port` on these interfaces only.";
+    };
+
+    bedMount = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      example = "rain";
+      description = ''
+        A station to play UNDERNEATH the chosen one — rain, usually — mixed at
+        this device rather than in a browser, so it is audible from the sofa
+        rather than only to whoever has the page open.
+
+        Needs an output that can mix a second stream, which `pulse` can and
+        `alsa` cannot: an exclusive ALSA device will not open twice. Setting
+        this with `output = "alsa"` logs a warning and leaves the bed
+        unavailable rather than failing.
+
+        Declare `bed` in the device's `capabilities` on the radio server for
+        the page to offer it.
+      '';
+    };
+
+    bedLevel = lib.mkOption {
+      type = lib.types.ints.between 0 100;
+      default = 25;
+      description = ''
+        The bed's own level, independent of the station's — the station's
+        volume slider does not move it. Under the music is the point.
+      '';
     };
 
     defaultMount = lib.mkOption {

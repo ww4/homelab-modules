@@ -990,3 +990,161 @@ class FailsClosed(unittest.TestCase):
                                                   "--allow-unauthenticated"])
         self.assertTrue(args.allow_unauthenticated)
         self.assertFalse(speaker.is_loopback(args.listen))
+
+
+PACTL_SINKS = json.dumps([
+    {"name": "alsa_output.pci-0000_0a_00.4.analog-stereo",
+     "description": "Built-in Audio Analogue Stereo"},
+    {"name": "alsa_output.pci-0000_08_00.1.hdmi-stereo",
+     "description": "GPU Digital Stereo (HDMI)"},
+])
+
+
+class OutputPicker(unittest.TestCase):
+    """Choosing where the sound goes. The station has to be rebuilt to move
+    it, because the destination is an ffmpeg argument."""
+
+    def pulse(self):
+        return speaker.PulseOutput(pactl="pactl")
+
+    def test_sinks_are_listed_with_their_human_names(self):
+        o = self.pulse()
+        def fake(*a):
+            return PACTL_SINKS if "list" in a else "alsa_output.pci-0000_0a_00.4.analog-stereo\n"
+        with mock.patch.object(speaker.PulseOutput, "_run", side_effect=fake):
+            got = o.list_targets()
+        self.assertEqual([t["name"] for t in got],
+                         ["Built-in Audio Analogue Stereo", "GPU Digital Stereo (HDMI)"])
+        self.assertEqual([t["default"] for t in got], [True, False],
+                         "the session's default sink was not marked")
+
+    def test_an_unknown_sink_is_refused_rather_than_silently_accepted(self):
+        o = self.pulse()
+        with mock.patch.object(speaker.PulseOutput, "_run", return_value=PACTL_SINKS):
+            self.assertFalse(o.set_target("alsa_output.does-not-exist"))
+            self.assertTrue(o.set_target("alsa_output.pci-0000_08_00.1.hdmi-stereo"))
+        self.assertEqual(o.sink, "alsa_output.pci-0000_08_00.1.hdmi-stereo")
+
+    def test_empty_means_follow_the_sessions_default_again(self):
+        o = self.pulse()
+        o.sink = "alsa_output.pci-0000_08_00.1.hdmi-stereo"
+        self.assertTrue(o.set_target(""))
+        self.assertEqual(o.sink, "")
+
+    def test_a_card_reports_the_one_device_it_has_and_will_not_switch(self):
+        o = speaker.AlsaOutput("0", device="plughw:1,0")
+        self.assertEqual([t["id"] for t in o.list_targets()], ["plughw:1,0"])
+        self.assertFalse(o.set_target("plughw:2,0"),
+                         "an ALSA device is not something the page gets to change")
+
+
+class RainBed(unittest.TestCase):
+    """A second stream under the station, mixed HERE rather than in a browser
+    — the page's own bed is the browser's sound, which is no use to speakers
+    in another room."""
+
+    def bed(self, mixes=True, mount="rain"):
+        out = speaker.PulseOutput(stream_name="netradio-bed") if mixes \
+            else speaker.AlsaOutput("0")
+        pl = speaker.Player("http://127.0.0.1:8020", _stay_alive_player(self), output=out)
+        self.addCleanup(pl.stop)
+        return speaker.Bed(pl, out, mount=mount, level=25)
+
+    def test_a_mixing_output_can_have_one(self):
+        self.assertTrue(self.bed().available())
+
+    def test_an_exclusive_card_cannot_and_says_so(self):
+        # The reason it is a declared capability: the page must not offer a
+        # rain toggle that cannot work.
+        self.assertFalse(self.bed(mixes=False).available())
+
+    def test_no_bed_mount_configured_means_unavailable_not_broken(self):
+        self.assertFalse(self.bed(mount="").available())
+
+    def test_it_starts_and_stops(self):
+        b = self.bed()
+        with mock.patch.object(speaker.PulseOutput, "_run", return_value="[]"):
+            b.start()
+            self.assertTrue(b.on())
+            b.stop()
+            self.assertFalse(b.on())
+
+    def test_the_bed_carries_a_different_stream_name_so_levels_stay_apart(self):
+        """The station's volume slider must not move the rain. On PulseAudio a
+        stream's level is found by its application name, so the two streams
+        have to be distinguishable."""
+        station = speaker.PulseOutput(stream_name="netradio")
+        b = self.bed()
+        self.assertNotEqual(station.stream_name, b.out.stream_name)
+        self.assertIn("netradio-bed", b.out.output_args())
+
+    def test_the_level_is_reported_and_clamped(self):
+        b = self.bed()
+        b.set_level(300)
+        self.assertEqual(b.state()["level"], 100)
+        b.set_level(-5)
+        self.assertEqual(b.state()["level"], 0)
+
+
+class BedAndOutputsOverHttp(unittest.TestCase):
+    def setUp(self):
+        self.out = speaker.PulseOutput(pactl="pactl")
+        self.mixer = FakeMixer()
+        self.mixer.out = self.out          # so /outputs reports the pulse one
+        self.player = speaker.Player("http://127.0.0.1:8020", _stay_alive_player(self))
+        bed_pl = speaker.Player("http://127.0.0.1:8020", _stay_alive_player(self))
+        self.addCleanup(bed_pl.stop)
+        self.bed = speaker.Bed(bed_pl, self.out, mount="rain")
+        srv = ThreadingHTTPServer(("127.0.0.1", 0),
+                                  speaker.make_handler(self.player, self.mixer, True, "", self.bed))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        self.base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def get(self, path):
+        return json.loads(urllib.request.urlopen(self.base + path, timeout=5).read())
+
+    def post(self, path, body):
+        req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(),
+                                     method="POST")
+        return json.loads(urllib.request.urlopen(req, timeout=5).read())
+
+    def test_outputs_are_served_for_a_picker(self):
+        with mock.patch.object(speaker.PulseOutput, "_run", return_value=PACTL_SINKS):
+            got = self.get("/outputs")
+        self.assertEqual(len(got["outputs"]), 2)
+        self.assertIn("current", got)
+
+    def test_state_advertises_the_bed_so_the_page_knows_whether_to_offer_it(self):
+        with mock.patch.object(speaker.PulseOutput, "_run", return_value="[]"):
+            st = self.get("/state")
+        self.assertTrue(st["mixes"])
+        self.assertTrue(st["bed"]["available"])
+        self.assertFalse(st["bed"]["on"])
+
+    def test_a_device_that_cannot_mix_refuses_the_bed_with_400_not_500(self):
+        """Answering correctly that it cannot is not an error on this side."""
+        mixer = FakeMixer()                         # an AlsaOutput underneath
+        pl = speaker.Player("http://127.0.0.1:8020", _stay_alive_player(self))
+        bed = speaker.Bed(pl, mixer.out, mount="rain")
+        srv = ThreadingHTTPServer(("127.0.0.1", 0),
+                                  speaker.make_handler(pl, mixer, True, "", bed))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        self.addCleanup(pl.stop)
+        req = urllib.request.Request(f"http://127.0.0.1:{srv.server_address[1]}/bed",
+                                     data=json.dumps({"on": True}).encode(), method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(caught.exception.code, 400)
+
+    def test_choosing_an_unknown_output_is_refused(self):
+        with mock.patch.object(speaker.PulseOutput, "_run", return_value=PACTL_SINKS):
+            req = urllib.request.Request(self.base + "/output",
+                                         data=json.dumps({"target": "nope"}).encode(),
+                                         method="POST")
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(caught.exception.code, 400)

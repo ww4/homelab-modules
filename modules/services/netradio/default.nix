@@ -916,6 +916,16 @@ in
               "play" "stop" "volume" "mute"
               "stations"
               "power" "inputs" "menu" "tuner" "presets" "feedback"
+              # A second stream under the station, mixed AT THE DEVICE. The
+              # page has always had a bed, but it mixes it in the browser,
+              # which makes it the browser's sound and no use to speakers in
+              # another room. Only a device on a shared sink can do this: an
+              # exclusive ALSA device cannot be opened twice, which is why it
+              # is declared rather than assumed.
+              "bed"
+              # The device can enumerate where it sends sound, and be told to
+              # use a different one — a machine with both analogue and HDMI.
+              "outputs"
             ]);
             default = [ "play" "stop" "volume" "mute" "stations" ];
             description = "What this device can do. play/stop/volume/mute plus `stations` are the contract; the rest are extras the page shows only when declared.";
