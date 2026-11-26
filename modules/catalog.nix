@@ -371,6 +371,21 @@ in
       (file "homelab.netradio.lastfmEnvFile" [ "LASTFM_API_KEY" ] "netradio" "supply")
     ];
   };
+  netradio-speaker = {
+    description = "The listening end of netradio on its own, for a machine that is not the radio server: speakers that can be told to play one of its stations. No library, no Liquidsoap, no page.";
+    # One small Python daemon plus the ffmpeg it starts while something is
+    # actually playing. Nothing resident between stations.
+    memory = 48;
+    enable = "homelab.netradio-speaker.enable";
+    options = [ "homelab.netradio-speaker" ];
+    # Deliberately none. It talks to the radio server over HTTP and serves its
+    # own port; it does not want that server's nginx, or its certificates.
+    requires = [ ];
+    vhosts = [ ];
+    secrets = [
+      (file "homelab.netradio-speaker.tokenFile" [ "<a shared bearer token, the same value the radio server is given>" ] "netradio-speaker" "generate")
+    ];
+  };
   notes = {
     description = "Keep-style card wall over a folder of markdown notes; pairs with silverbullet over the same directory.";
     memory = 96;
