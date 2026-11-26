@@ -976,3 +976,17 @@ class FailsClosed(unittest.TestCase):
     def test_an_unreadable_token_file_refuses_to_start(self):
         rc = speaker.main(["--token-file", "/nonexistent/token"])
         self.assertEqual(rc, 2)
+
+    def test_the_opt_out_is_explicit_and_then_permitted(self):
+        """Binding wide with no token is allowed, but only when asked for: the
+        pattern is legitimate behind an interface-scoped firewall or an
+        overlay network, and illegitimate by accident."""
+        # Refused without it...
+        self.assertEqual(speaker.main(["--listen", "0.0.0.0"]), 2)
+        # ...and permitted with it. main() would then serve forever, so this
+        # checks the decision rather than the server: the argument parses and
+        # the guard lets it through.
+        args = speaker.build_parser().parse_args(["--listen", "0.0.0.0",
+                                                  "--allow-unauthenticated"])
+        self.assertTrue(args.allow_unauthenticated)
+        self.assertFalse(speaker.is_loopback(args.listen))

@@ -139,6 +139,12 @@ Two things differ from the server's own speakers, and both matter:
   page's own vhost is the access gate; a port on the network is behind nothing,
   and this service turns speakers on in someone's house.
 
+  If something else is your gate — a firewall scoped to one interface, or an
+  overlay network nothing unauthenticated can route into — set
+  `allowUnauthenticated = true` instead of a token. It has to be explicit,
+  because an unauthenticated port on a LAN behaves exactly like a correctly
+  configured one right up until someone else finds it.
+
 ### A picture for one track
 
 A track's artwork is looked for in this order:

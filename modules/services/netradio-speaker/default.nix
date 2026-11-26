@@ -67,6 +67,7 @@ let
   ++ lib.optional cfg.startMuted "--start-muted"
   ++ lib.optional cfg.holdStreamWhileMuted "--hold-stream-while-muted"
   ++ lib.optional (cfg.tokenFile != null) "--token-file ${cfg.tokenFile}"
+  ++ lib.optional cfg.allowUnauthenticated "--allow-unauthenticated"
   ++ lib.optionals isPulse ([
        "--pactl ${pkgs.pulseaudio}/bin/pactl"
        "--stream-name ${lib.escapeShellArg cfg.streamName}"
@@ -194,6 +195,23 @@ in
 
         Required whenever `listen` is not loopback. Without it, anything on
         the network could start the speakers playing.
+      '';
+    };
+
+    allowUnauthenticated = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Bind off loopback with no token, because something else is the gate.
+
+        A firewall scoping the port to one interface is a legitimate gate, and
+        so is an overlay network like Tailscale where nothing unauthenticated
+        can route to the host at all. Set this together with
+        `firewallInterfaces` and no `tokenFile`.
+
+        It has to be asked for explicitly, because the mistake it guards
+        against is silent: an unauthenticated port on a LAN behaves exactly
+        like a correctly configured one until someone else uses it.
       '';
     };
 
@@ -330,12 +348,14 @@ in
       {
         # The same check the service makes at startup, moved to build time so
         # it is a message rather than a unit that will not come up.
-        assertion = cfg.tokenFile != null
+        assertion = cfg.tokenFile != null || cfg.allowUnauthenticated
                     || builtins.elem cfg.listen [ "127.0.0.1" "::1" "localhost" ];
         message = "homelab.netradio-speaker: listen = \"${cfg.listen}\" is reachable from "
                   + "the network, so tokenFile is required — otherwise anything on the "
-                  + "network can start these speakers playing. Either set tokenFile, or "
-                  + "bind to 127.0.0.1 and let the radio server's vhost proxy it.";
+                  + "network can start these speakers playing. Set tokenFile, bind to "
+                  + "127.0.0.1 and let the radio server's vhost proxy it, or set "
+                  + "allowUnauthenticated if something else is the gate (a firewall "
+                  + "scoped to one interface, an overlay network).";
       }
       {
         assertion = cfg.stations != "";

@@ -813,7 +813,9 @@ def make_handler(player: Player, mixer: Mixer, disconnect_when_muted: bool = Tru
     return Handler
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The flags, separately from main(), so a test can read a decision out of
+    them without starting a server."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--icecast", default="http://127.0.0.1:8020", help="where the mounts are served")
     ap.add_argument("--listen", default="127.0.0.1")
@@ -839,6 +841,12 @@ def main(argv: list[str] | None = None) -> int:
                          "`Authorization: Bearer <token>`. Not needed when --listen is "
                          "loopback and the page's vhost is the gate — and REQUIRED when it "
                          "is not, because the port is then reachable from the network.")
+    ap.add_argument("--allow-unauthenticated", action="store_true",
+                    help="bind off loopback with NO token, because something else is the "
+                         "gate — a firewall scoping the port to one interface, say, or an "
+                         "overlay network. Has to be asked for explicitly: the default is "
+                         "to refuse, since the failure is silent and the consequence is "
+                         "someone else's speakers.")
     ap.add_argument("--wake", default="", help="the wake service, e.g. http://127.0.0.1:8011 (starts the encoder)")
     ap.add_argument("--default-mount", default="", help="play this at startup (the rain, usually)")
     ap.add_argument("--start-volume", type=int, help="set the mixer here at startup")
@@ -855,7 +863,11 @@ def main(argv: list[str] | None = None) -> int:
                          "to feed a jack at -64 dB. Set this if unmute latency matters more.")
     ap.add_argument("--ffmpeg", default=shutil.which("ffmpeg") or "ffmpeg")
     ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(message)s", stream=sys.stdout)
 
@@ -875,10 +887,18 @@ def main(argv: list[str] | None = None) -> int:
     # network, and this service turns speakers on in someone's house; the
     # wrong default here is the one that is quiet about it.
     if not is_loopback(args.listen) and not token:
-        log.error("--listen %s is not loopback and no --token-file was given. Anything "
-                  "on the network could drive these speakers. Pass --token-file, or bind "
-                  "to 127.0.0.1 and reach it through the page's vhost.", args.listen)
-        return 2
+        if not args.allow_unauthenticated:
+            log.error("--listen %s is not loopback and no --token-file was given. Anything "
+                      "on the network could drive these speakers. Pass --token-file, bind "
+                      "to 127.0.0.1 and reach it through the page's vhost, or say "
+                      "--allow-unauthenticated if something else is the gate.", args.listen)
+            return 2
+        # Asked for explicitly, so it is allowed — but it is said out loud once
+        # per start, because the whole risk of this configuration is that it
+        # looks and behaves exactly like a working one.
+        log.warning("listening on %s with NO authentication, because "
+                    "--allow-unauthenticated was given. Whatever reaches this port can "
+                    "start these speakers playing.", args.listen)
 
     if args.output == "pulse":
         out: Output = PulseOutput(sink=args.sink, pactl=args.pactl,
