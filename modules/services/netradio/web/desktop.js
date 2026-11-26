@@ -139,9 +139,47 @@ createApp({
         sub: !this.speakerSeen ? "checking…"
            : this.speaker.error || (this.speaker.playing ? "playing" : "stopped"),
         dead: this.speaker.error === "unreachable" });
+      // …and every registered device, in its declared order. These come from
+      // site.json rather than from a flag per kind of box, so a machine added
+      // to the registry appears in the rail without a line of page code.
+      for (const d of this.devices) {
+        const st = this.dev(d.id);
+        z.push({ id: d.id, name: d.name,
+                 live: st.seen && !!st.playing,
+                 sub: !st.seen ? "checking…" : st.error || (st.playing ? "playing" : "stopped"),
+                 dead: st.error === "unreachable" });
+      }
       return z;
     },
     targetName() { return (this.zones.find(z => z.id === this.target) || {}).name || ""; },
+
+    // ---- the rain bed, wherever it can actually be mixed -----------------
+    // In this browser the bed is a second <audio>, mixed here. On a device it
+    // is a second stream mixed AT the device, which only an output that can
+    // share a sink can do — so the device declares it rather than being
+    // assumed to manage it.
+    //
+    // Until now the bed was the browser's alone, and the gate read
+    // `target === 'here'`: switching to the living room silently dropped the
+    // rain, with the toggle still lit. Showing the control only where it works
+    // is the honest version of that.
+    bedShown() {
+      if (this.target === "here") return !!this.site.bedMount;
+      if (!this.devCan("bed")) return false;
+      // Before the first answer the capability is all we have; once the device
+      // has spoken, believe it — a declared bed with no mount configured is
+      // not a usable one.
+      const b = this.dev(this.target).bed;
+      return !b || b.available !== false;
+    },
+    bedIsOn() { return this.target === "here" ? this.bedOn : !!(this.dev(this.target).bed || {}).on; },
+    bedLevel() { return this.target === "here" ? this.bedVol : ((this.dev(this.target).bed || {}).level ?? 25); },
+
+    // ---- where a device sends its sound ----------------------------------
+    // A machine with analogue and HDMI can be told which to use. Shown only
+    // where declared, and only once the device has actually listed them.
+    outputsShown() { return !!this.targetDevice && this.devCan("outputs") && this.dev(this.target).outputs.length > 1; },
+    outputList() { return this.dev(this.target).outputs || []; },
 
 
     // ---- what is PLAYING on the chosen target ----------------------------
@@ -150,7 +188,8 @@ createApp({
     // only offered when the station being LOOKED at is the one being heard
     canActHere() { return this.canDJ && this.openMount === this.feedbackMount; },
     anythingPlaying() {
-      return this.target === "room" ? (this.receiver.on && this.playbackState === "Play")
+      return this.targetDevice ? !!this.dev(this.target).playing
+           : this.target === "room" ? (this.receiver.on && this.playbackState === "Play")
            : this.target === "local" ? !!this.speaker.playing
            : (!!this.current && !this.paused);
     },
@@ -224,7 +263,8 @@ createApp({
     // ---- the transport bar's volume, whichever target is chosen ----------
     volumeMax() { return this.target === "room" ? (this.receiver.volume_max || 100) : 100; },
     isMuted() {
-      return this.target === "room" ? !!this.receiver.mute
+      return this.targetDevice ? !!this.dev(this.target).muted
+           : this.target === "room" ? !!this.receiver.mute
            : this.target === "local" ? !!this.speaker.muted
            : this.hereMuted;
     },
@@ -338,6 +378,7 @@ createApp({
     stop() { const a = this.$refs.audio; a.pause(); a.removeAttribute("src"); a.load(); this.current = null; this.blocked = ""; this.forgetHandover(); clearTimeout(this._reTimer); this._reTries = 0; this.stopViz(); this.applyBed(); this.mediaSession(); },
 
     playTarget(s) {
+      if (this.targetDevice) return s.mount ? this.devicePlay(s.mount) : undefined;
       if (this.target === "room") return this.playOnReceiver(s);
       if (this.target === "local") return s.mount ? this.speakerPlay(s.mount) : undefined;
       return s.mount ? this.play(s.mount) : undefined;
@@ -370,16 +411,19 @@ createApp({
     // ---- volume, for whichever target is chosen --------------------------
     syncVolume() {
       if (this.volDragging) return;          // never drag the slider out from under a finger
-      this.volDraft = this.target === "room" ? Math.round(this.receiver.volume || 0)
+      this.volDraft = this.targetDevice ? (this.dev(this.target).volume ?? 0)
+                    : this.target === "room" ? Math.round(this.receiver.volume || 0)
                     : this.target === "local" ? (this.speaker.volume ?? 0)
                     : this.hereVol;
     },
     setLevel(level) {
+      if (this.targetDevice) return this.deviceSet(Math.round(level));
       if (this.target === "room") return this.setVolume(level);
       if (this.target === "local") return this.speakerSet(level);
       return this.hereSet(level);
     },
     toggleMute() {
+      if (this.targetDevice) return this.deviceMute(!this.dev(this.target).muted);
       if (this.target === "room") return this.mute(!this.receiver.mute);
       if (this.target === "local") return this.speakerMute(!this.speaker.muted);
       this.hereMuted = !this.hereMuted;
@@ -441,6 +485,7 @@ createApp({
         this.receiver = st ? { ...st, error: "" } : { ...this.receiver, error: "unreachable" };
         this.receiverSeen = true;
       })());
+      for (const d of this.devices) if (d.id !== this.target) jobs.push(this.pollDevice(d.id));
       await Promise.all(jobs);
     },
 
@@ -478,6 +523,7 @@ createApp({
       this.roomPoll = setInterval(() => { if (this.target === "room" && !this.busy) this.pollReceiver(); }, 5000);
     },
     volumeStep(step) {
+      if (this.targetDevice) return this.deviceSet(Math.max(0, Math.min(100, (this.dev(this.target).volume ?? 0) + step)));
       if (this.target === "local") return this.speakerVolume(step);
       this.volDraft = Math.max(0, Math.min(this.volumeMax, this.volDraft + step));
       return this.setVolume(this.volDraft);
@@ -536,11 +582,15 @@ createApp({
     // when that stops, so it never becomes rain on its own by accident.
     // Requesting the mount also wakes its encoder, the same as any other.
     bedToggle() {
+      // On a device the bed is the DEVICE's state, not this browser's, so the
+      // toggle asks it rather than writing localStorage.
+      if (this.target !== "here") return this.deviceBed({ on: !this.bedIsOn });
       this.bedOn = !this.bedOn;
       try { localStorage.setItem("radio.bed", this.bedOn ? "1" : "0"); } catch (e) {}
       this.applyBed();
     },
     bedSet(level) {
+      if (this.target !== "here") return this.deviceBed({ level: Math.max(0, Math.min(100, Math.round(level))) });
       this.bedVol = Math.max(0, Math.min(100, Math.round(level)));
       try { localStorage.setItem("radio.bedVolume", String(this.bedVol)); } catch (e) {}
       this.applyBed();
@@ -635,6 +685,9 @@ createApp({
     setInterval(() => { this.tick = Date.now(); this.pollWatching(); this.refreshZones(); this.refresh().then(() => { this.refreshHeart(); this.mediaSession(); }); }, 10000);
     if (this.target === "room") this.pollReceiver();
     if (this.target === "local") this.pollSpeaker();
+    // The chosen device, on its own cadence. refreshZones covers the others.
+    if (this.targetDevice) this.pollDevice(this.target);
+    setInterval(() => { if (this.targetDevice && !this.busy) this.pollDevice(this.target); }, 5000);
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   },
 }).mount("#app");

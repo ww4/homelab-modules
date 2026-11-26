@@ -41,6 +41,7 @@ from urllib.parse import parse_qs, urlparse
 
 from netradio import feeds as feedrules
 from netradio.conventions import COVER_NAMES, is_item_id, is_mount, sidecar_names
+from netradio import devices
 from netradio import jellyfin
 from netradio import ratings
 from netradio import schedule as sched
@@ -61,8 +62,14 @@ class Admin:
                  receiver_api: str = "", now_dir: Path | None = None, wake_url: str = "",
                  jellyfin_url: str = "", jellyfin_key: str = "", jellyfin_user: str = "",
                  thumb_cache: Path | None = None, thumb_cache_max: int = 5000,
-                 station_art: Path | None = None, jellyfin_hearts: bool = False):
+                 station_art: Path | None = None, jellyfin_hearts: bool = False,
+                 devices_file: Path | None = None):
         self.cfg = cfg
+        # The device registry, read from a file rather than taken as a value so
+        # that editing it later needs no restart — and so the page's own calls
+        # to a device can be forwarded from here (netradio/devices.py says why
+        # they come through this process at all).
+        self.devices_file = devices_file
         self.dj_dir = dj_dir            # the DJ's state: inbox/ takes skip + request files
         self.playlists = playlists      # library.m3u for search
         self.receiver_api = receiver_api   # for the page's resume button
@@ -755,6 +762,14 @@ def make_handler(admin: Admin):
             parts = [p for p in u.path.split("/") if p]
             q = parse_qs(u.query)
             try:
+                # Devices first, and NOT under LOCK. A device call is network
+                # I/O to another machine; holding the global lock across it
+                # would park every other admin request behind an unreachable
+                # speaker until its timeout. Nothing here touches shared state.
+                if parts[:2] == ["api", "devices"]:
+                    got = self._devices(parts[2:], method)
+                    if got is not None:
+                        return self._reply(*got)
                 with LOCK:
                     if parts == ["api", "state"] and method == "GET":
                         return self._reply(200, admin.state())
@@ -840,6 +855,33 @@ def make_handler(admin: Admin):
                 log.exception("%s %s failed", method, self.path)
                 return self._reply(500, {"error": f"{type(e).__name__}: {e}"})
 
+        # ---- the device registry, and the page's calls to one -------------
+        def _devices(self, rest: list[str], method: str):
+            """`/api/devices` and `/api/devices/<id>/<verb>`.
+
+            Returns None when the path is not one of ours, so the normal
+            routing carries on.
+            """
+            registry = _devices_of(admin)
+            if rest == [] and method == "GET":
+                return 200, devices.public(registry)
+            if len(rest) != 2:
+                return None
+            dev_id, verb = rest
+            try:
+                device = devices.find(registry, dev_id)
+            except KeyError:
+                return 404, {"error": f"no such device: {dev_id}"}
+            if method == "GET":
+                if verb in ("state", device.get("statePath") or "state"):
+                    return devices.state(device)
+                if verb == "outputs":
+                    return devices.outputs(device)
+                return None
+            if method == "POST":
+                return devices.call(device, verb, self._json())
+            return None
+
         def do_GET(self): self._route("GET")
         def do_POST(self): self._route("POST")
         def do_PUT(self): self._route("PUT")
@@ -849,6 +891,19 @@ def make_handler(admin: Admin):
             log.debug(fmt, *args)
 
     return Handler
+
+
+def _devices_of(admin) -> list[dict]:
+    """The registry, re-read on use. A list, in declared order."""
+    p = getattr(admin, "devices_file", None)
+    if not p:
+        return []
+    try:
+        got = json.loads(Path(p).read_text())
+    except (OSError, ValueError) as e:
+        log.warning("cannot read the device registry %s (%s)", p, e)
+        return []
+    return got if isinstance(got, list) else []
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -869,6 +924,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="entries to keep before pruning the oldest")
     ap.add_argument("--listen", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8012)
+    ap.add_argument("--devices", type=Path, dest="devices_file",
+                    help="JSON list of registered devices (id, name, endpoint, capabilities, tokenFile)")
     ap.add_argument("--dj-dir", type=Path, help="the DJ's state dir (inbox/ for skip + request)")
     ap.add_argument("--playlists", type=Path, help="playlists dir (library.m3u for search)")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -882,7 +939,8 @@ def main(argv: list[str] | None = None) -> int:
               jellyfin_key=jellyfin.read_key(key_file=args.jellyfin_key_file),
               jellyfin_user=args.jellyfin_user,
               thumb_cache=args.thumb_cache, thumb_cache_max=args.thumb_cache_max,
-              station_art=args.station_art, jellyfin_hearts=args.jellyfin_hearts)))
+              station_art=args.station_art, jellyfin_hearts=args.jellyfin_hearts,
+              devices_file=args.devices_file)))
     log.info("admin API on %s:%d, config %s", args.listen, args.port, args.config)
     srv.serve_forever()
     return 0

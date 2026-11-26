@@ -349,7 +349,11 @@ class SpeakerTargetParity(unittest.TestCase):
         self.assertIn("applyBed", js, "desktop.js cannot play a bed")
         self.assertIn("radio.bedVolume", js, "the bed has no level of its own")
         self.assertIn('ref="bed"', html, "there is no second audio element to mix")
-        self.assertIn("site.bedMount", html,
+        # The gate moved into `bedShown` when a device gained a bed of its own
+        # (2026-11-26): a device's bed does not depend on site.bedMount,
+        # which is the mount THIS BROWSER fetches. The check follows it.
+        self.assertIn('v-if="bedShown"', html, "the bed panel is shown unconditionally")
+        self.assertIn("site.bedMount", member_body(js, "bedShown"),
                       "the panel is shown whether or not a bed mount is configured")
 
     def test_mute_silences_the_rain_as_well_as_the_music(self):
@@ -839,6 +843,96 @@ def method_body(js: str, name: str) -> str:
     rest = js[start:]
     nxt = re.search(r"\n    (?:async\s+)?[A-Za-z_$][\w$]*\s*\(", rest[1:])
     return rest[: nxt.start() + 1] if nxt else rest
+
+
+def member_body(js, name):
+    """`method_body` for a member that is not async — a computed, or a plain
+    method. Same reason for slicing to the NEXT member rather than taking a
+    fixed-size window: a window runs past the end into the following member
+    and finds ITS code, which is how a guard passes against the bug it was
+    written for."""
+    m = re.search(rf"^    {re.escape(name)}\(", js, re.M)
+    if not m:
+        raise AssertionError(f"there is no {name}() in the script")
+    rest = js[m.start():]
+    nxt = re.search(r"\n    (?:async\s+)?[A-Za-z_$][\w$]*\s*\(", rest[1:])
+    return rest[: nxt.start() + 1] if nxt else rest
+
+
+class ARegisteredDeviceIsJustAnotherOutput(unittest.TestCase):
+    """The page knew three kinds of output by name: this browser, the receiver,
+    the server's own sound card. Each had its own branch, its own state object
+    and its own nginx location, so a FOURTH — a second PC with speakers in
+    another room — could not be added without editing the page.
+
+    `homelab.netradio.devices` is the registry that replaces that, and the
+    point of it is that the page does not know what KIND of thing a device is:
+    it posts four verbs to a path built from the id, and shows an extra only
+    where the device declares it. Adding a machine is then a registry entry
+    rather than a new branch (2026-11-26).
+    """
+
+    def script(self, name: str) -> str:
+        return (WEB / name).read_text() + "\n" + (WEB / "shared.js").read_text()
+
+    def test_the_rail_lists_every_registered_device(self):
+        js = self.script("desktop.js")
+        body = member_body((WEB / "desktop.js").read_text(), "zones")
+        self.assertIn("this.devices", body,
+                      "the rail is built from flags per kind of box, so a registered "
+                      "device never appears in it")
+        self.assertIn('"checking…"', body,
+                      "a device that has not answered yet is rendered as a fact")
+
+    def test_the_verbs_go_to_a_path_built_from_the_id(self):
+        """Not a hand-written location per device. `/device/<id>/` is generated
+        for every declared device, so the page needs no per-device code and a
+        device added to the registry is reachable at once."""
+        js = self.script("desktop.js")
+        for verb in ("play", "stop", "volume", "mute"):
+            self.assertIn(f"${{this.devBase(id)}}/{verb}", js,
+                          f"the {verb} verb is not sent to a device's own path")
+        self.assertIn("devStatePath", js,
+                      "every device is assumed to answer on /state — yamaha-ync answers /status")
+
+    def test_an_extra_is_offered_only_where_the_device_declares_it(self):
+        js = (WEB / "desktop.js").read_text()
+        self.assertIn('devCan("bed")', member_body(js, "bedShown"),
+                      "a rain bed is offered on a device that never said it can mix one")
+        self.assertIn('devCan("outputs")', member_body(js, "outputsShown"),
+                      "an output picker is offered on a device that never said it has one")
+
+    def test_the_bed_is_mixed_by_whichever_thing_is_playing(self):
+        """The bed was the BROWSER's alone — two <audio> elements, mixed here —
+        and no other output ever had one. The gate read `target === 'here'`, so
+        switching to the living room silently dropped the rain while the toggle
+        stayed lit. A device that can share a sink now mixes its own."""
+        js = (WEB / "desktop.js").read_text()
+        self.assertIn("deviceBed", member_body(js, "bedToggle"),
+                      "the toggle writes this browser's bed when the target is a device")
+        self.assertIn("deviceBed", member_body(js, "bedSet"),
+                      "the level slider moves this browser's bed when the target is a device")
+        # and the browser keeps mixing its own, which is right FOR the browser:
+        # it costs the server nothing and the level and mute already reach it
+        self.assertIn("applyBed", js, "the browser's own bed was removed rather than kept")
+
+    def test_both_pages_understand_a_device_target(self):
+        """Both pages read `radio.target` from the same localStorage key, so a
+        device chosen on the wide page is what the phone opens pointed at. The
+        plumbing is in shared.js for that reason: a target the phone did not
+        recognise used to fall through to "here" and play in the browser while
+        the button still named the device."""
+        shared = (WEB / "shared.js").read_text()
+        for name in ("devices", "targetDevice", "dev", "devBase", "devCan", "deviceAction", "pollDevice"):
+            self.assertRegex(shared, rf"(?m)^    (?:async )?{name}\(",
+                             f"{name} is not in the shared half, so only one page has it")
+
+    def test_a_devices_errors_reach_somebody(self):
+        """call() throws; the device wrapper has to catch it and say so, like
+        every other action on the page."""
+        body = method_body((WEB / "shared.js").read_text(), "deviceAction")
+        self.assertIn("catch", body, "a failed device call goes nowhere")
+        self.assertIn("this.say(", body, "a failed device call tells nobody")
 
 
 class RemoteErrorsReachSomebody(unittest.TestCase):

@@ -342,6 +342,9 @@ body { overflow: hidden; height: 100vh; }
 .vol input { width: 96px; accent-color: var(--accent); }
 .vol .lvl { font-size: .72rem; min-width: 1.6rem; text-align: right;
             font-variant-numeric: tabular-nums; }
+.outs { display: flex; align-items: center; }
+.outs select { background: var(--panel-2); color: var(--fg); border: 1px solid var(--line);
+               border-radius: .3rem; font-size: .71rem; padding: .15rem .3rem; max-width: 11rem; }
 .qual { display: flex; gap: .25rem; font-size: .71rem; }
 .qual label { padding: .15rem .45rem; border: 1px solid var(--line); border-radius: .3rem;
               cursor: pointer; }

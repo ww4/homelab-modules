@@ -124,9 +124,25 @@ and on the radio server, register it like any other device:
 homelab.netradio.devices.studio = {
   name = "Studio PC";
   endpoint = "http://studio.example.com:8013";
-  capabilities = [ "play" "stop" "volume" "mute" "stations" ];
+  capabilities = [ "play" "stop" "volume" "mute" "stations" "bed" "outputs" ];
+  tokenFile = "/run/secrets/netradio-speaker";   # the same token the speaker reads
 };
 ```
+
+`tokenFile` is the server's copy of the token the speaker above expects, and it
+is a path for the same reason: the token is read when a call is made, so it
+never enters the Nix store and rotating it needs nothing restarted.
+
+The page never sees either the address or that path. It names a device by id
+and the admin API forwards the call, which is also what lets the token be added
+at all — a browser cannot be given one.
+
+`capabilities` is what the page offers. `bed` is a bed of rain mixed at the
+device, under the music, at its own level; `outputs` lets you choose which of
+the machine's outputs it plays through. Both need an output that can share a
+sink, so declare them for `output = "pulse"` and not for a card held exclusively.
+A control for something undeclared is simply absent rather than present and
+broken.
 
 Two things differ from the server's own speakers, and both matter:
 

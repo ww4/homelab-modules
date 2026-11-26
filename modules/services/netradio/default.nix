@@ -347,12 +347,29 @@ let
   # speakers" on somebody else's box.
   # Every device, in picker order, with its base path and what it can do. The
   # page reads this instead of knowing any device's name.
+  deviceIds = lib.sort (a: b: cfg.devices.${a}.order < cfg.devices.${b}.order)
+                       (lib.attrNames cfg.devices);
+
+  # What the PAGE is told: no endpoint and no token path. The browser names a
+  # device by id and the admin API forwards the call, so it needs neither — and
+  # a page that cannot name an internal address cannot leak one.
+  #
+  # `base` is that forwarder rather than the device's own nginx location,
+  # because a device on another machine wants a bearer token and the browser
+  # cannot be handed it. netradio/devices.py has the rest of the reasoning.
   deviceList = map (id: {
     inherit id;
     inherit (cfg.devices.${id}) name capabilities statePath order;
-    base = "device/${id}";
-  }) (lib.sort (a: b: cfg.devices.${a}.order < cfg.devices.${b}.order)
-               (lib.attrNames cfg.devices));
+    base = "admin/api/devices/${id}";
+  }) deviceIds;
+
+  # What the ADMIN API is told: the endpoints, and the PATH of each token file.
+  # This is a store path, so it must never hold a token itself — only the name
+  # of the file to read one from, at call time.
+  devicesJson = pkgs.writeText "netradio-devices.json" (builtins.toJSON (map (id: {
+    inherit id;
+    inherit (cfg.devices.${id}) name endpoint capabilities statePath order codecs tokenFile;
+  }) deviceIds));
 
   siteJson = pkgs.writeText "netradio-site.json" (builtins.toJSON {
     title = cfg.title;
@@ -954,6 +971,21 @@ in
             type = lib.types.int;
             default = 50;
             description = "Sort order in the page's target picker; lower comes first.";
+          };
+          tokenFile = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            example = "/run/secrets/netradio-speaker";
+            description = ''
+              A file holding the bearer token this device expects, sent as
+              `Authorization: Bearer`. Leave empty for a device that wants none
+              — a loopback bridge, or a port already gated by something else.
+
+              It is a PATH, read when a call is made, so rotating the token
+              needs no restart and the token itself never reaches the Nix
+              store. It is also never sent to the page: the browser addresses
+              the device by id and the admin API does the forwarding.
+            '';
           };
           afterUnits = lib.mkOption {
             type = lib.types.listOf lib.types.str;
@@ -1798,7 +1830,8 @@ in
         "--config ${configDir}" "--listen 127.0.0.1" "--port ${toString adminPort}"
         "--dj-dir ${djDir}" "--playlists ${playlistDir}"
         "--thumb-cache /var/cache/netradio/thumbs"
-      ] ++ lib.optionals (cfg.receiver.enable && cfg.receiver.apiUrl != "") [
+      ] ++ lib.optional (cfg.devices != { }) "--devices ${devicesJson}"
+      ++ lib.optionals (cfg.receiver.enable && cfg.receiver.apiUrl != "") [
         "--receiver-api ${cfg.receiver.apiUrl}"
         "--now-dir ${nowDir}"
         "--wake http://127.0.0.1:${toString wakePort}"

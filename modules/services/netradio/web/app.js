@@ -107,12 +107,20 @@ createApp({
     // here → the living room → this box's own speakers → back, skipping the
     // ones this install does not have (site.json says which exist)
     pickTarget() {
-      const order = ["here"].concat(this.site.hasRoom ? ["room"] : [], this.site.hasLocal ? ["local"] : []);
+      const order = ["here"].concat(this.site.hasRoom ? ["room"] : [], this.site.hasLocal ? ["local"] : [],
+                                    this.devices.map(d => d.id));
       this.target = order[(order.indexOf(this.target) + 1) % order.length];
       this.say({ here: "playing on this phone", room: `controlling the ${this.receiver.name || "receiver"}`,
-                 local: `controlling ${this.site.localName}` }[this.target]);
+                 local: `controlling ${this.site.localName}` }[this.target] || `controlling ${this.targetName()}`);
     },
-    targetName() { return { here: "This phone", room: this.receiver.name || this.site.roomName, local: this.site.localName }[this.target]; },
+    // A map lookup answered `undefined` for anything not in it, so a device
+    // chosen on the wide page — both pages read the same `radio.target` —
+    // showed as a blank button on the phone.
+    targetName() {
+      const d = this.targetDevice;
+      if (d) return d.name;
+      return { here: "This phone", room: this.receiver.name || this.site.roomName, local: this.site.localName }[this.target];
+    },
 
     // ---- this box's own audio output ------------------------------------------
     async pollSpeaker() {
@@ -198,6 +206,7 @@ createApp({
 
     playTarget(s) {
       this.tab = "now";              // always show the switch happen
+      if (this.targetDevice) { if (!s.mount) return; this.remember(s); return this.devicePlay(s.mount); }
       if (this.target === "local") { if (!s.mount) return; this.remember(s); return this.speakerPlay(s.mount); }
       if (this.target !== "room") return this.play(s.mount);
       this.remember(s);
@@ -229,6 +238,7 @@ createApp({
     },
     band(b) { return this.receiverAction("", () => call("POST", "receiver/tuner", { band: b, frequency: b === "FM" ? 93.1 : 1300 })); },
     volumeStep(step) {
+      if (this.targetDevice) return this.deviceSet(Math.max(0, Math.min(100, (this.dev(this.target).volume ?? 0) + step)));
       if (this.target === "local") return this.speakerVolume(step);
       this.volumeDraft = Math.max(0, Math.min(this.receiver.volume_max || 100, this.volumeDraft + step));
       return this.setVolume(this.volumeDraft);
@@ -285,6 +295,7 @@ createApp({
     setInterval(() => { this.tick = Date.now(); this.refresh().then(() => { this.refreshHeart(); this.mediaSession(); }); }, 10000);
     if (this.target === "room") this.pollReceiver();
     if (this.target === "local") this.pollSpeaker();
+    if (this.targetDevice) { this.pollDevice(this.target); setInterval(() => { if (this.targetDevice && !this.busy) this.pollDevice(this.target); }, 5000); }
     if (this.tab === "sources" && this.target !== "room") this.tab = "now";
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   },

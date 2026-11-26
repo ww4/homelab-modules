@@ -57,6 +57,17 @@ window.RadioShared = {
       // A deploy happened while this tab was open. Not an error, so not a
       // modal — see ask-panel.html.
       updateReady: false,
+      // Each registered device's own state, keyed by id: a second PC with its
+      // own speakers, a bridge in another room. The registry itself lives in
+      // site.json, so a device added there needs no page code — which is the
+      // point of there being a registry.
+      //
+      // Both pages carry this, not just the wide one, because both read
+      // `radio.target` from the same localStorage key: choose a device on the
+      // desktop and the phone opens already pointed at it. Before this, a
+      // target the phone did not recognise fell through to "here" and played
+      // in the browser while the button still named the device.
+      devState: {},
     };
   },
 
@@ -144,6 +155,7 @@ window.RadioShared = {
     },
     hearted() { const t = this.playingTrack; return !!t && !!this.hearts[t.path]; },
     nowKind() {
+      if (this.targetDevice) { const m = this.dev(this.target).mount; return !m ? "" : this.isFixed(m) ? "ambient" : "library"; }
       if (this.target === "local") return !this.speaker.mount ? "" : this.isFixed(this.speaker.mount) ? "ambient" : "library";
       if (this.target === "here") return !this.current ? "" : this.isFixed(this.current) ? "ambient" : "library";
       if (!this.receiver.on) return "";
@@ -185,8 +197,19 @@ window.RadioShared = {
     // WHAT IS PLAYING, asked once. Both pages had their own spelling of
     // this — the phone inlined it in four places — and that divergence was
     // what kept ten otherwise-identical members apart (2026-09-29).
+    // ---- the device registry ---------------------------------------------
+    // Every device netradio knows about, in its declared order, read straight
+    // from site.json. A device is anything that can be told to play a station
+    // over the four verbs; the page deliberately does not know what KIND of
+    // thing one is, so adding a box is a registry entry and not a new branch.
+    devices() { return this.site.devices || []; },
+    // The registered device the chosen target names, or null when the target is
+    // this browser, the receiver or the server's own card — those three predate
+    // the registry and keep their own code paths for now.
+    targetDevice() { return this.devices.find(d => d.id === this.target) || null; },
     playingMount() {
-      return this.target === "room" ? this.roomMount
+      return this.targetDevice ? (this.dev(this.target).mount || null)
+           : this.target === "room" ? this.roomMount
            : this.target === "local" ? (this.speaker.mount || null)
            : this.current;
     },
@@ -392,6 +415,7 @@ window.RadioShared = {
         if (s.kind === "pandora") return this.receiver.input === "Pandora" && !!np && np.station === s.name;
         return this.receiver.on && !!np && np.station === s.name;
       }
+      if (this.targetDevice) return !!s.mount && this.dev(this.target).mount === s.mount;
       if (this.target === "local") return !!s.mount && this.speaker.mount === s.mount;
       return !!s.mount && this.current === s.mount;
     },
@@ -477,7 +501,58 @@ window.RadioShared = {
       catch (e) { this.say(e.message); }
       finally { this.busy = ""; }
     },
+
+    // ---- a registered device, over the four verbs ------------------------
+    // One shape for every device, which is what makes the registry worth
+    // having: the page posts play/stop/volume/mute (and whatever extras the
+    // device declares) to a path built from its id, and the device's answer IS
+    // its new state — so one round trip both acts and refreshes.
+    dev(id) {
+      return this.devState[id] ||
+        { seen: false, playing: false, mount: "", volume: null, muted: false, target: "", outputs: [], bed: null, error: "" };
+    },
+    // The module writes `base` into site.json. The fallback matches it rather
+    // than the device's own nginx location: the call goes through the admin API
+    // so the bearer token can be added server-side.
+    devBase(id) { return (this.devices.find(d => d.id === id) || {}).base || `admin/api/devices/${id}`; },
+    // `state` is the contract. A device already speaking a different dialect
+    // declares its own path instead of being rewritten to match — yamaha-ync
+    // answers `status`.
+    devStatePath(id) { return (this.devices.find(d => d.id === id) || {}).statePath || "state"; },
+    // An extra is offered only where the device says it has it. A rain bed
+    // needs an output that can share a sink, which an exclusive ALSA device
+    // cannot, and not every box has a second output to move to. Asking anyway
+    // earns a 400 — the device correctly saying no — but the control should not
+    // have been there to press.
+    devCan(cap, id) {
+      const d = this.devices.find(x => x.id === (id || this.target));
+      return !!d && (d.capabilities || []).includes(cap);
+    },
+    devPut(id, st, fallback) {
+      this.devState = { ...this.devState,
+                        [id]: { ...(st || this.dev(id)), seen: true, error: (st && st.error) || fallback || "" } };
+    },
+    async deviceAction(label, fn) {
+      const id = this.target;          // read once: the target can change mid-flight
+      this.busy = label;
+      try { this.devPut(id, await fn(id)); }
+      catch (e) { this.devPut(id, null, e.message); this.say(e.message); }
+      finally { this.busy = ""; }
+    },
+    devicePlay(mount) { return this.deviceAction("starting…", id => call("POST", `${this.devBase(id)}/play`, { mount })); },
+    deviceStop() { return this.deviceAction("stopping…", id => call("POST", `${this.devBase(id)}/stop`, {})); },
+    deviceSet(level) { return this.deviceAction("", id => call("POST", `${this.devBase(id)}/volume`, { level })); },
+    deviceMute(on) { return this.deviceAction("", id => call("POST", `${this.devBase(id)}/mute`, { on })); },
+    deviceBed(patch) { return this.deviceAction("", id => call("POST", `${this.devBase(id)}/bed`, patch)); },
+    deviceOutput(t) { return this.deviceAction("moving…", id => call("POST", `${this.devBase(id)}/output`, { target: t })); },
+    // getJSON swallows the failure and answers null, so an unreachable device
+    // is a known state rather than a thrown error.
+    async pollDevice(id) {
+      const st = await getJSON(`${this.devBase(id)}/${this.devStatePath(id)}`);
+      this.devPut(id, st, st ? "" : "unreachable");
+    },
     stopTarget() {
+      if (this.targetDevice) return this.deviceStop();
       if (this.target === "room") return this.receiverAction("stopping…", () => call("POST", "receiver/playback", { action: "Stop" }));
       if (this.target === "local") return this.speakerAction("stopping…", () => call("POST", "speaker/stop", {}));
       return this.stop();
