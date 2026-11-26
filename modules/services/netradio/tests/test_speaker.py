@@ -16,6 +16,19 @@ from netradio import ambient, speaker
 logging.disable(logging.CRITICAL)
 
 
+class _FakeAlsa(speaker.AlsaOutput):
+    """The REAL AlsaOutput with only the amixer fork replaced. The little
+    model of the card lives on the FakeMixer that owns it, so the tests go on
+    poking `m.level` and `m.calls` exactly as they always have."""
+
+    def __init__(self, owner: "FakeMixer"):
+        self.owner = owner
+        super().__init__("0", control="Master")
+
+    def _run(self, *args: str) -> str:
+        return self.owner._run(*args)
+
+
 class FakeMixer(speaker.Mixer):
     """The REAL Mixer with only amixer replaced — every method under test is
     the shipped one.
@@ -24,14 +37,16 @@ class FakeMixer(speaker.Mixer):
     interface drifted: `choose()` and `target` were added to Mixer, the
     handler started calling them, and this fixture kept passing while /state
     returned a 500 on the live box. Stub the process boundary, nothing above
-    it (see the `test-the-real-wiring` note)."""
+    it (see the `test-the-real-wiring` note). That boundary is now
+    AlsaOutput._run rather than Mixer._run, which is the only thing the
+    output split changed here."""
 
     def __init__(self, level: int = 35):
         self.calls: list[tuple[str, ...]] = []
         self.level, self.muted = level, False
         self.STEP_MS = 1                          # a step per ms, so a ramp is
         self.fade_in_ms, self.fade_out_ms = 30, 12   # 30 and 12 steps, ~42 ms total
-        super().__init__("0", control="Master")
+        super().__init__(output=_FakeAlsa(self))
 
     def _run(self, *args: str) -> str:
         self.calls.append(args)
@@ -63,15 +78,16 @@ class FakeMixer(speaker.Mixer):
 
 class MixerParsing(unittest.TestCase):
     def test_picks_master_and_reads_level(self):
-        m = speaker.Mixer.__new__(speaker.Mixer)
-        m.card, m.amixer = "0", "amixer"
-        with mock.patch.object(speaker.Mixer, "_run", return_value="Simple mixer control 'PCM',0\nSimple mixer control 'Master',0\n"):
-            self.assertEqual(m._find(), "Master")          # Master wins over PCM
-        m.control = "Master"
-        with mock.patch.object(speaker.Mixer, "_run", return_value="  Front Left: Playback 87 [68%] [-12.00dB] [on]\n"):
-            self.assertEqual(m.state(), (68, False))
-        with mock.patch.object(speaker.Mixer, "_run", return_value="  Front Left: Playback 0 [0%] [off]\n"):
-            self.assertEqual(m.state(), (0, True))
+        # Parsing amixer's output is the AlsaOutput's job now, so this tests
+        # it where it lives rather than through the Mixer.
+        out = speaker.AlsaOutput("0")
+        with mock.patch.object(speaker.AlsaOutput, "_run", return_value="Simple mixer control 'PCM',0\nSimple mixer control 'Master',0\n"):
+            self.assertEqual(out._find(), "Master")        # Master wins over PCM
+        out._control = "Master"
+        with mock.patch.object(speaker.AlsaOutput, "_run", return_value="  Front Left: Playback 87 [68%] [-12.00dB] [on]\n"):
+            self.assertEqual(out.read_state(), (68, False))
+        with mock.patch.object(speaker.AlsaOutput, "_run", return_value="  Front Left: Playback 0 [0%] [off]\n"):
+            self.assertEqual(out.read_state(), (0, True))
 
     def test_a_missing_amixer_is_not_fatal(self):
         m = speaker.Mixer("99", amixer="/nonexistent/amixer")
@@ -494,8 +510,8 @@ class BedCheck(unittest.TestCase):
     def test_the_mixer_set_command_carries_no_unmute(self):
         seen = []
         m = speaker.Mixer.__new__(speaker.Mixer)
-        m.card, m.amixer, m.control = "0", "amixer", "Master"
-        with mock.patch.object(speaker.Mixer, "_run", side_effect=lambda *a: seen.append(a) or ""):
+        m.out, m.control = speaker.AlsaOutput("0", control="Master"), "Master"
+        with mock.patch.object(speaker.AlsaOutput, "_run", side_effect=lambda *a: seen.append(a) or ""):
             m.set(40)
         self.assertNotIn("unmute", seen[0])
 
@@ -583,7 +599,7 @@ class VolumeCeiling(unittest.TestCase):
         m = FakeMixer.__new__(FakeMixer)
         m.calls, m.level, m.muted = [], level, False
         m.STEP_MS, m.fade_in_ms, m.fade_out_ms = 1, 30, 12
-        speaker.Mixer.__init__(m, "0", control="Master", cap=cap)
+        speaker.Mixer.__init__(m, cap=cap, output=_FakeAlsa(m))
         return m
 
     def test_an_explicit_level_is_clamped(self):
@@ -744,3 +760,219 @@ class MuteReleasesTheMount(unittest.TestCase):
 
         self.player.resume()
         self.assertTrue(self.player.alive(), "resume connects to what was recorded")
+
+
+# A sink-input as `pactl -f json list sink-inputs` reports one.
+#
+# The key names here were checked against the pactl binary itself (17.0):
+# `value_percent`, `properties`, `application.name`, `index`, `mute` and
+# `volume` all appear in it, and `-f json` plus `set-sink-input-volume #N` are
+# both in its --help. What is NOT from a live server is the nesting, so the
+# parser deliberately iterates the volume map's VALUES rather than looking up a
+# channel name — channel keys come from libpulse's channel map, not from pactl,
+# and they vary with the sink.
+PACTL_SINK_INPUTS = json.dumps([
+    {
+        "index": 7,
+        "sink": 1,
+        "mute": False,
+        "volume": {
+            "front-left": {"value": 65536, "value_percent": "100%", "db": "0.00dB"},
+            "front-right": {"value": 65536, "value_percent": "100%", "db": "0.00dB"},
+        },
+        "properties": {"application.name": "firefox", "media.name": "a video"},
+    },
+    {
+        "index": 42,
+        "sink": 1,
+        "mute": False,
+        "volume": {
+            "front-left": {"value": 26214, "value_percent": "40%", "db": "-18.06dB"},
+            "front-right": {"value": 26214, "value_percent": "40%", "db": "-18.06dB"},
+        },
+        "properties": {"application.name": "netradio", "media.name": "netradio"},
+    },
+])
+
+
+def _stay_alive_player(case) -> str:
+    """A stand-in player that just stays alive: no shell, no PATH lookup — the
+    build sandbox has neither (2026-09-23, that broke the deploy once)."""
+    tmp = tempfile.TemporaryDirectory()
+    case.addCleanup(tmp.cleanup)
+    fake = Path(tmp.name) / "player"
+    fake.write_text(f"#!{sys.executable}\nimport time; time.sleep(30)\n")
+    fake.chmod(0o755)
+    return str(fake)
+
+
+class PulseOutputTests(unittest.TestCase):
+    """The output for a machine with a desktop session.
+
+    The property worth protecting here is that the level is OUR STREAM's and
+    never the sink's: on a box where a game is playing through the same sink,
+    setting the sink would turn the game down too.
+    """
+
+    def out(self, **kw):
+        return speaker.PulseOutput(pactl="pactl", **kw)
+
+    def test_ffmpeg_is_told_pulse_and_the_sink(self):
+        args = self.out(sink="alsa_output.pci-0000_0a_00.4.analog-stereo").output_args()
+        self.assertIn("-f", args)
+        self.assertEqual(args[args.index("-f") + 1], "pulse")
+        self.assertIn("-device", args)
+        self.assertEqual(args[args.index("-device") + 1],
+                         "alsa_output.pci-0000_0a_00.4.analog-stereo")
+
+    def test_no_sink_means_the_sessions_default_and_no_device_flag(self):
+        self.assertNotIn("-device", self.out().output_args())
+
+    def test_the_level_is_read_from_our_own_stream_not_someone_elses(self):
+        o = self.out()
+        with mock.patch.object(speaker.PulseOutput, "_run", return_value=PACTL_SINK_INPUTS):
+            self.assertEqual(o.read_state(), (40, False),
+                             "read firefox's 100% instead of netradio's 40%")
+
+    def test_the_level_is_written_to_the_sink_input_never_the_sink(self):
+        o = self.out()
+        seen = []
+        with mock.patch.object(speaker.PulseOutput, "_run",
+                               side_effect=lambda *a: seen.append(a) or PACTL_SINK_INPUTS):
+            o.write_level(25)
+        wrote = [a for a in seen if a and a[0].startswith("set-")]
+        self.assertEqual(wrote, [("set-sink-input-volume", "42", "25%")],
+                         "the level must land on our stream index, not on the sink")
+
+    def test_nothing_playing_yet_reads_as_no_level_rather_than_raising(self):
+        o = self.out()
+        with mock.patch.object(speaker.PulseOutput, "_run", return_value="[]"):
+            self.assertEqual(o.read_state(), (None, False))
+            o.write_level(50)          # and this is a no-op, not an exception
+
+    def test_pactl_that_is_not_json_does_not_take_the_player_down(self):
+        o = self.out()
+        with mock.patch.object(speaker.PulseOutput, "_run", return_value="not json at all"):
+            self.assertEqual(o.read_state(), (None, False))
+
+    def test_a_pulse_output_can_mix_a_second_stream_and_alsa_cannot(self):
+        # This is what decides whether the rain bed is offered on a device.
+        self.assertTrue(speaker.PulseOutput().mixes)
+        self.assertFalse(speaker.AlsaOutput().mixes)
+
+
+class PlayerUsesTheOutput(unittest.TestCase):
+    def test_the_command_ends_in_the_outputs_arguments(self):
+        pl = speaker.Player("http://127.0.0.1:8020", "/bin/true",
+                            output=speaker.PulseOutput(sink="sinkname"))
+        cmd = pl.command("rain")
+        self.assertNotIn("alsa", cmd)
+        self.assertIn("pulse", cmd)
+        self.assertIn("sinkname", cmd)
+
+    def test_alsa_is_still_the_default_for_a_player_built_the_old_way(self):
+        pl = speaker.Player("http://127.0.0.1:8020", "/bin/true", "plughw:1,0")
+        cmd = pl.command("rain")
+        self.assertEqual(cmd[-3:], ["-f", "alsa", "plughw:1,0"])
+
+    def test_the_level_is_reapplied_after_every_connect(self):
+        """A new sink-input starts at full, so without this the first moment
+        of each (re)connect is at 100% whatever level was chosen."""
+        called = []
+        pl = speaker.Player("http://127.0.0.1:8020", _stay_alive_player(self),
+                            on_start=lambda: called.append(1))
+        pl.play("rain")
+        pl.stop()
+        self.assertEqual(called, [1], "the level was not re-applied after the player started")
+
+    def test_a_failing_reapply_does_not_stop_the_music(self):
+        def boom():
+            raise RuntimeError("no mixer")
+        pl = speaker.Player("http://127.0.0.1:8020", _stay_alive_player(self), on_start=boom)
+        pl.play("rain")                      # must not raise
+        self.assertEqual(pl.mount, "rain")
+        pl.stop()
+
+
+class LoopbackDetection(unittest.TestCase):
+    def test_what_counts_as_loopback(self):
+        for host in ("127.0.0.1", "127.0.0.53", "::1", "localhost"):
+            self.assertTrue(speaker.is_loopback(host), host)
+
+    def test_a_wildcard_bind_is_not_loopback(self):
+        # The case the fail-closed check exists for: these are reachable from
+        # the network, and an empty string is the easiest one to get wrong.
+        for host in ("", "0.0.0.0", "::", "192.168.1.37", "100.66.171.120"):
+            self.assertFalse(speaker.is_loopback(host), host)
+
+
+class TokenAuth(unittest.TestCase):
+    """A speaker on a second machine is reachable by anything on the network,
+    so the token is the only thing between the house speakers and the LAN."""
+
+    def setUp(self):
+        self.player = speaker.Player("http://127.0.0.1:8020", _stay_alive_player(self))
+        self.mixer = FakeMixer()
+
+    def serve(self, token):
+        srv = ThreadingHTTPServer(("127.0.0.1", 0),
+                                  speaker.make_handler(self.player, self.mixer, True, token))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        return f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def get(self, base, token=None):
+        req = urllib.request.Request(base + "/state")
+        if token is not None:
+            req.add_header("Authorization", "Bearer " + token)
+        return urllib.request.urlopen(req, timeout=5)
+
+    def test_no_token_configured_means_no_check(self):
+        base = self.serve("")
+        self.assertEqual(self.get(base).status, 200)
+
+    def test_a_configured_token_is_required(self):
+        base = self.serve("s3cret")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.get(base)
+        self.assertEqual(caught.exception.code, 401)
+
+    def test_the_right_token_is_accepted(self):
+        base = self.serve("s3cret")
+        self.assertEqual(self.get(base, "s3cret").status, 200)
+
+    def test_a_wrong_token_is_refused(self):
+        base = self.serve("s3cret")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.get(base, "guess")
+        self.assertEqual(caught.exception.code, 401)
+
+    def test_a_post_is_guarded_too_not_only_the_read(self):
+        base = self.serve("s3cret")
+        req = urllib.request.Request(base + "/play", data=json.dumps({"mount": "rain"}).encode(),
+                                     method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(caught.exception.code, 401)
+        self.assertEqual(self.player.mount, "", "an unauthorised request still played something")
+
+
+class FailsClosed(unittest.TestCase):
+    """Binding off loopback without a token must not start. This service turns
+    speakers on in someone's house; the quiet default is the wrong one."""
+
+    def test_off_loopback_without_a_token_refuses_to_start(self):
+        rc = speaker.main(["--listen", "0.0.0.0", "--output", "pulse"])
+        self.assertEqual(rc, 2)
+
+    def test_an_empty_token_file_is_refused_rather_than_ignored(self):
+        with tempfile.TemporaryDirectory() as d:
+            empty = Path(d) / "token"
+            empty.write_text("   \n")
+            rc = speaker.main(["--listen", "0.0.0.0", "--token-file", str(empty)])
+            self.assertEqual(rc, 2, "an empty token file authorises everything")
+
+    def test_an_unreadable_token_file_refuses_to_start(self):
+        rc = speaker.main(["--token-file", "/nonexistent/token"])
+        self.assertEqual(rc, 2)

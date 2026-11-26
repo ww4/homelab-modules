@@ -1,10 +1,9 @@
-"""`netradio speaker` — the server's own sound card as a playback endpoint.
+"""`netradio speaker` — a machine's own speakers as a playback endpoint.
 
 The library stations already reach the phone and the living-room receiver;
-this makes the green jack on the back of the box a third place to send
-them. It keeps one ffmpeg child alive on a station's Icecast mount, decoding
-straight to the ALSA device, and answers a small JSON API on loopback so the
-remote can drive it:
+this makes a pair of speakers a third place to send them. It keeps one ffmpeg
+child alive on a station's mount and answers a small JSON API so the remote
+can drive it:
 
     GET  /state                  {playing, mount, volume, muted, error}
     POST /play    {"mount": "rain"}
@@ -12,18 +11,29 @@ remote can drive it:
     POST /volume  {"level": 40} | {"step": 5} | {"step": -5}
     POST /mute    {"on": true}
 
-Volume is the ALSA mixer (amixer), so it is the real output level, not a
-software attenuation — nothing else on the box is competing for the card.
+Two outputs, because two situations are genuinely different (see Output
+below). On a server whose card nothing else is using, the volume is the ALSA
+mixer, so it is the real output level rather than a software attenuation. On a
+desktop machine sharing a PipeWire sink with a game, the volume is set on
+THIS SERVICE'S STREAM, so turning the radio down leaves the game alone.
+
 A crashed player is restarted; a station that stops streaming leaves the
 service trying, which is what you want for an all-night rain loop.
 
 The default mount plays at boot, so power-cycling the box brings the rain
 back with no phone involved.
+
+The API is unauthenticated when it is bound to loopback, which is right when
+a vhost in front of it is the access gate. Bound anywhere else it requires a
+shared token, and refuses to start without one — an endpoint on a second
+machine is reachable by everything on the network.
 """
 
 from __future__ import annotations
 
 import argparse
+import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -37,6 +47,7 @@ import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 from netradio.conventions import is_mount
@@ -50,51 +61,118 @@ log = logging.getLogger("netradio.speaker")
 DEFAULT_DEVICE = "plughw:0,0"
 
 
-class Mixer:
-    """The card's playback volume through amixer. `control` is the mixer
+def is_loopback(host: str) -> bool:
+    """True only for an address that nothing off this machine can reach.
+
+    A bind address of "" or 0.0.0.0 is emphatically NOT loopback, and that is
+    the case this exists to catch.
+    """
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+
+# ---------------------------------------------------------------------------
+# Where the sound goes.
+#
+# Two outputs exist because the two situations are genuinely different, not
+# because the code wanted a plug-in point:
+#
+#   AlsaOutput   the server's own card, which nothing else is using. The level
+#                is the card's own mixer, so it is the real output level.
+#   PulseOutput  a PipeWire/PulseAudio sink on a machine with a desktop
+#                session — a second PC on the network, say, where a game is
+#                making sound too. The level is OUR STREAM's, never the
+#                sink's: moving the sink would move the game with it.
+#
+# Everything in Mixer below is policy — the ceiling, the ramp, the mute that
+# is a level of zero rather than a switch, the watchdog — and is shared. An
+# output only says how ffmpeg reaches it, and how one number is read and
+# written. Adding a third is those three methods and nothing else.
+# ---------------------------------------------------------------------------
+
+
+class Output:
+    """One place to send sound, plus the level control belonging to it."""
+
+    kind = "none"
+
+    # True when a second stream can play alongside the station (the rain bed).
+    # A shared sink mixes for free; an exclusive ALSA device does not.
+    mixes = False
+
+    def prepare(self) -> None:
+        """Called once, before any level is set."""
+
+    def control_name(self) -> str:
+        """Non-empty when a level can be set at all. Empty is not an error: the
+        music plays and the volume verbs quietly do nothing, which is better
+        than refusing to play because a mixer could not be found."""
+        return ""
+
+    def output_args(self) -> list[str]:
+        """The tail of the ffmpeg command line — where to send the audio."""
+        raise NotImplementedError
+
+    def await_ready(self, timeout: float = 2.0) -> bool:
+        """Wait until a level can actually be written, after the player starts.
+
+        A card is ready before anything plays, so this is a no-op for ALSA. A
+        stream is not: it appears a moment after ffmpeg does, and setting the
+        level before then writes to nothing.
+        """
+        return True
+
+    def read_state(self) -> tuple[int | None, bool]:
+        """(level 0-100 or None, muted-by-something-else).
+
+        One call returns both because on ALSA both come out of a single
+        `amixer sget`, and the watchdog runs this every two seconds — making
+        it two calls would double the forks for no gain.
+        """
+        raise NotImplementedError
+
+    def write_level(self, pct: int) -> None:
+        raise NotImplementedError
+
+
+class AlsaOutput(Output):
+    """The server's own sound card: ffmpeg decodes straight to an ALSA device
+    and the level is the card's mixer through amixer. `control` is the mixer
     control ('Master' on most, 'PCM' on some codecs); the first one that
     answers is used, so a different card needs no configuration."""
 
+    kind = "alsa"
+
     CANDIDATES = ("Master", "PCM", "Speaker", "Headphone", "Digital")
 
-    # Class-level defaults so an instance built without __init__ still behaves.
-    # Tests and diagnostics do that, and every time a new instance attribute
-    # appeared they broke on AttributeError instead of on the thing under test.
-    cap = 100
-    target = 50
-    _muted = False
-    # Asymmetric on purpose. Coming back is a fade IN and wants to be gentle;
-    # going away, and any ordinary volume change, wants to feel immediate.
-    # The owner set 300 ms in by ear (2026-09-27).
-    fade_in_ms = 300
-    fade_out_ms = 120
-
-    def __init__(self, card: str, amixer: str = "amixer", control: str = "", cap: int = 100,
-                 fade_in_ms: int | None = None, fade_out_ms: int | None = None):
+    def __init__(self, card: str = "0", amixer: str = "amixer", control: str = "",
+                 device: str = ""):
         self.card = card
         self.amixer = amixer
-        # A ceiling nothing can exceed: not the UI, not a stray request, not a
-        # diagnostic. The owner found the live level at 100% on 2026-09-26 with no
-        # way to tell what had put it there, and on speakers that is the kind of
-        # accident worth making impossible rather than unlikely.
-        self.cap = max(0, min(100, int(cap)))
-        if fade_in_ms is not None:
-            self.fade_in_ms = max(0, int(fade_in_ms))
-        if fade_out_ms is not None:
-            self.fade_out_ms = max(0, int(fade_out_ms))
-        self.control = control or self._find()
-        self.lock = threading.RLock()
-        self._muted = False
-        # The codec's own mute switch is never touched after this (see mute()),
-        # so clear it ONCE at startup — a `[off]` left in alsa-state from before
-        # would otherwise make the service silent forever while it happily
-        # ramped a volume nobody could hear. This is the one click per start.
-        if self.control:
-            self._run("sset", self.control, "unmute")
-        # Where an unmute returns to. A muted control reads 0%, so the level
-        # has to be remembered rather than read back.
-        cur, _ = self.state()
-        self.target = cur if cur else 50
+        self.device = device or DEFAULT_DEVICE
+        self._control = control
+
+    def prepare(self) -> None:
+        # The codec's own mute switch is never touched after this (see
+        # Mixer.mute), so clear it ONCE at startup — an `[off]` left in
+        # alsa-state from before would otherwise make the service silent for
+        # ever while it happily ramped a volume nobody could hear. This is the
+        # one click per start.
+        if self.control_name():
+            self._run("sset", self.control_name(), "unmute")
+
+    def control_name(self) -> str:
+        if not self._control:
+            self._control = self._find()
+        return self._control
+
+    def output_args(self) -> list[str]:
+        return ["-f", "alsa", self.device]
 
     def _run(self, *args: str) -> str:
         """amixer missing or the card gone: no volume control, but the music
@@ -114,15 +192,180 @@ class Mixer:
                 return want
         return names[0] if names else ""
 
+    def read_state(self) -> tuple[int | None, bool]:
+        control = self.control_name()
+        if not control:
+            return None, False
+        out = self._run("sget", control)
+        pct = re.search(r"\[(\d{1,3})%\]", out)
+        return (int(pct.group(1)) if pct else None), ("[off]" in out)
+
+    def write_level(self, pct: int) -> None:
+        control = self.control_name()
+        if control:
+            self._run("sset", control, f"{pct}%")
+
+
+class PulseOutput(Output):
+    """A PipeWire or PulseAudio sink, for a machine with a desktop session.
+
+    The level is this service's OWN stream, not the sink. That is the whole
+    reason this output exists separately: on a machine where something else
+    is making sound — a game, a browser — the sink level is shared, so
+    turning the radio down by moving the sink would turn the game down with
+    it. A sink-input's volume belongs to one stream.
+
+    It follows that the level has to be re-applied every time the stream is
+    created, because a brand-new sink-input starts at 100%. Mixer.reapply()
+    is called after each (re)connect for exactly that.
+    """
+
+    kind = "pulse"
+    mixes = True
+
+    def __init__(self, sink: str = "", pactl: str = "pactl",
+                 stream_name: str = "netradio"):
+        self.sink = sink
+        self.pactl = pactl
+        self.stream_name = stream_name
+
+    def control_name(self) -> str:
+        return "stream" if self.pactl else ""
+
+    def output_args(self) -> list[str]:
+        # `-name` is the application name, which is how our own sink-input is
+        # found again below. The trailing argument is the stream description
+        # the mixer applet shows.
+        args = ["-f", "pulse", "-name", self.stream_name]
+        if self.sink:
+            args += ["-device", self.sink]
+        return args + [self.stream_name]
+
+    def _run(self, *args: str) -> str:
+        try:
+            return subprocess.run([self.pactl, *args],
+                                  capture_output=True, text=True, timeout=10).stdout
+        except Exception as e:
+            log.warning("pactl %s failed: %s", " ".join(args), e)
+            return ""
+
+    def _ours(self) -> dict | None:
+        """Our sink-input, or None when nothing is playing yet.
+
+        JSON rather than parsing `pactl list`'s prose: the text form is laid
+        out for people and has changed shape between releases.
+        """
+        try:
+            items = json.loads(self._run("-f", "json", "list", "sink-inputs") or "[]")
+        except ValueError:
+            log.warning("pactl did not return JSON for sink-inputs")
+            return None
+        for si in items or []:
+            if (si.get("properties") or {}).get("application.name") == self.stream_name:
+                return si
+        return None
+
+    def await_ready(self, timeout: float = 2.0) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            if self._ours() is not None:
+                return True
+            if time.monotonic() >= deadline:
+                log.warning("no %s stream appeared within %.1fs — level not applied",
+                            self.stream_name, timeout)
+                return False
+            time.sleep(0.1)
+
+    def read_state(self) -> tuple[int | None, bool]:
+        si = self._ours()
+        if not si:
+            # Not playing. None means "no reading", which Mixer already
+            # handles everywhere — it is the same answer a missing mixer gives.
+            return None, False
+        vol = si.get("volume") or {}
+        for chan in vol.values():
+            raw = str((chan or {}).get("value_percent", "")).rstrip("%")
+            if raw.isdigit():
+                return int(raw), bool(si.get("mute"))
+        return None, bool(si.get("mute"))
+
+    def write_level(self, pct: int) -> None:
+        si = self._ours()
+        if si is None:
+            # Nothing to set yet. The level is remembered by Mixer.target and
+            # applied by reapply() when the stream appears.
+            log.debug("no stream to set the level on yet")
+            return
+        self._run("set-sink-input-volume", str(si.get("index")), f"{pct}%")
+
+
+class Mixer:
+    """The output level, and every rule about how it may change.
+
+    Knows nothing about ALSA or PulseAudio — that is the `Output` it is
+    given. `Mixer(card, ...)` still builds an AlsaOutput itself, because that
+    is how it has always been called and how most installations use it.
+    """
+
+    CANDIDATES = AlsaOutput.CANDIDATES
+
+    # Class-level defaults so an instance built without __init__ still behaves.
+    # Tests and diagnostics do that, and every time a new instance attribute
+    # appeared they broke on AttributeError instead of on the thing under test.
+    cap = 100
+    target = 50
+    _muted = False
+    # Asymmetric on purpose. Coming back is a fade IN and wants to be gentle;
+    # going away, and any ordinary volume change, wants to feel immediate.
+    # The owner set 300 ms in by ear (2026-09-27).
+    fade_in_ms = 300
+    fade_out_ms = 120
+
+    def __init__(self, card: str = "0", amixer: str = "amixer", control: str = "", cap: int = 100,
+                 fade_in_ms: int | None = None, fade_out_ms: int | None = None,
+                 output: Output | None = None):
+        self.out = output if output is not None else AlsaOutput(card, amixer, control)
+        # A ceiling nothing can exceed: not the UI, not a stray request, not a
+        # diagnostic. The owner found the live level at 100% on 2026-09-26 with no
+        # way to tell what had put it there, and on speakers that is the kind of
+        # accident worth making impossible rather than unlikely.
+        self.cap = max(0, min(100, int(cap)))
+        if fade_in_ms is not None:
+            self.fade_in_ms = max(0, int(fade_in_ms))
+        if fade_out_ms is not None:
+            self.fade_out_ms = max(0, int(fade_out_ms))
+        self.control = self.out.control_name()
+        self.lock = threading.RLock()
+        self._muted = False
+        self.out.prepare()
+        # Where an unmute returns to. A muted control reads 0%, so the level
+        # has to be remembered rather than read back.
+        cur, _ = self.state()
+        self.target = cur if cur else 50
+
     def state(self) -> tuple[int | None, bool]:
         """(volume 0-100, muted). Muted is OUR state, because the mute is a
-        level of zero rather than the codec's switch; `[off]` still counts, so
-        someone muting the card by hand is not reported as unmuted."""
+        level of zero rather than the codec's switch; an output that reports
+        itself muted still counts, so someone muting the card by hand is not
+        reported as unmuted."""
         if not self.control:
             return None, False
-        out = self._run("sget", self.control)
-        pct = re.search(r"\[(\d{1,3})%\]", out)
-        return (int(pct.group(1)) if pct else None), (self._muted or "[off]" in out)
+        level, muted_elsewhere = self.out.read_state()
+        return level, (self._muted or muted_elsewhere)
+
+    def reapply(self) -> None:
+        """Put the chosen level back on the output.
+
+        Needed because a PulseOutput's level lives on the stream, and a stream
+        that has just been created starts at full. Harmless on ALSA, where the
+        level is the card's and survives the player restarting, so the caller
+        does not have to know which output it has.
+        """
+        with self.lock:
+            if not self.control:
+                return
+            self.out.await_ready()
+            self.set(0 if self._muted else self.target, "stream (re)started")
 
     def set(self, level: int, why: str = "") -> None:
         """Level only. Deliberately NOT `unmute` as well: the receiver does
@@ -140,7 +383,7 @@ class Mixer:
         want = max(0, min(self.cap, int(level)))
         if why:
             log.info("set %d%% (%s)", want, why)
-        self._run("sset", self.control, f"{want}%")
+        self.out.write_level(want)
 
     def choose(self, level: int) -> None:
         """A user-driven level change: remember it, and slide rather than jump.
@@ -289,10 +532,15 @@ class Player:
     anyway: straight into PipeWire, "Host is down", forever. An ignored
     environment variable fails silently; `-f alsa plughw:0,0` cannot."""
 
-    def __init__(self, base: str, ffmpeg: str, device: str = "", wake: str = ""):
+    def __init__(self, base: str, ffmpeg: str, device: str = "", wake: str = "",
+                 output: Output | None = None, on_start=None):
         self.base = base.rstrip("/")
         self.ffmpeg = ffmpeg
         self.device = device or DEFAULT_DEVICE
+        self.out = output if output is not None else AlsaOutput(device=self.device)
+        # Called after every (re)connect. The level has to be re-applied for a
+        # PulseOutput, whose level belongs to the stream rather than the card.
+        self.on_start = on_start
         self.wake_url = wake.rstrip("/")
         self.mount = ""
         self.proc: subprocess.Popen | None = None
@@ -351,7 +599,7 @@ class Player:
                 # wait for watch() to notice five seconds later.
                 "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
                 "-i", self.url(mount),
-                "-f", "alsa", self.device]
+                *self.out.output_args()]
 
     def play(self, mount: str, wake_wait: float = 25.0) -> None:
         with self.lock:
@@ -373,6 +621,14 @@ class Player:
                                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                                          env={**os.environ})
             self.mount, self.error = mount, ""
+            if self.on_start:
+                # A new stream starts at full on a shared sink, so this is not
+                # cosmetic: without it the first second of a PulseOutput
+                # reconnect is at 100% regardless of the chosen level.
+                try:
+                    self.on_start()
+                except Exception:
+                    log.exception("on_start after playing %s", mount)
 
     def stop(self) -> None:
         with self.lock:
@@ -441,9 +697,33 @@ class Player:
                     self.play(mount)
 
 
-def make_handler(player: Player, mixer: Mixer, disconnect_when_muted: bool = True):
+def make_handler(player: Player, mixer: Mixer, disconnect_when_muted: bool = True,
+                 token: str = ""):
+    """`token`, when set, is required as `Authorization: Bearer <token>`.
+
+    Empty means no check, which is right for a loopback endpoint behind the
+    page's own vhost — that vhost is the access gate. It is NOT right for an
+    endpoint on a second machine, where anything on the network can reach the
+    port, so main() refuses to start in that combination rather than leaving
+    the speakers open. See the --token-file help.
+    """
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+
+        def _authorised(self) -> bool:
+            if not token:
+                return True
+            got = self.headers.get("Authorization", "")
+            prefix = "Bearer "
+            if not got.startswith(prefix):
+                return False
+            # Constant time: a timing oracle on a shared token is cheap to
+            # avoid and awkward to notice.
+            return hmac.compare_digest(got[len(prefix):].strip(), token)
+
+        def _deny(self) -> None:
+            self._reply(401, {"error": "unauthorised"})
 
         def log_message(self, fmt, *args):
             log.debug(fmt, *args)
@@ -474,14 +754,22 @@ def make_handler(player: Player, mixer: Mixer, disconnect_when_muted: bool = Tru
             return {"playing": player.alive(), "mount": player.mount,
                     "volume": mixer.target if mixer.control else vol,
                     "actual": vol, "muted": muted,
-                    "control": mixer.control, "error": player.error}
+                    "control": mixer.control, "error": player.error,
+                    # What this endpoint is driving, so a client does not have
+                    # to be told out of band. `mixes` is whether a second
+                    # stream can play alongside the station.
+                    "output": mixer.out.kind, "mixes": mixer.out.mixes}
 
         def do_GET(self):
+            if not self._authorised():
+                return self._deny()
             if urlparse(self.path).path in ("/state", "/"):
                 return self._reply(200, self._state())
             self._reply(404, {"error": "not found"})
 
         def do_POST(self):
+            if not self._authorised():
+                return self._deny()
             path = urlparse(self.path).path
             body = self._json()
             try:
@@ -534,6 +822,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--control", default="", help="mixer control (default: the first of Master/PCM/Speaker…)")
     ap.add_argument("--device", default=DEFAULT_DEVICE,
                     help="ALSA device to open; NOT `default`, which PipeWire claims")
+    ap.add_argument("--output", choices=("alsa", "pulse"), default="alsa",
+                    help="alsa: this machine's own card, level set on the card (the default). "
+                         "pulse: a PipeWire/PulseAudio sink on a machine with a desktop "
+                         "session, level set on OUR STREAM so a game sharing the sink is "
+                         "left alone.")
+    ap.add_argument("--sink", default="",
+                    help="with --output pulse: which sink to play to (default: the session's)")
+    ap.add_argument("--pactl", default=shutil.which("pactl") or "pactl",
+                    help="with --output pulse: the pactl binary")
+    ap.add_argument("--stream-name", default="netradio",
+                    help="with --output pulse: the application name this service's stream "
+                         "carries, which is how its own level is found again")
+    ap.add_argument("--token-file", default="",
+                    help="a file holding a shared token; every request must then carry "
+                         "`Authorization: Bearer <token>`. Not needed when --listen is "
+                         "loopback and the page's vhost is the gate — and REQUIRED when it "
+                         "is not, because the port is then reachable from the network.")
     ap.add_argument("--wake", default="", help="the wake service, e.g. http://127.0.0.1:8011 (starts the encoder)")
     ap.add_argument("--default-mount", default="", help="play this at startup (the rain, usually)")
     ap.add_argument("--start-volume", type=int, help="set the mixer here at startup")
@@ -554,10 +859,38 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(message)s", stream=sys.stdout)
 
-    mixer = Mixer(args.card, control=args.control, cap=args.max_volume,
-                  fade_in_ms=args.fade_in_ms, fade_out_ms=args.fade_out_ms)
-    log.info("mixer control: %s (card %s), ceiling %d%%, fade %d/%d ms in/out",
-             mixer.control or "none found", args.card, mixer.cap, mixer.fade_in_ms, mixer.fade_out_ms)
+    token = ""
+    if args.token_file:
+        try:
+            token = Path(args.token_file).read_text().strip()
+        except OSError as e:
+            log.error("cannot read --token-file %s: %s", args.token_file, e)
+            return 2
+        if not token:
+            log.error("--token-file %s is empty — refusing to start with a token "
+                      "that authorises nothing", args.token_file)
+            return 2
+
+    # Fail CLOSED. An endpoint off loopback is reachable by anything on the
+    # network, and this service turns speakers on in someone's house; the
+    # wrong default here is the one that is quiet about it.
+    if not is_loopback(args.listen) and not token:
+        log.error("--listen %s is not loopback and no --token-file was given. Anything "
+                  "on the network could drive these speakers. Pass --token-file, or bind "
+                  "to 127.0.0.1 and reach it through the page's vhost.", args.listen)
+        return 2
+
+    if args.output == "pulse":
+        out: Output = PulseOutput(sink=args.sink, pactl=args.pactl,
+                                  stream_name=args.stream_name)
+    else:
+        out = AlsaOutput(args.card, control=args.control, device=args.device)
+
+    mixer = Mixer(cap=args.max_volume, fade_in_ms=args.fade_in_ms,
+                  fade_out_ms=args.fade_out_ms, output=out)
+    log.info("output %s, level control: %s, ceiling %d%%, fade %d/%d ms in/out",
+             out.kind, mixer.control or "none found",
+             mixer.cap, mixer.fade_in_ms, mixer.fade_out_ms)
     if args.start_volume is not None:
         # `target` is what the watchdog compares against and what an unmute
         # returns to, so it has to mean the level we actually set. It was left
@@ -567,7 +900,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.start_muted:
         mixer.mute(True)          # after the level, so the level is ready when it is unmuted
         log.info("starting muted")
-    player = Player(args.icecast, args.ffmpeg, args.device, args.wake)
+    player = Player(args.icecast, args.ffmpeg, args.device, args.wake,
+                    output=out, on_start=mixer.reapply)
     disconnect_when_muted = not args.hold_stream_while_muted
     if args.start_muted and disconnect_when_muted:
         # Suspend BEFORE the default mount is chosen below, so a box that boots
@@ -583,7 +917,8 @@ def main(argv: list[str] | None = None) -> int:
         # here, so wait properly rather than thrash on 404s.
         player.play(args.default_mount, wake_wait=120.0)
 
-    srv = ThreadingHTTPServer((args.listen, args.port), make_handler(player, mixer, disconnect_when_muted))
+    srv = ThreadingHTTPServer((args.listen, args.port),
+                              make_handler(player, mixer, disconnect_when_muted, token))
     # Serve on a THREAD and wait here. The obvious shape — serve_forever() in
     # the main thread with a SIGTERM handler that calls srv.shutdown() —
     # deadlocks: Python runs signal handlers on the main thread, so shutdown()
@@ -593,7 +928,9 @@ def main(argv: list[str] | None = None) -> int:
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
-    log.info("speaker on %s:%d, playing %s", args.listen, args.port, args.default_mount or "nothing")
+    log.info("speaker on %s:%d (%s), playing %s", args.listen, args.port,
+             "token required" if token else "no token — loopback only",
+             args.default_mount or "nothing")
     try:
         # A POLLING wait, not a bare stop.wait(). An untimed wait depends on the
         # signal interrupting a C-level lock acquire, which held on the box and

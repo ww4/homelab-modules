@@ -97,6 +97,48 @@ homelab.netradio.speaker = {
 > `default` is usually redirected to a per-user PipeWire that the service user
 > cannot reach. Name the hardware device.
 
+### Speakers on another machine
+
+The speakers above belong to the radio server. For a *different* machine — a
+desktop in another room, a games PC — enable the `netradio-speaker` module
+there instead. It is the listening end on its own: no library, no Liquidsoap,
+no page, just speakers that can be told to play one of the stations.
+
+On that machine:
+
+```nix
+homelab.netradio-speaker = {
+  enable    = true;
+  user      = "alice";                            # whose session owns the sound
+  output    = "pulse";                            # a desktop, sharing its sink
+  stations  = "https://radio.example.com/radio";  # where the mounts are served
+  listen    = "0.0.0.0";
+  tokenFile = "/run/secrets/netradio-speaker";
+  firewallInterfaces = [ "tailscale0" ];
+};
+```
+
+and on the radio server, register it like any other device:
+
+```nix
+homelab.netradio.devices.studio = {
+  name = "Studio PC";
+  endpoint = "http://studio.example.com:8013";
+  capabilities = [ "play" "stop" "volume" "mute" "stations" ];
+};
+```
+
+Two things differ from the server's own speakers, and both matter:
+
+- **`output = "pulse"` sets the level on this service's own audio stream, not
+  on the sink.** On a machine where a game or a browser plays through that same
+  sink, moving the sink would move those too. Pulse needs a session to talk to,
+  so it runs as a user service and `user` is required.
+- **`tokenFile` is required once `listen` is not loopback**, and the service
+  refuses to start without it. A loopback endpoint is safe because the radio
+  page's own vhost is the access gate; a port on the network is behind nothing,
+  and this service turns speakers on in someone's house.
+
 ### A picture for one track
 
 A track's artwork is looked for in this order:
@@ -206,7 +248,7 @@ The pieces, each its own unit:
 | `netradio-icecast` | Serves the streams |
 | `netradio-wake` | Starts an encoder on demand; nginx asks it before proxying |
 | `netradio-admin` | The admin API: stations, feedback, search, cover art |
-| `netradio-speaker` | This machine's sound card as a listening target |
+| `netradio-speaker` | Speakers as a listening target — this machine's card, or another machine's via the `netradio-speaker` module |
 | `netradio-resume` | Puts a network receiver back after an encoder restart |
 | `netradio-ambient` | Fetches ambient beds for fixed stations |
 | `netradio-profile` | Optional acoustic analysis (loudness, talk detection) |
