@@ -145,6 +145,39 @@ Two things differ from the server's own speakers, and both matter:
   because an unauthenticated port on a LAN behaves exactly like a correctly
   configured one right up until someone else finds it.
 
+### The receiver bridge, here or elsewhere
+
+`receiver.apiUrl` is a URL, so whatever talks to the receiver does not have to
+run on the radio server. This is a free choice, unlike speakers: the receiver
+is reached over the network either way, and a bridge beside the radio server
+has exactly the same access to it as a bridge on a different box.
+
+Loopback is the sensible default, and `afterUnits` orders the play logger after
+the bridge's unit when the two share a machine. For a bridge elsewhere, name
+the address and leave `afterUnits` empty — there is no local unit to wait for:
+
+```nix
+homelab.netradio.receiver = {
+  enable = true;
+  apiUrl = "http://receiver-box:8791";
+  afterUnits = [ ];
+};
+```
+
+`statePath` is there for the same reason. A bridge that answers `status` rather
+than `state` is usable as it stands, without being rewritten to match this
+module's spelling.
+
+What gates such a bridge is whatever you put in front of it, which is also true
+of the receiver. `services.yamaha-ync` binds loopback by default for that
+reason; a bridge reachable on the network should be scoped to one interface,
+the way `profile.remotes` endpoints are.
+
+Note what a password on the bridge would *not* buy, before adding one. The
+receiver's own control protocol has no authentication — that is the reason a
+bridge exists in this shape — so anyone who can reach the bridge can reach the
+receiver directly and skip it. The lock would be on the second door.
+
 ### A picture for one track
 
 A track's artwork is looked for in this order:
