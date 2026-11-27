@@ -1300,7 +1300,7 @@ body.selecting .pin{display:none}
       var lines = body.split("\n");
       if (!/\[([ xX])\]/.test(lines[idx] || "")) throw new Error("that line moved — reopen the note");
       lines[idx] = lines[idx].replace(/\[([ xX])\]/, function(_, c){ return c.toLowerCase() === "x" ? "[ ]" : "[x]"; });
-      return api("PUT", "/api/notes", {id:n.id, body:lines.join("\n")});
+      return api("PUT", "/api/notes", {id:n.id, body:lines.join("\n"), base:body});
     }).then(function(saved){
       for (var k in saved) n[k] = saved[k];
       render();
@@ -2618,7 +2618,11 @@ body.selecting .pin{display:none}
     return lines.join("\n");
   }
 
-  function bodyNow(){ return ed.raw !== null ? ed.raw : serialize(ed.blocks); }
+  function bodyOf(s){ return s.raw !== null ? s.raw : serialize(s.blocks); }
+  function bodyNow(){ return bodyOf(ed); }
+  // A closed session still has to save its last words, after the title box
+  // has moved on to the next note — so a closed one carries its own title.
+  function titleOf(s){ return s === ed ? el.edTitle.value.trim() : (s.title || ""); }
   function anyCk(){ return ed.blocks.some(function(b){ return b.t === "item" && b.ck; }); }
 
   // a section run is the stretch of rows between two headings
@@ -2638,47 +2642,153 @@ body.selecting .pin{display:none}
     B.splice(at, 0, b);
   }
 
+  // ---- nothing typed is ever only in memory ----
+  // 2026-11-27: a grocery list started on a phone was lost, and the server
+  // had no trace of it. Three ways that could happen, all closed here:
+  //   1. a save that came due while another was in flight was SKIPPED, with
+  //      no retry — and closing the note mid-save dropped the last words too;
+  //   2. a failed save of an existing note said "Not saved" and that was it;
+  //   3. two phones on one shared list: the later save overwrote the earlier.
+  // Now every keystroke is stashed on the device until the server has it, a
+  // skipped save runs as soon as the one in flight lands, and each save names
+  // the version it was based on so the server MERGES rather than overwrites.
+  var STASH = "notes.unsaved";
+  function stashAll(){
+    try { return JSON.parse(localStorage.getItem(STASH) || "{}") || {}; } catch (e) { return {}; }
+  }
+  function stashSet(all){ try { localStorage.setItem(STASH, JSON.stringify(all)); } catch (e) {} }
+  function stashKey(s){ return s.id || ("new:" + s.nk); }
+  function keep(s){
+    if (!s || s.loading) return;            // the placeholder is not the note
+    var t = titleOf(s), b = bodyOf(s), all = stashAll();
+    if (!s.id && !t && !b.trim()) return;
+    all[stashKey(s)] = {id:s.id || null, title:t, body:b, base:s.base, qk:s.queueKey, at:Date.now()};
+    stashSet(all);
+  }
+  function unkeep(key, onlyIfBody){
+    var all = stashAll();
+    if (!all[key] || (onlyIfBody !== undefined && all[key].body !== onlyIfBody)) return;
+    delete all[key]; stashSet(all);
+  }
+
   function touch(){
     clearTimeout(saveT);
     el.edSaved.textContent = "";
-    saveT = setTimeout(commit, 350);
+    keep(ed);
+    var s = ed;
+    saveT = setTimeout(function(){ commit(s); }, 350);
   }
-  function commit(){
-    // Never write while the real body is still in flight: bodyNow() would be
+
+  function commit(s){
+    s = s || ed;
+    // Never write while the real body is still in flight: bodyOf() would be
     // the empty placeholder and would overwrite the note with nothing.
-    if (!ed || ed.busy || ed.loading) return Promise.resolve();
-    var t = el.edTitle.value.trim(), b = bodyNow();
-    if (ed.note && t === ed.note.title && b === ed.base) return Promise.resolve();
-    if (!ed.id && !t && !b.trim()) return Promise.resolve();   // nothing typed yet
-    ed.busy = true;
-    var p = ed.id
-      ? api("PUT", "/api/notes", {id:ed.id, title:t || "Untitled", body:b})
+    if (!s || s.loading) return Promise.resolve();
+    // One save at a time per note — but a save that comes due meanwhile is
+    // REMEMBERED and runs when this one lands, instead of being dropped.
+    if (s.busy) { s.again = true; return s.flight; }
+    var t = titleOf(s), b = bodyOf(s);
+    if (s.id && s.note && t === s.note.title && b === s.base) { unkeep(s.id); return Promise.resolve(); }
+    if (!s.id && !t && !b.trim()) return Promise.resolve();   // nothing typed yet
+    s.busy = true; s.again = false;
+    var p = s.id
+      ? api("PUT", "/api/notes", {id:s.id, title:t || "Untitled", body:b, base:s.base})
       : api("POST", "/api/notes", {title:t || "Untitled", body:b});
-    var mine = ed;
-    return p.then(function(saved){
+    s.flight = p.then(function(saved){
+      var wasNew = !s.id, disk = saved.saved_body, merged = saved.merged;
+      delete saved.saved_body; delete saved.merged;
       // A new note gets its real path from the server; adopt it so the next
       // keystroke updates rather than creating a second file.
-      if (mine === ed) {
-        ed.id = saved.id; ed.note = saved;
+      s.id = saved.id; s.note = saved;
+      if (wasNew) {
+        unkeep("new:" + s.nk);
+        // It had been queued by an earlier failed try: this save supersedes
+        // that, or the queue would post it a second time.
+        if (s.queueKey !== undefined && s.queueKey !== null) {
+          var qk = s.queueKey; s.queueKey = null;
+          tx("readwrite", function(st){ st.delete(qk); }).then(loadPending).catch(function(){});
+        }
+      }
+      var typed = bodyOf(s) !== b || titleOf(s) !== t;
+      if (!typed && disk !== undefined) {
+        s.base = disk;
+        // Someone else's edit was merged in: show the note as it now is.
+        if (merged) {
+          if (s.raw !== null) s.raw = disk; else s.blocks = parseBlocks(disk);
+          if (s === ed) { draw(); toast("Merged with a change made on another device", null); }
+        }
+      } else {
+        // Still typing: what is on screen grew out of `b`, so `b` is the
+        // base the next save merges against — that keeps any merged-in lines.
+        s.base = b;
+      }
+      if (typed) keep(s); else unkeep(s.id);
+      s.fails = 0;
+      if (s === ed) {
         el.edPath.textContent = saved.id + (saved.date ? "  ·  edited " + saved.date : "");
+        el.edSaved.textContent = "Saved";
       }
       var ex = null;
       for (var i = 0; i < NOTES.length; i++) if (NOTES[i].id === saved.id) ex = NOTES[i];
       if (ex) { for (var k in saved) ex[k] = saved[k]; } else { NOTES.push(saved); }
-      el.edSaved.textContent = "Saved";
     }).catch(function(e){
-      // A NEW note with nowhere to go is queued rather than lost. An edit is
-      // not: replaying it later could overwrite someone else's change.
-      if (!mine.id && !ONLINE) {
-        return enqueue(t || "Untitled", b, mine.queueKey).then(function(k){
-          mine.queueKey = k;
-          if (mine === ed) el.edSaved.textContent = "Queued — saves when online";
+      if (!s.id) {
+        // A new note with nowhere to go is queued, whether or not the phone
+        // already knew it was offline.
+        return enqueue(t || "Untitled", b, s.queueKey).then(function(k){
+          s.queueKey = k;
+          unkeep("new:" + s.nk);
+          if (s === ed) el.edSaved.textContent = "Queued — saves when online";
           render();
         });
       }
-      el.edSaved.textContent = "Not saved";
-      fail("Couldn't save that note", e);
-    }).then(function(){ if (mine === ed) ed.busy = false; });
+      // An edit stays stashed on this device and is retried. The base makes
+      // replaying it safe: it merges with anything written since.
+      keep(s);
+      s.fails = (s.fails || 0) + 1;
+      if (s === ed) el.edSaved.textContent = "Not saved yet — kept on this device, retrying";
+      if (s.fails === 1) fail("Couldn't save that note yet — it is kept on this device and will retry", e);
+      setTimeout(function(){ if (s === ed) commit(s); else flushStash(); },
+                 Math.min(60000, 3000 * Math.pow(2, s.fails - 1)));
+    }).then(function(){
+      s.busy = false;
+      if (s.again) { s.again = false; return commit(s); }
+    });
+    return s.flight;
+  }
+
+  // Edits that never reached the server — the app was closed, killed, or
+  // offline — are sent when it can be reached again. A stashed edit to an
+  // existing note carries its base, so it merges; a new note joins the queue.
+  var flushing = false;
+  function flushStash(){
+    if (flushing) return Promise.resolve();
+    var all = stashAll(), keys = Object.keys(all);
+    if (!keys.length) return Promise.resolve();
+    flushing = true;
+    var wrote = false;
+    return keys.reduce(function(chain, key){
+      return chain.then(function(){
+        if (ed && stashKey(ed) === key) return;   // the open note saves itself
+        var r = all[key];
+        if (!r.id) {
+          return enqueue(r.title || "Untitled", r.body, r.qk).then(function(){ unkeep(key); });
+        }
+        return api("PUT", "/api/notes", {id:r.id, title:r.title || "Untitled", body:r.body, base:r.base})
+          .then(function(){ unkeep(key, r.body); wrote = true; })
+          .catch(function(e){
+            // The note was deleted meanwhile: its text becomes a new note
+            // rather than being thrown away with it.
+            if (/no such note/i.test((e && e.message) || "")) {
+              return enqueue(r.title || "Untitled", r.body).then(function(){ unkeep(key); });
+            }
+          });
+      });
+    }, Promise.resolve()).then(function(){
+      flushing = false;
+      if (PENDING.length) drain();
+      if (wrote) refresh().catch(function(){});
+    }, function(){ flushing = false; });
   }
 
   function mkRow(b, i){
@@ -2888,7 +2998,8 @@ body.selecting .pin{display:none}
     // The wall holds previews, so the editor fetches the real body. Until it
     // lands the note is NOT editable -- typing into a preview and saving it
     // would truncate the file.
-    ed = {id:id || null, note:n, base:"", busy:false, loading:!!n, blocks:parseBlocks(""), raw:null};
+    ed = {id:id || null, note:n, base:"", busy:false, loading:!!n, blocks:parseBlocks(""), raw:null,
+          nk: Date.now().toString(36) + Math.random().toString(36).slice(2, 8)};
     el.edTitle.value = n ? n.title : "";
     el.edPath.textContent = (n ? n.id : "Inbox/" + new Date().toISOString().slice(0, 10) + "-new-note.md")
       + (n && n.date ? "  ·  edited " + n.date : "");
@@ -2909,6 +3020,19 @@ body.selecting .pin{display:none}
     fullBody(id).then(function(body){
       if (mine !== ed) return;              // closed or switched while loading
       ed.base = body; ed.loading = false;
+      // Edits made here that never reached the server come back, and save —
+      // against the base they were made on, so anything written since merges.
+      var st = stashAll()[id];
+      if (st && st.body !== body) {
+        ed.base = typeof st.base === "string" ? st.base : body;
+        ed.blocks = parseBlocks(st.body);
+        if (st.title) el.edTitle.value = st.title;
+        draw();
+        toast("Restored changes that hadn't saved yet", null);
+        touch();
+        return;
+      }
+      if (st) unkeep(id);
       ed.blocks = parseBlocks(body);
       draw();
     }).catch(function(e){
@@ -2921,8 +3045,11 @@ body.selecting .pin{display:none}
   function close(fromHistory){
     if (!ed) return;
     clearTimeout(saveT);
-    commit().then(render);
+    var s = ed;
+    s.title = el.edTitle.value.trim();     // the box is about to move on
+    keep(s);
     ed = null; el.scrim.hidden = true;
+    commit(s).then(render);
     if (fromHistory !== true) exitLayer();   // popstate already consumed the entry
     render();
   }
@@ -3677,7 +3804,7 @@ body.selecting .pin{display:none}
     ONLINE = up;
     if (el.netTip && !el.netTip.hidden) setTimeout(showNetTip, 0);
     el.net.className = "net" + (up ? "" : " off");
-    el.net.title = up ? "Online — changes save as you type" : "Offline — changes are NOT being saved";
+    el.net.title = up ? "Online — changes save as you type" : "Offline — changes are kept on this device and save when the box is back";
     el.net.innerHTML = up
       ? '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 6.5 19z"/><path d="m9.5 14.5 2 2 3.5-4"/></svg>'
       : '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 6.5 19z"/><path d="M3 3l18 18"/></svg>';
@@ -3738,7 +3865,20 @@ body.selecting .pin{display:none}
   });
 
   ONLINE = false; setNet(true);                       // paint the initial state
-  window.addEventListener("online", function(){ setNet(true); drain(); });
+  window.addEventListener("online", function(){ setNet(true); drain(); flushStash(); });
+
+  // A phone app is not closed, it is put away — and may be killed there
+  // without another chance to run. Save the open note the moment it goes to
+  // the background (it is already stashed), and catch up on anything stashed
+  // when it comes back.
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "hidden") {
+      if (ed) { keep(ed); clearTimeout(saveT); commit(ed); }
+    } else {
+      flushStash();
+    }
+  });
+  setInterval(function(){ if (ONLINE) flushStash(); }, 60000);
   window.addEventListener("offline", function(){ setNet(false); });
 
   // Column count is width-derived, so a rotation or a resize has to re-deal.
@@ -3749,7 +3889,7 @@ body.selecting .pin{display:none}
   });
 
   el.wall.appendChild(node("div", "empty", "Loading notes…"));
-  loadPending().then(drain);
+  loadPending().then(drain).then(flushStash);
 
   // Paint whatever we had last time BEFORE waiting on the network. A fresh
   // reload used to sit blank for as long as the listing took — and on a bad
