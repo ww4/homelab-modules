@@ -31,7 +31,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from . import keep, paths, store, users
+from . import keep, merge, paths, store, users
 from .config import Settings
 
 log = logging.getLogger("notes")
@@ -128,6 +128,9 @@ class NoteWrite(NoteRef):
     order: int | None = Field(default=None, ge=-1, le=100000)
     category: str | None = Field(default=None, max_length=60)
     author: str | None = Field(default=None, max_length=40)
+    # The body this edit started from. Present, it makes a save a MERGE when
+    # someone else wrote in between, instead of overwriting them.
+    base: str | None = Field(default=None, max_length=1_000_000)
 
 
 class NoteNew(BaseModel):
@@ -258,20 +261,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # code path created it.
         # No invented "Untitled": a Keep note may have only a body, and so
         # may one made here.
-        return store.create(space, req.title, req.body,
-                            author=who(request, cfg, roster())).summary()
+        note = store.create(space, req.title, req.body, author=who(request, cfg, roster()))
+        log.info("new %s by %s: %d lines", note.id, note.author, len(req.body.splitlines()))
+        out = note.summary()
+        out["saved_body"] = note.body
+        return out
 
     @app.put("/api/notes")
     async def update_note(req: NoteWrite, request: Request):
         if not paths.resolve(space, req.id).exists():
             raise HTTPException(404, "no such note")
-        return store.write(
+        actor = who(request, cfg, roster()) or store.HUMAN
+        body, merged, clean = req.body, False, True
+        if req.body is not None:
+            current = store.read(space, req.id).body
+            body, merged, clean = merge.reconcile(req.base, req.body, current)
+        note = store.write(
             space, req.id,
-            title=req.title, body=req.body,
+            title=req.title, body=body,
             pinned=req.pinned, archived=req.archived, shared=req.shared, order=req.order,
             category=req.category, author=req.author,
-            actor=who(request, cfg, roster()) or store.HUMAN,
-        ).summary()
+            actor=actor,
+        )
+        if req.body is not None:
+            # The record a lost edit can be traced through. Before this the
+            # service logged nothing at all while running, so "the list
+            # vanished" had no evidence on the server side to look at.
+            log.info("save %s by %s: %d lines%s", req.id, actor, len(body.splitlines()),
+                     "" if not merged else " (merged with another edit%s)"
+                     % ("" if clean else ", overlapping: both kept"))
+        out = note.summary()
+        if req.body is not None:
+            # What is now on disk, so the editor can show a merge and base its
+            # next save on it.
+            out["saved_body"] = note.body
+            out["merged"] = merged
+        return out
 
     @app.get("/api/trash")
     async def list_trash():
@@ -279,7 +304,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"notes": [n.summary() for n in store.trash_listing(space)]}
 
     @app.post("/api/notes/trash")
-    async def trash_note(req: NoteRef):
+    async def trash_note(req: NoteRef, request: Request):
+        log.info("trash %s by %s", req.id, who(request, cfg, roster()) or store.HUMAN)
         return {"trashed": store.trash(space, req.id)}
 
     @app.post("/api/notes/restore")
